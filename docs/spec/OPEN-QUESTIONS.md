@@ -33,3 +33,31 @@
 | Q24 | Stopwatch choice: digital with lap vs analog with bezel; stopwatch-as-TOD from the start second? | Analog 60 s dial with countdown bezel by default; digital selectable |
 | Q25 | Checkpoint density/placement in recent events: how often right after a stop or turn; still 12 in a day sometimes? | 4-7 per stage, some 500-1500 ft after a STOP |
 | Q26 | Does the GRIID book print the written instruction with the CAMEO in Column A or in a separate column? | Separate text column next to the CAMEO |
+
+## Answers from the Rookie Handbook (HB) and the 2026 Event Regulations (REG), 2026-10-03
+Full extractions: docs/research/08-rookie-handbook-body.md, 08b-rookie-handbook-appendices.md, 09-event-regulations-2026.md (section 21 has every Q with citations). Spec deltas: SPECS.md "V2" section.
+
+| # | Status | Answer | Spec |
+|---|--------|--------|------|
+| Q1 | ANSWERED | Official times printed only on the calibration run, interval + cumulative to 0.1 s (REG VII.F.1) | GRIID-002, STAGE-006 |
+| Q2 | ANSWERED | "40 MPH"; pause "0 MPH / 0m15s / 45 MPH"; timed "30 MPH / 0m36s / 45 MPH"; "(0m30s)" advisory; "CDT 8:55:00" (REG VII.B.3.c(4)) | GRIID-002 |
+| Q3 | ANSWERED | Front tires even with the sign; at intersections at the referenced control sign, else centre/apex (REG VII.E.2) | GRIID-007 |
+| Q4 | PARTIAL | "The pause time is added to the time for the leg" (glossary); green-light case not stated; default stands | REG-006 |
+| Q5/Q16 | ANSWERED | Multiples of 10 s up to 29m30s, filed at printed TA points within 15 min with stage/car/leg/instruction numbers; committee may reduce/refuse; wrong leg not corrected (REG V.H) | TA-001..006 |
+| Q6 | ANSWERED | 1 s per second; max late 2 min, max early 5 min; missed CP 3 min; >30 min late = missed; final CP missed = DNF/FNS; sight-zone 30 s is "stopping or <= 5 mph within sight of a Timing Checkpoint"; no late-start penalty (REG V.E) | REG-001, REG-005 |
+| Q7 | ANSWERED | Full table (REG V.D): 1939 = 0.845; steps of 0.005/yr to 1930, 0.010/yr to 1900 | REG-002 |
+| Q8/Q19 | ANSWERED | Championship discards pooled over stages 1-7: GC 3, Expert 4, Sportsman 5, Rookie 6, X-Cup 5 (REG I.F.3); none per stage | REG-003 |
+| Q9 | ANSWERED | Trophy Run is tiebreak only, after older Scoring Year (REG V.C.2.f) | REG-004 |
+| Q10 | ANSWERED | Exactly 30 minutes before the team's start (REG VII.B.2.a) | - |
+| Q11/Q17 | ANSWERED | Every start/restart = printed time of day + assigned start position in minutes; lunch sits inside a transit ("leave 45 min prior to end-of-transit"); self-start on your own clock, nobody releases you (HB p.13) | STAGE-002, STAGE-005 |
+| Q12/Q22 | NOT IN DOCS | Handbook example car: 0->35 loses 3.8 s net (about 7.6 s), brakes ~11-12 ft/s2; Packard apex 15 mph. Josh to measure the Ford. | CHART-001 |
+| Q13 | OPEN | MBCA video not read; Josh to supply YouTube transcripts (.vtt) | - |
+| Q14 | ANSWERED | Tire warm-up and calibration run are free zones with transit allowances; leg 1 starts at the time-of-day restart (REG V.B.2) | STAGE-001, STAGE-006 |
+| Q15 | ANSWERED | Pauses only where printed; 2014 Trophy Run: every STOP + some signals; 2026 example: two controls without | REG-006 |
+| Q18 | ANSWERED | Finish Observation Checkpoint is a mandatory stop, not timed; TA submitted at TA points, scorecard acknowledged (REG V.A.1.b) | STAGE-001, TA-002 |
+| Q20 | ANSWERED | 15 to 55 in steps of 5; 50/55 on highways, 20 common in 2014 | STAGE-007 |
+| Q21 | PARTIAL | Timewise 825 is the official unit, stock allowed, digital displays prohibited (REG II.H); Timewise factor/clicks in HB App. C | CHART-005 |
+| Q23 | NOT IN DOCS | Dad has no preferences yet; HB p.15 tips become the protocol lesson | LESSON-002 |
+| Q24 | PARTIAL | HB: digital stopwatch with lap/split + TOD "a necessity"; analog dash clock; count "3, 2, 1, GO"; bezel never mentioned. Josh chose analog for both; digital kept | UI-033 |
+| Q25 | NOT IN DOCS | Checkpoint density not stated; 2014 sheet shows a declared checkpoint-free zone | STAGE-004 |
+| Q26 | ANSWERED | Written text is Column D (example rally); real race sheets carry only remarks there | GRIID-001, GRIID-009 |
