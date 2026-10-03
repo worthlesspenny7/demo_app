@@ -67,7 +67,7 @@ describe('generator', () => {
       expect((calS[calS.length - 1]! - calS[0]!) / FT_MI).toBeGreaterThanOrEqual(15);
       expect(cal.every(i => i.perfectInterval !== undefined && i.perfectCumulative !== undefined)).toBe(true);
       expect(cal[cal.length - 1]!.perfectCumulative!).toBeGreaterThan(15 * 3600 / 50);
-      const restart = sc.book.filter(i => i.section === 'restart');
+      const restart = sc.book.filter(i => i.section === 'restart' && /LUNCH/.test(i.text));
       expect(restart.length).toBe(1); expect(restart[0]!.restartTime).toBeDefined();
       const ghost = buildGhost(sc);
       expect(restart[0]!.restartTime! % 60).toBe(0);
@@ -204,7 +204,7 @@ describe('generator', () => {
       const leg = generateLeg(1, p), st = generateStage(1, p);
       expect(validateScenario(leg), name).toEqual([]); expect(validateScenario(st), name).toEqual([]);
       expect(timingCps(leg).length).toBe(1);
-      expect(leg.book.filter(i => i.section === 'restart').length).toBe(0);
+      expect(leg.book.filter(i => i.section === 'restart' && /LUNCH/.test(i.text)).length).toBe(0);
       if (p.calibration) expect(leg.book.some(i => i.section === 'calibration')).toBe(true);
       if (!p.signals) expect(leg.hazards.some(h => h.kind === 'signal')).toBe(false);
       if (!p.trains) expect(leg.hazards.some(h => h.kind === 'train')).toBe(false);
@@ -225,7 +225,7 @@ describe('generator', () => {
 
   it('oracle smoke: the OracleBot finishes 6 full legs and 2 full stages on course within 5 s per leg', () => {
     for (let seed = 1; seed <= 6; seed++) {
-      const sc = generateLeg(seed, PROFILES.fullLeg);
+      const sc = generateLeg(seed, { ...PROFILES.fullLeg, trafficWaitProbability: 0 });
       const { sim, r } = oracleRun(sc);
       expect(sim.phase).toBe('finished');
       expect(r.offCourseCount).toBe(0);
@@ -234,7 +234,7 @@ describe('generator', () => {
       for (const leg of r.score.legs) { expect(leg.error, `fullLeg seed ${seed}`).not.toBeNull(); expect(Math.abs(leg.error!), `fullLeg seed ${seed} leg ${leg.index}`).toBeLessThanOrEqual(5); }
     }
     for (const seed of [1, 2]) {
-      const sc = stage(seed);
+      const sc = generateStage(seed, { ...PROFILES.fullStage, trafficWaitProbability: 0 });
       const { sim, r } = oracleRun(sc);
       expect(sim.phase).toBe('finished');
       expect(r.offCourseCount).toBe(0);

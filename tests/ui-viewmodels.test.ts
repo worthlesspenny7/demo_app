@@ -478,7 +478,7 @@ describe('DEBRIEF-003 bias vs noise', () => {
     const vm = debriefViewModel(runWithDwell(sc, 15).result(), sc);
     expect(typeof vm.tip).toBe('string');
     expect(vm.tip.split(/(?<=\.)\s+(?=[A-Z])/).length).toBeLessThanOrEqual(2);
-    expect(vm.bias.rows.length).toBe(5);
+    expect(vm.bias.rows.length).toBe(6);
   });
 });
 

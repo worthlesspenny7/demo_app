@@ -54,7 +54,7 @@ describe('PT-01 regressions', () => {
   });
   it('PT01-BUG11 a TA declared within 3 minutes after the checkpoint books to the leg that had the delay', () => {
     const sc = drillById('D08b')!.scenario(3, 0);
-    const sim = new Simulator(sc); const bot = new OracleBot(sim, { noRecovery: true });
+    const sim = new Simulator(sc); const bot = new OracleBot(sim, { ignoreLosses: true }); // rookie bot never declares on its own
     while (sim.phase !== 'finished') { bot.onTick(); if (sim.records.length === 1 && !sim.taDeclared[1] && !sim.taDeclared[2]) { sim.act({ type: 'ta.declare', seconds: 60 }); } sim.step(0.1); }
     expect(sim.taDeclared[1]).toBe(60); expect(sim.taDeclared[2]).toBeUndefined();
   });

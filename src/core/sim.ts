@@ -52,6 +52,8 @@ export interface Observation {
   ahead: VisibleFeature[];
   driver: { messages: DriverMessage[]; state: string; targetIndicated: number | null; pendingTurn: TurnDir | null; waitingForGo: boolean; lastExecutedLine: number | null };
   annotations: Record<number, string>;
+  /** Line number of the instruction at the node the car is stopped/waiting at (the navigator can see the sign); null otherwise. */
+  stoppedAtLine: number | null;
   carStopped: boolean;
   offCourseHint: boolean;
   aids: { earlyLate?: number; countdown?: number | null; cumulativePerfectAtNextLine?: number };
@@ -84,7 +86,7 @@ export interface StageResult {
   prereadCoverage: number;
   engineVersion: string;
 }
-export const ENGINE_VERSION = '1.1.0';
+export const ENGINE_VERSION = '1.2.0';
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
@@ -170,7 +172,9 @@ export class Simulator {
   private curStop: { nodeId: string; line: number | null; pause: number; startTod: number; dwellStart: number | null; dwell: number; vIn: number; vOut: number; turn: string | null } | null = null;
   private rampTarget: number | null = null; private rampKind: 'speedChange' | 'timedChange' | null = null;
   private lastSpeedChangeWasTimed = false;
-  private timedChange: { atS: number; atTod: number } | null = null;
+  private timedChange: { atS: number; atTod: number; nodeId: string } | null = null;
+  /** Which instruction node anchors the active timed segment (truth, for bots/debrief). */
+  timedChangeNodeId(): string | null { return this.timedChange?.nodeId ?? null; }
   private restartMinutesEarly = 0;
   private drivingSeconds = 0;
   private finishedTod: number | null = null;
@@ -557,7 +561,7 @@ export class Simulator {
     const s = this.car.s;
     // stop bookkeeping: entering braking zone for a stop node
     const node = this.nextNode();
-    if (node && !this.curStop && this.car.mode === 'stopping' && this.mustStopAt(node) && !this.releasedNodeId) {
+    if (node && !this.curStop && this.car.mode === 'stopping' && this.mustStopAt(node) && !this.releasedNodeId && !this.isRestartNode(node) && node.kind !== 'finish') {
       const ins = this.sc.book.find(i => i.nodeId === node.id);
       this.curStop = { nodeId: node.id, line: ins?.n ?? null, pause: ins?.pause ?? 0, startTod: this.tod, dwellStart: null, dwell: 0, vIn: Math.round(this.car.mph()), vOut: ins?.timed ? ins.timed.holdSpeed : ins?.speed ?? Math.round(this.car.mph()), turn: ins?.turn ?? null };
       this.stopBucketAtStopStart = this.buckets.stop;
@@ -644,18 +648,30 @@ export class Simulator {
         this.legAnchorActual = ins.restartTime; this.legAnchorGhost = ins.restartTime;
         this.log('restart', { early });
       }
-      if (ins.timed) { this.timedChange = { atS: n.s + mphToFps(ins.timed.holdSpeed) * ins.timed.seconds, atTod: this.tod + ins.timed.seconds }; }
+      if (ins.timed) { this.timedChange = { atS: n.s + mphToFps(ins.timed.holdSpeed) * ins.timed.seconds, atTod: this.tod + ins.timed.seconds, nodeId: n.id }; }
+      else if (ins.speed !== undefined || ins.pause || ins.turn) { this.timedChange = null; } // a later speed/pause/turn line ends any earlier timed segment
       else if (ins.speed !== undefined && this.timedChange && this.tod > this.timedChange.atTod - 60) { /* speed change after a timed segment */ }
     }
     if (n.kind === 'intersection' && n.exits && n.exits.length) {
       const chosen = this.chooseExit(n);
       const angle = Math.abs(chosen.angle);
+      let taken = chosen;
       if (angle >= 20) {
         const cap = angle > 120 ? this.sc.car.turnSpeedMph.acute : angle >= 60 ? this.sc.car.turnSpeedMph.turn : this.sc.car.turnSpeedMph.bear;
-        this.turnCap = mphToFps(cap); this.turnZoneEndS = n.s + TURN_ZONE_FT;
-        if (this.car.v > this.turnCap * 1.3) this.car.v = this.turnCap * 1.3; // late braking: scrub off what pre-braking missed
+        const capFps = mphToFps(cap);
+        if (this.car.v > capFps * 1.6 && angle >= 60) {
+          // Called too late: the driver cannot slow enough and misses the turn (straight-as-possible instead). Teaches "call turns early".
+          this.say(`Too late, I can't make that ${turnWord(this.pendingTurn ?? 'L').toLowerCase()} at this speed`, 'question');
+          this.log('turnMissed', { nodeId: n.id, speedMph: Math.round(this.car.mph()), angle: chosen.angle });
+          const roads = n.exits!.filter(e => e.kind !== 'driveway' && e.kind !== 'lot' && e.kind !== 'private');
+          taken = roads.slice().sort((a, b) => Math.abs(a.angle) - Math.abs(b.angle))[0] ?? chosen;
+          if (Math.abs(taken.angle) >= 60) { this.turnCap = capFps; this.turnZoneEndS = n.s + TURN_ZONE_FT; if (this.car.v > capFps * 1.3) this.car.v = capFps * 1.3; } // a T: he still has to turn somewhere, hard braking
+        } else {
+          this.turnCap = capFps; this.turnZoneEndS = n.s + TURN_ZONE_FT;
+          if (this.car.v > this.turnCap * 1.3) this.car.v = this.turnCap * 1.3; // slightly late: scrub off the rest in the turn
+        }
       }
-      if (!chosen.isRoute) this.goOffCourse(n, chosen);
+      if (!taken.isRoute) this.goOffCourse(n, taken);
     }
     if (n.control === 'YIELD' || n.control === 'BLINKER') { const cap = mphToFps(n.control === 'YIELD' ? 10 : 20); if (this.car.s >= this.turnZoneEndS || cap < this.turnCap) { this.turnCap = this.car.s < this.turnZoneEndS ? Math.min(cap, this.turnCap) : cap; this.turnZoneEndS = Math.max(this.turnZoneEndS, n.s + 40); if (this.car.v > this.turnCap) this.car.v = this.turnCap; } }
     if (n.kind === 'finish' && this.waitReason !== 'finish') { /* finish banner: course ends at lengthFt */ }

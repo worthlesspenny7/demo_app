@@ -6,6 +6,7 @@ import { validateScenario, aidsForRung, LEGAL_AIDS } from '../src/core/course.js
 import { Simulator } from '../src/core/sim.js';
 import { OracleBot, runBot } from '../src/agent/bots.js';
 import { headlineTip } from '../src/core/drills/rubrics.js';
+import { dwellFor } from '../src/core/perf-table.js';
 
 const driveDrills = () => allDrills().filter(d => d.kind === 'drive' && !['D12', 'D13'].includes(d.id));
 
@@ -60,7 +61,7 @@ describe('drill curriculum', () => {
     const sim = new Simulator(sc); const bot = new OracleBot(sim); let declared = false;
     while (sim.phase !== 'finished') { bot.onTick(); if (!declared && (sim.taQualifying[1] ?? 0) > 0 && !sim.waitingForGo && sim.car.mph() > 30) { sim.act({ type: 'ta.declare', seconds: Math.round(sim.taQualifying[1]!) }); declared = true; } sim.step(0.1); }
     const r = sim.result(); const rb = d.rubric(r, sc); expect(rb.stars).toBe(3);
-    const sim2 = new Simulator(sc); const r2 = runBot(sim2, new OracleBot(sim2, { noRecovery: true })); expect(d.rubric(r2, sc).stars).toBe(0);
+    const sim2 = new Simulator(sc); const r2 = runBot(sim2, new OracleBot(sim2, { ignoreLosses: true })); expect(d.rubric(r2, sc).stars).toBe(0); // rookie bot never declares
   });
   it('DRILL-009 every drive drill scenario validates for seeds 1..10 and the oracle finishes it quickly', () => {
     for (const d of driveDrills()) {
@@ -79,7 +80,8 @@ describe('drill curriculum', () => {
   });
   it('DRILL-012 D15 pre-read rubric scores annotated pauses before the start', () => {
     const d = drillById('D15')!; const sc = d.scenario(1, 0); expect(sc.prereadSeconds).toBe(600);
-    const sim = new Simulator(sc); for (const ins of sc.book) if (ins.pause) sim.act({ type: 'line.annotate', n: ins.n, text: '7.5' });
+    const sim = new Simulator(sc); let v = sc.book[0]!.speed ?? 35;
+    for (const ins of sc.book) { const vIn = v, vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? v; if (ins.pause) { const cap = ins.turn ? (['BL', 'BR'].includes(ins.turn) ? sc.car.turnSpeedMph.bear : sc.car.turnSpeedMph.turn) : undefined; sim.act({ type: 'line.annotate', n: ins.n, text: dwellFor(ins.pause, vIn || vOut, vOut, sc.car, cap).toFixed(1) }); } v = ins.timed ? ins.timed.thenSpeed : vOut; }
     const r = runBot(sim, new OracleBot(sim)); expect(r.prereadCoverage).toBe(1); expect(d.rubric(r, sc).stars).toBeGreaterThanOrEqual(2);
     const sim2 = new Simulator(sc); const r2 = runBot(sim2, new OracleBot(sim2)); expect(d.rubric(r2, sc).stars).toBe(0);
   });

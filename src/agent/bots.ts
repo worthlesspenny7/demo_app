@@ -122,7 +122,7 @@ export class OracleBot implements Bot {
     // timed change call
     if (this.timedPending && !this.timedPending.called) {
       const tp = this.timedPending; const seg = tp.plan.ins.timed!;
-      const ghostTod = sim.timedChangeGhostTod();
+      const ghostTod = sim.timedChangeNodeId() === tp.plan.ins.nodeId ? sim.timedChangeGhostTod() : null;
       const lead = this.o.ignoreLosses ? 0 : rampLead(seg.holdSpeed, seg.thenSpeed, sc.car);
       let due: boolean;
       if (this.o.ignoreLosses || this.o.goCount) { if (tp.plan.crossedTod === null && car.s > tp.plan.s) tp.plan.crossedTod = sim.tod; due = tp.plan.crossedTod !== null && sim.tod >= tp.plan.crossedTod + seg.seconds - (this.o.goCount ? lead : 0); }
@@ -131,6 +131,15 @@ export class OracleBot implements Bot {
     }
     if (this.timedPending?.called && car.s > this.timedPending.plan.s + 3 * 5280) this.timedPending = null;
     this.recover();
+    this.declareTA();
+  }
+
+  /** Declare the measured qualifying delay once per leg (a real navigator hands in the TA form). */
+  private taDone = new Set<number>();
+  private declareTA(): void {
+    if (this.o.ignoreLosses) return;
+    const sim = this.sim; const leg = sim.legIndex; const q = sim.taQualifying[leg] ?? 0;
+    if (q > 0 && !this.taDone.has(leg) && !sim.waitingForGo) { this.taDone.add(leg); this.act({ type: 'ta.declare', seconds: Math.round(q), legIndex: leg }); }
   }
 
   /** Make up or burn off accumulated error in open cruise (uses truth pace; the "perfect navigator"). */
@@ -196,7 +205,7 @@ export function makeBot(name: BotName, sim: Simulator, seed = 1): Bot | null {
 }
 
 /** Run a bot to completion. Returns the result. */
-export function runBot(sim: Simulator, bot: Bot | null, maxSeconds = 4 * 3600): ReturnType<Simulator['result']> {
+export function runBot(sim: Simulator, bot: Bot | null, maxSeconds = 12 * 3600): ReturnType<Simulator['result']> {
   let t = 0;
   while (sim.phase !== 'finished' && t < maxSeconds) { bot?.onTick(sim); sim.step(0.1); t += 0.1; }
   return sim.result();

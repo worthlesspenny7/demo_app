@@ -46,8 +46,8 @@ export function accelLoss(vOut: number, car: CarSpec): number {
 }
 
 /** Dwell to hold at a Pause so that pause == stopLoss + dwell. */
-export function dwellFor(pause: number, vIn: number, vOut: number, car: CarSpec): number {
-  return Math.max(0, pause - stopLoss(vIn, vOut, car));
+export function dwellFor(pause: number, vIn: number, vOut: number, car: CarSpec, turnCapMph?: number): number {
+  return Math.max(0, pause - stopLoss(vIn, vOut, car, turnCapMph));
 }
 
 /** Time lost slowing for a turn of a given angle band and re-accelerating. */

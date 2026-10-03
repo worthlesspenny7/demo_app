@@ -95,9 +95,9 @@ export const PROFILES: Record<'pauseDrill' | 'timedDrill' | 'landmarkDrill' | 'c
   landmarkDrill: { name: 'landmarkDrill', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { speedSign: 35, landmarkSpeed: 30, curveSign: 15, stop: 10, straight: 5, turn: 0, timed: 5 }, townFraction: 0 },
   calibration: { name: 'calibration', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: true, lunchRestart: false, mix: { stop: 30, speedSign: 30, straight: 20, turn: 0, timed: 0 }, townFraction: 0 },
   recovery: { name: 'recovery', legs: 1, lineDensity: 'normal', trapDensity: 0.1, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.3 },
-  fullLeg: { name: 'fullLeg', legs: 1, lineDensity: 'normal', trapDensity: 0.35, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false },
+  fullLeg: { name: 'fullLeg', legs: 1, lineDensity: 'normal', trapDensity: 0.35, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.15 },
   combo: { name: 'combo', legs: 2, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: false, slowTraffic: true, calibration: false, lunchRestart: false },
-  fullStage: { name: 'fullStage', legs: 0, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: true, slowTraffic: true, calibration: true, lunchRestart: true },
+  fullStage: { name: 'fullStage', legs: 0, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: true, slowTraffic: true, calibration: true, lunchRestart: true, trafficWaitProbability: 0.15 },
 };
 
 const LANDMARKS = ['bridge', 'church on R', 'water tower on L', 'cattle guard', 'county line sign', 'grain elevator on R', 'cemetery on L', 'overpass', 'fire station on R', 'creek bridge'];
@@ -116,6 +116,13 @@ class Generator {
   private cpNo = 0;
   private afterStopPlaced = false;
   private usedTraps = new Set<string>();
+  private trainsPlaced = 0; private trainHits = 0;
+  private makeTrain(): { durationSeconds: number; hit: boolean } | undefined {
+    if (!this.profile.trains || this.trainsPlaced >= 2) return undefined;
+    this.trainsPlaced++;
+    const hit = this.trainHits < 1 && this.r.chance(0.6); if (hit) this.trainHits++;
+    return { durationSeconds: this.r.int(60, 120), hit };
+  }
   private trapsUsedThisLeg = new Set<string>();
   private missingPauses = 0;
   readonly legs: number;
@@ -180,8 +187,8 @@ class Generator {
     b.advanceFt(1500);
     this.instruction({ sign: { text: 'CALIBRATION START', shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', speed: 50, text: 'Begin calibration at "CALIBRATION START". Speed 50' });
     let total = 0, k = 0;
-    while (total < 15.2 || k < 6) {
-      const d = Math.min(3.5, Math.max(1.5, 1.5 + 2 * this.r.next()));
+    while (total < 15.2 || k < 10) {
+      const d = Math.min(1.8, Math.max(0.9, 0.9 + 0.9 * this.r.next()));
       total += d; k++;
       b.advanceMiles(d);
       if (k % 3 === 0) { const lm = this.r.pick(LANDMARKS); this.instruction({ label: lm, sightDistance: 500 }, { section: 'calibration', speed: 50, text: `At ${lm}. Speed 50` }); }
@@ -191,6 +198,13 @@ class Generator {
     this.speed = this.r.pick([35, 40, 45]);
     this.instruction({ sign: { text: 'END CALIBRATION', shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', speed: this.speed, text: `End of calibration at "END CALIBRATION". Speed ${this.speed}` });
     this.tags.push(`calibration:miles:${total.toFixed(1)}:intervals:${k}`);
+    // The calibration run is not scored: an official restart follows it (Q14 default), 2-3 minutes after the ghost's arrival.
+    const endPos = b.position; b.advanceFt(900);
+    const ghostArrival = (this.profile.startTime ?? 8 * 3600) + endPos / (50 * 1.4666667) + 900 / (this.speed * 1.4666667);
+    const restartAt = Math.ceil((ghostArrival + 150) / 60) * 60;
+    b.restart(this.speed, restartAt, { text: `Calibration complete. RESTART at ${formatClock(restartAt)}. Speed ${this.speed}` });
+    this.lineNo++;
+    this.tags.push(`calibration:restart:${restartAt}`);
   }
 
   // ---------- lunch ----------
@@ -294,7 +308,7 @@ class Generator {
     const p = this.profile;
     const base: Record<LineType, number> = town
       ? { stop: 32, signal: p.signals ? 22 : 0, turn: 8, speedSign: 17, landmarkSpeed: 4, curveSign: 0, timed: 5, rr: 0, straight: 8, trap: p.trapDensity * 30 }
-      : { stop: 22, signal: 0, turn: 12, speedSign: 16, landmarkSpeed: 10, curveSign: 6, timed: 12, rr: p.trains ? 6 : 0, straight: 6, trap: p.trapDensity * 30 };
+      : { stop: 22, signal: 0, turn: 12, speedSign: 16, landmarkSpeed: 10, curveSign: 6, timed: 12, rr: p.trains ? 3 : 0, straight: 6, trap: p.trapDensity * 30 };
     const w = { ...base, ...(p.mix ?? {}) };
     if (!p.signals) w.signal = 0;
     if (!p.trains) w.rr = 0;
@@ -362,7 +376,7 @@ class Generator {
         else if (ang >= 20) cost = COST.bear;
         const item: Omit<Item, 'at' | 'town' | 'speedAfter'> = { node, ins, kind: 'trap', costAfter: isControl ? AFTER.control : changeSpeed ? AFTER.speed : AFTER.plain, needBefore: isControl ? BEFORE.control : BEFORE.plain, cost, trapId: c.id, cpAfterFt: c.cpAfterFt };
         if (c.control === 'SIGNAL' && this.profile.signals) item.signal = this.signalSpec();
-        if (c.control === 'RR' && this.profile.trains) { item.train = { durationSeconds: r.int(60, 120), hit: r.chance(0.5) }; item.cost = item.train.hit ? COST.trainHit : COST.speed; }
+        if (c.control === 'RR' && this.profile.trains) { item.train = this.makeTrain(); item.cost = item.train?.hit ? COST.trainHit : COST.speed; }
         if (c.pause === null) this.missingPauses++;
         this.usedTraps.add(c.id); this.trapsUsedThisLeg.add(c.id);
         return { item, gap, speedAfter, minNextGap };
@@ -389,7 +403,7 @@ class Generator {
         speedAfter = r.chance(0.5) ? this.pickSpeed(town, false) : this.speed;
         const node: NodeSpec = { kind: 'landmark', control: 'RR', sign: { text: 'RR', shape: 'rr', side: 'R' }, sightDistance: 700, label: 'RR crossing' };
         const ins: InsSpec = { speed: speedAfter, text: `At RR crossing. Speed ${speedAfter}`, hint: this.hintFor(gap, 'rr', undefined) };
-        const train = this.profile.trains ? { durationSeconds: r.int(60, 120), hit: r.chance(0.5) } : undefined;
+        const train = this.makeTrain();
         return { item: { node, ins, kind: 'rr', costAfter: AFTER.control, needBefore: BEFORE.control, cost: train?.hit ? COST.trainHit : COST.speed, train }, gap, speedAfter, minNextGap };
       }
       case 'turn': {
@@ -408,7 +422,8 @@ class Generator {
       }
       case 'speedSign': {
         speedAfter = this.pickSpeed(town, true);
-        const s = town && r.chance(0.5) ? { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect' as const } : r.pick(SIGN_TEXTS);
+        const s0 = town && r.chance(0.5) ? { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect' as const } : r.pick(SIGN_TEXTS);
+        const s = s0.text.startsWith('SPEED LIMIT') ? { text: `SPEED LIMIT ${speedAfter}`, shape: s0.shape } : s0; // a posted limit is never below the assigned speed
         const node: NodeSpec = { sign: { text: s.text, shape: s.shape, side: r.chance(0.8) ? 'R' : 'L' }, sightDistance: 500 };
         const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'speedSign', undefined) };
         return { item: { node, ins, kind: 'speedSign', costAfter: AFTER.speed, needBefore: BEFORE.plain, cost: COST.speed }, gap, speedAfter, minNextGap };
@@ -641,3 +656,4 @@ export function sectionAt(sc: Scenario, s: number): Section | undefined {
 }
 
 export type { Control };
+

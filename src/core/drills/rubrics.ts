@@ -21,7 +21,7 @@ export function headlineTip(r: StageResult, sc?: Scenario): string {
     case 'start': return late ? 'You left the start late. Leave early by the standstill acceleration loss (about 4-5 s for the Ford).' : 'You left the start too early. Only lead by the acceleration loss (about 4-5 s), not more.';
     case 'speedChange': return 'Landmark speed changes are mistimed. Begin the change half a ramp early so the car is mid-ramp at the sign.';
     case 'timedChange': return 'Timed changes are off. Count from the ghost\'s departure (arrival + pause), and call the change half a ramp early.';
-    case 'hazard': return 'Lights, trains or traffic cost you. Time every delay on the watch, then either declare a Time Allowance or make it up with +5 mph for (speed/5 + 1) x the seconds lost, never both.';
+    case 'hazard': return 'Lights, trains or traffic cost you. Time every delay on the watch, then either declare a Time Allowance or make it up by holding +5 mph for (speed/5) x the seconds lost (8 s late at 35 -> 40 mph for 56 s), never both.';
     case 'offCourse': return 'A wrong turn cost the leg. Stay on course first: confirm the landmark before the leading edge of the intersection, and read ahead.';
     case 'turn': return 'Turns cost time the ghost does not spend. Include turn losses on your card and recover gently after each turn.';
     case 'cruise': {
