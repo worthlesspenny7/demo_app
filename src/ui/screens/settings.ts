@@ -1,5 +1,9 @@
-/** Settings: watch kind, default time scale, driver skill override, theme, audio. */
+/** Settings: watch kind, clock kind, default time scale, driver skill override, theme, audio. */
 import { app, saveSettings, el, DEFAULT_SETTINGS } from '../state.js';
+
+/** UI-033: what the Settings page says about the stopwatch and clock. Analog stays the default (Josh's choice); the digital option stays. */
+export const STOPWATCH_NOTE = 'The Rookie Handbook (HB p.5) recommends a good digital stopwatch with a lap/split function and a time-of-day function ("a necessity for accurate rallying"). Analog is the default here; the digital stopwatch is one click away and stays available.';
+export const CLOCK_NOTE = 'The handbook mounts an analog dash clock where both of you can read it (many teams use a continuous-motion rally clock with every second numbered). Analog is the default; a digital readout is optional. The choice is saved with your settings; the cockpit clock follows it once the option is wired in.';
 
 export function renderSettings(root: HTMLElement): void {
   const s = app.settings;
@@ -14,10 +18,12 @@ export function renderSettings(root: HTMLElement): void {
     row('Time scale (default)', sel(String(s.timeScale), [['1', '1x real time'], ['2', '2x'], ['4', '4x'], ['8', '8x']], v => { app.settings.timeScale = Number(v) || 1; commit(); }), 'Adaptive: the cockpit drops to 1x whenever a feature is within 800 ft, the car is stopped or a count is near.'),
     row('Driver', sel(s.driverSkill, [['scenario', 'As the drill tier says'], ['expert', 'Expert (steady, 0.2 mph)'], ['sportsman', 'Dad, sportsman (0.5 mph)'], ['rookie', 'Dad, rookie (1 mph wander)']], v => { app.settings.driverSkill = v as typeof s.driverSkill; commit(); })),
     row('Theme', sel(s.theme, [['dusk', 'Cockpit at dusk (dark)'], ['light', 'Daylight']], v => { app.settings.theme = v as 'dusk' | 'light'; commit(); })),
+    row('Clock', sel(s.clock, [['analog', 'Analog dash clock (default)'], ['digital', 'Digital readout (optional)']], v => { app.settings.clock = v as 'analog' | 'digital'; commit(); }), undefined),
     row('Sound', chk(!s.muted, v => { app.settings.muted = !v; commit(); }), 'Watch clicks, 3-2-1 beeps (aid), train and signal.'),
     row("Dad's voice", chk(s.speech, v => { app.settings.speech = v; commit(); }), 'Read-backs through speechSynthesis when the browser has it; the text overlay always shows.'),
     row('Key help overlay', chk(s.showHelp, v => { app.settings.showHelp = v; commit(); })),
   );
+  panel.append(el('div', { class: 'settings-note', id: 'stopwatch-note' }, STOPWATCH_NOTE), el('div', { class: 'settings-note', id: 'clock-note' }, CLOCK_NOTE));
   const reset = el('button', { class: 'danger' }, 'Reset progress and settings');
   reset.onclick = () => { if (confirm('Erase all stars, runs and settings?')) { app.progress.reset(); app.settings = { ...DEFAULT_SETTINGS }; saveSettings(app.settings); renderSettings(root); } };
   panel.append(el('div', {}, reset));

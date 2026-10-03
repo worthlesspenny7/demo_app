@@ -1,4 +1,5 @@
-/** Reference: seconds per mile, recovery factors, pause arithmetic, CAMEO legend, GI definitions, rules with citations. */
+/** Reference: seconds per mile, recovery factors, pause arithmetic, CAMEO legend, GI definitions, rules with citations, and the LESSON-005 pages: penalties (REG V.E), TA procedure (V.H), age factors (V.D), Column C syntax (VII.B.3.c(4)), speed-change positions (VII.E.2) and the handbook's Packard charts. */
+import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_STEPS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, type ChartData } from '../../../content/reference-data.js';
 import { FORD_1939 } from '../../core/course.js';
 import { stopLoss, rampLead, accelLoss, SPEEDS } from '../../core/perf-table.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
@@ -14,6 +15,36 @@ function perf(): { stop: number[][]; lead: number[][]; accel: number[] } {
   } catch { /* leave partial */ }
   perfCache = { stop, lead, accel };
   return perfCache;
+}
+
+function rt(head: string[], rows: (string | HTMLElement)[][], numFrom = -1): HTMLTableElement {
+  const t = el('table', { class: 'reftable' }, el('thead', {}, el('tr', {}, ...head.map((h, i) => el('th', { class: numFrom >= 0 && i >= numFrom ? 'num' : '' }, h)))));
+  const tb = el('tbody', {}); for (const r of rows) tb.append(el('tr', {}, ...r.map((c, i) => el('td', { class: numFrom >= 0 && i >= numFrom ? 'num' : '' }, c)))); t.append(tb); return t;
+}
+const rule = (r: string): HTMLElement => el('span', { class: 'rulecite' }, r);
+const fmtNum = (x: number | null): string => (x === null ? '-' : String(x));
+
+function chartTable(c: ChartData): HTMLElement {
+  const t = el('table', { class: 'charttable', 'data-chart': c.id }, el('thead', {}, el('tr', {}, el('th', {}, c.rowLabel), ...c.cols.map(w => el('th', {}, String(w))))));
+  const tb = el('tbody', {}); for (const r of c.rows) tb.append(el('tr', {}, el('td', {}, String(r.label)), ...r.values.map(v => el('td', {}, fmtNum(v))))); t.append(tb);
+  return el('div', { class: 'charttable-wrap' }, t);
+}
+
+/** The LESSON-005 reference pages. Each carries its rule number; the Packard charts are labelled as the handbook example. */
+function regPanels(): HTMLElement[] {
+  const pen = el('div', { class: 'panel', id: 'ref-penalties', style: 'grid-column:1/3' }, el('h3', {}, 'Penalties (REG V.E)'), el('p', { class: 'muted' }, 'As printed in the 2026 Event Regulations. The late cap (2 minutes) is lower than the early cap (5 minutes) and lower than a missed checkpoint (3 minutes).'),
+    rt(['Rule', 'Event', 'Penalty'], PENALTY_ROWS.map(r => [rule(r.rule), r.what, r.penalty])));
+  const ta = el('div', { class: 'panel', id: 'ref-ta', style: 'grid-column:1/3' }, el('h3', {}, 'Time Allowance procedure (REG V.H)'), el('p', { class: 'muted' }, 'Wording pattern for the request:'), el('div', { class: 'pattern' }, TA_PATTERN),
+    rt(['Rule', 'In plain words'], TA_STEPS.map(r => [rule(r.rule), r.text])));
+  const colc = el('div', { class: 'panel', id: 'ref-column-c', style: 'grid-column:1/3' }, el('h3', {}, 'Column C syntax (REG VII.B.3.c(4))'), rt(['Column C shows', 'Meaning'], COLUMN_C_ROWS.map(r => [el('span', { class: 'mono' }, r.shows), r.means])));
+  const spd = el('div', { class: 'panel', id: 'ref-speed-change', style: 'grid-column:1/3' }, el('h3', {}, 'Where a speed change happens (REG VII.E.2)'), rt(['Rule', 'Where', 'When'], SPEED_CHANGE_ROWS.map(r => [rule(r.rule), r.where, r.when])));
+  const age = el('div', { class: 'panel', id: 'ref-age-factor', style: 'grid-column:1/3' }, el('h3', {}, 'Age factor table (REG V.D)'), el('p', { class: 'muted' }, 'Stage score = raw penalty seconds x the factor for the Scoring Year (not necessarily the model year), rounded to 0.01 s (V.C.2.e). 1954 and later = 1.000, 1953 = 0.915, then 0.005 less per year to 1930 = 0.800, then 0.010 less per year to 1900 = 0.500.'));
+  const grid = el('div', { class: 'agefactors' });
+  for (let i = 0; i < AGE_FACTOR_ROWS.length; i += 14) grid.append(rt(['Year', 'Factor'], AGE_FACTOR_ROWS.slice(i, i + 14).map(r => [r.year, r.factor.toFixed(3)]), 1));
+  age.append(grid);
+  const pack = el('div', { class: 'panel', id: 'ref-packard', style: 'grid-column:1/3' }, el('h3', {}, `The three handbook charts: ${PACKARD_LABEL}`), el('p', { class: 'muted' }, 'Net seconds, IN speed in the rows and OUT speed in the columns. Teams make their own charts (HB Appendix B); a rookie with no time may use these as-is ("better than nothing"). The 1939 Ford card above is the sim\'s own car.'));
+  for (const c of PACKARD_CHARTS) pack.append(el('h3', { style: 'margin-top:12px' }, `${c.title} (${PACKARD_LABEL})`), el('p', { class: 'cite' }, c.note), chartTable(c));
+  return [pen, ta, colc, spd, age, pack];
 }
 
 export function renderReference(root: HTMLElement): void {
@@ -58,14 +89,14 @@ export function renderReference(root: HTMLElement): void {
   const defs: [string, string][] = [
     ['Pause N', 'Add N seconds to the perfect time at this point. The ghost spends N seconds standing still; you spend N minus your stop/start loss.'],
     ['Timed segment "30 for 0:36 then 40"', 'Hold 30 for 36 s counted from the ghost\'s departure from the landmark (arrival plus any pause), then 40. Call the change half a ramp early.'],
-    ['Speed change at a landmark', 'Simulator default (OPEN-QUESTIONS Q3, unconfirmed): the new speed applies at the near edge of a sign and the leading edge of an intersection. Be mid-ramp as the bumper passes it.'],
-    ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or crawl inside the sight zone of the checkpoint sign (simulator default penalty 30 s, pending confirmation: OPEN-QUESTIONS Q6).'],
-    ['Observation checkpoint', 'A manned stop (typically the finish): stop within 200 ft after the line or take the penalty (simulator default 60 s, pending confirmation: OPEN-QUESTIONS Q6/Q18).'],
-    ['Time Allowance (TA)', 'Declare the seconds a train or signal held you; credited up to the measured delay, over-declaration beyond 5 s is flagged (simulator defaults, pending confirmation: OPEN-QUESTIONS Q5/Q16). Only the wait is creditable, not your braking and acceleration loss. Never also make the time up.'],
+    ['Speed change at a landmark', 'REG VII.E.2: at a sign or landmark when the front tires come even with it; at an intersection, at the referenced sign if there is one, otherwise at the centre of the intersection or the apex of the turn. Handbook: split the speed change at the sign, crossing it at the midpoint speed. Be mid-ramp as the bumper passes it.'],
+    ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or travel 5 MPH or slower within sight of a Timing Checkpoint: 30 s (REG V.E.3.a).'],
+    ['Observation checkpoint', 'A manned stop (typically the finish, where you also submit any Time Allowance Requests). Missing one costs 3 minutes, or DNF/FNS for the final one (REG V.E.2.c-d).'],
+    ['Time Allowance (TA)', 'Request the seconds a train or an accident held you, in multiples of 10 s, at the TA point within 15 minutes (REG V.H; see the TA procedure below). The committee denies time you could have made up. Only the wait is creditable, not your braking and acceleration loss. Never also make the time up.'],
     ['Ace', 'A checkpoint crossed at exactly the perfect second (error 0).'],
     ['Age factor', 'Raw seconds times a factor for the car\'s year: 0.845 for a 1939 car.'],
     ['Transit / free zone', 'Untimed sections between legs (section symbols in Column B). Drive normally, reset for the next start time.'],
-    ['Early restart', 'Leaving a lunch or restart more than 5 minutes early costs 60 s (simulator default, pending confirmation: OPEN-QUESTIONS Q6/Q11). Go at the printed out-time minus your standing-start loss; a restart hold is not a stop.'],
+    ['Early restart', 'Leaving a promoted lunch, pit or rest stop more than 5 minutes before its scheduled departure costs 1 minute, then 5 minutes (REG V.E.3.h). Go at the printed out-time minus your standing-start loss; a restart hold is not a stop.'],
   ];
   const dl = el('dl', {}); for (const [k, v] of defs) dl.append(el('dt', { style: 'font-weight:700;margin-top:6px' }, k), el('dd', { style: 'margin:0 0 4px 0;color:var(--muted)' }, v)); gi.append(dl);
   // rules summary with citations
@@ -73,18 +104,18 @@ export function renderReference(root: HTMLElement): void {
   const rl = el('ul', {});
   const cites: [string, string][] = [
     ['Permitted timing equipment: one analog speedometer, one analog time-of-day clock, one stopwatch; calculators and phones prohibited; paper tables legal; odometer covered.', 'docs/research/01-great-race-rules-and-format.md §1; docs/research/05 §5.3; REQUIREMENTS §0'],
-    ['Scoring: one point per second early or late at each hidden checkpoint; Ace = 0; maximum per checkpoint capped (300 s is a simulator default, pending confirmation: OPEN-QUESTIONS Q6); stage raw multiplied by the age factor (1939 Ford: 0.845).', 'docs/research/01 §3; docs/research/07 §7; DESIGN §10'],
+    ['Scoring: one point per second early or late at each hidden checkpoint; Ace = 0; capped at 2 minutes late and 5 minutes early per checkpoint, 3 minutes for a missed one (REG V.E.1-2); stage raw multiplied by the age factor (1939 Ford: 0.845).', 'docs/research/01 §3; docs/research/07 §7; DESIGN §10'],
     ['The perfect time is integrated by a ghost car with instantaneous speed changes; pauses add the printed seconds; the leg clock resets at every checkpoint.', 'docs/research/07 §1, §4; DESIGN §4'],
     ['Stop/start and speed-change losses are measured per car (performance table); teams subtract them from the printed pause ("34 not 36").', 'docs/research/07 §2.1-2.3; docs/research/03 §1.7'],
     ['Calibration run each morning: k = perfect / actual; indicated speed to hold = assigned / k; a 1 % error is about 9 s over 15 minutes.', 'docs/research/07 §3; DESIGN §12'],
     ['Recovery: 10 % over for 10x the delay or 20 % over for 5x (exact on the stopwatch: t = E x v / d); penalties are symmetric so never overshoot into early; stop correcting before likely checkpoint spots.', 'docs/research/03 §4.3; docs/research/07 §6'],
-    ['Time allowances for trains and signals are declared at the checkpoint and credited up to the measured delay.', 'docs/research/01 §1 (R1.8); DESIGN §10'],
+    ['Time allowances are requested at the TA point within 15 minutes, in multiples of 10 s, for delays beyond your control (a train, an accident); the committee denies time you could have made up.', 'docs/research/09 §14 (REG V.H); docs/research/08 §6'],
     ['Typical scores: champions about 1 s per leg; a normal rookie day is 20-46 s (Team Hagerty 34, 46 and 20 s; 13 s is the best rookie on record); well over 46 s is a blown day.', 'docs/research/06 §4; STATUS.md key facts'],
     ['Course following: dashed CAMEO lines are driveways/lots/unpaved/dead ends; quoted signs must match exactly; never go past the leading edge of an intersection you are unsure of.', 'docs/research/04 §2.2, §4; REQUIREMENTS P8'],
   ];
   for (const [t, c] of cites) rl.append(el('li', {}, t, ' ', el('span', { class: 'cite' }, `[${c}]`)));
-  rules.append(rl, el('p', { class: 'cite' }, 'Penalty values (sight zone 30 s, observation miss 60 s, early restart 60 s / 5 min, TA tolerance 5 s, 300 s cap) are simulator defaults pending confirmation from the 2026 rule book (docs/spec/OPEN-QUESTIONS.md Q5, Q6, Q16, Q18): the research did not retrieve them. Treat them as configurable.'));
-  g.append(spm, rec, pa, cam, gi, rules);
+  rules.append(rl, el('p', { class: 'cite' }, 'Penalty and Time Allowance values come from the 2026 Event Regulations (docs/research/09-event-regulations-2026.md, REG V.E and V.H); the tables below quote them with their rule numbers. The regulations list no penalty for starting late: the leg score is the penalty.'));
+  g.append(spm, rec, pa, cam, gi, rules, ...regPanels());
   page.append(g);
   root.replaceChildren(page);
 }
