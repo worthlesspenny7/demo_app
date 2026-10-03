@@ -22,9 +22,9 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 ## Phase IV (2026-10-03 evening): Rookie Handbook + 2026 Event Regulations supplied by Josh
 - [x] Extracted: docs/research/08-rookie-handbook-body.md, 08b-...-appendices.md, 09-event-regulations-2026.md; OPEN-QUESTIONS answered (Q1-Q26 table at the bottom)
 - [x] SPECS.md 'V2' section (REG, TA, GRIID, STAGE, CHART, LESSON, DRILL-021..025, CAMP, UI-029..034)
-- [ ] Core engine V2 (agent running): scoring caps/age table/discards, TA at TA points in 10 s multiples, Column C/B data, stage skeleton with ASP restarts, exact transits, free zones, handbook charts + Packard
-- [ ] Lessons + reference pages (agent running): Four S's, team protocol (Dad's card), notations, transits/restarts, regs tables
-- [ ] After core: UI (book in GRIID layout, charts, TA screen, restart/transit cards, scorecard) and drills (D16 ASP + exact transit, D08b TA point, D06 charts, D15 notations, D18/D11 skeleton, campaign division/ASP)
+- [x] Core engine V2 (commit 283af32): scoring caps/age table/discards, TA at TA points in 10 s multiples, Column C/B data (src/core/griid.ts), stage skeleton with ASP restarts, exact transits, free zones, handbook charts + Packard, digital lap/split stopwatch + instrument discipline; 294 unit tests
+- [x] Lessons + reference pages (aafc36a, 98da6c2): Four S's, Which timer when, team protocol (Dad's card), notations, transits/restarts, regs tables
+- [ ] UI V2 agent running (GRIID book, charts, TA screen, restart/transit cards, scorecard, digital watch UI, e2e C9 fix) and Drills V2 agent running (D16 ASP + exact transit, D08b TA point, D06 charts, D15 notations, D18/D11 skeleton, D01/D07 digital, campaign division/ASP)
 - [ ] Re-validate realism against the new sources; STATUS/LOG; push
 - Josh's standing instruction: the organizers' documents win over his own preferences. Hence: digital stopwatch with lap/split + TOD by default (HB p.5 'a necessity'), analog dash clock; teach which device for which purpose (LESSON-006, WATCH-008/009, DRILL-026). Dad has no protocol yet: teach best practices. YouTube transcripts (.vtt) may arrive
 
