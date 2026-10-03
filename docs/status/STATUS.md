@@ -13,10 +13,10 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [x] Generator + 24-card trap library (src/core/generator); drills D11/D12/D13 use it
 - [x] Drill curriculum D01-D18 (src/core/drills) with rubrics/tiers/unlocks
 - [x] Phase III-d agent playtesting (bugs): PT-01 protocol (26 bugs, HIGH/MEDIUM fixed), PT-02 drills (14 bugs, fixed), PT-03 UI bug hunt (running)
-- [~] Phase III-e validation: VALIDATION-realism.md, VALIDATION-education.md, VALIDATION-playability-enjoyment.md (agents running) -> then fixes -> final VALIDATION.md summary
+- [x] Phase III-e validation: realism 47/70, playability 32.5/55, education and UI passes all 'yes with fixes'; top fixes applied; summary in docs/playtest/VALIDATION.md; re-validation agents running (REVALIDATION-ui.md, REVALIDATION-education.md)
 
 ## Current step
-Validation passes running. Next: apply their top fixes, re-run tests + e2e, write docs/playtest/VALIDATION.md (summary for Josh), final status.
+Re-validation on the fixed build. Then: fold any new findings, final commit, push once GitHub access is granted on the renamed repo (TSD-simulator).
 Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)
