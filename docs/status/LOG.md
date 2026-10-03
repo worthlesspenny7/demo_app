@@ -10,3 +10,14 @@
 - 2026-10-03 ~17:45 Second rate-limit hit (~13:30) killed the UI bug hunt and three validation agents. Josh reconnected GitHub and renamed the repo to TSD-simulator; push still 403 (app not granted on the renamed repo; session sources still name demo_app). Relaunched PT-03 UI bug hunt + realism/education/playability validators as Sonnet agents allowed to spawn sub-agents (per Josh's request to right-size agents).
 - 2026-10-03 ~19:30 All four validation reports in (realism 47/70, playability 32.5/55, education and PT-03 UI: 0 crashes): verdict "yes with fixes" across the board. Engine/content fixes applied: late turn calls are refused by the driver (turnMissed) instead of a 7-g snap; calibration run is now a transit followed by an official restart (generator + D07); trains capped at <= 2 per stage, <= 1 blocking; SPEED LIMIT text never below the assigned speed; cross traffic 0.15 in full legs/stages; oracle declares TA and arms timed segments only for its own node (fixes 12/20 D04 failures); runBot cap 12 h; stage stars by research benchmarks (13/25/46); D05 larger deltas; D07 hidden error 1.5-3.5%; D06 grades measurements vs truth; D15 checks numeric dwell within 2 s; recovery rule corrected to t = E*v/d (not v/5+1); stop records exclude restart/finish holds; stoppedAtLine in observation; ENGINE_VERSION 1.2.0. UI fix sprint running (Sonnet).
 - 2026-10-03 ~20:10 UI fix sprint merged (198 unit tests, 14 e2e green). Wrote docs/playtest/VALIDATION.md summary. Launched re-validation (UI first-hour replay; drill/education matrix) on the fixed build.
+
+## 2026-10-03 (late) education re-validation fixes
+- REVALIDATION-education verdict: yes with fixes, clearly better (tip accuracy 97%). Applied its list:
+  RUB-001 clean-run rule (mean <= 3 s, on course) + "lost N s in stops, recovered M s in cruise" wording;
+  RUB-002 restart ramp -> 'start' bucket; DRILL-018 D15 rebuilt as a 40-line triage scenario (8+ pauses,
+  2+ timed, blank notes ignored, free-text numbers parsed, no turn cap on straight STOPs);
+  DRILL-019 D04/D05 per-change star cap; DRILL-020 Gold hidden car on D03/D04/D05/D18; D18 hazard earlier.
+- Found while testing: timed holds generated right before a short gap could reach past the next line
+  (validator GHOST-010). Timed lines in D15/D18 now pad hold distance + 300 ft.
+- 203 unit tests, 14 e2e, build clean, 166/166 specs covered. Commit 85ab295 pushed.
+- UI re-validation agent still running; its report goes to docs/playtest/REVALIDATION-ui.md.
