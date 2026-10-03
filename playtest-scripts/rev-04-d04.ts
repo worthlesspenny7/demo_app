@@ -1,0 +1,32 @@
+import { launch, shot, goto, txt, adv, obs } from './rev-common.js';
+import { startRun, drive } from './rev-player.js';
+const h = await launch(); const { page } = h;
+const tag = process.argv[2] ?? 'd04'; const drill = process.argv[3] ?? 'D04'; const tier = process.argv[4] ?? '0'; const opts = JSON.parse(process.argv[5] ?? '{}');
+await goto(page, '#/');
+if (process.argv[6] === 'starthere') { await page.click('#starthere'); } else await goto(page, `#/cockpit/drill/${drill}/${tier}/${opts.seed ?? 1}`);
+await page.waitForTimeout(500);
+console.log('hash', await page.evaluate(() => location.hash));
+console.log('PREREAD:\n', await txt(page, '#preread'));
+await page.keyboard.press('Escape');
+const info = await obs(page); console.log('rung/aids', JSON.stringify(info.aids), 'lines', info.book.length); console.log(info.book.map((b: any) => `${b.n}: ${b.text}`).join('\n'));
+await startRun(page, { departEarly: opts.departEarly ?? 3 });
+const t0 = info.startTime as number;
+for (const snap of (opts.snaps ?? [])) {
+  await drive(page, { name: drill, ...opts, verbose: true }, `o.tod > ${t0 + snap}`);
+  await page.waitForTimeout(150); await shot(page, `${tag}-t${snap}`);
+  const o = await obs(page);
+  console.log(`  snap ${snap}: cur=${o.currentLine} stopped=${o.stoppedAtLine} lastExec=${o.driver.lastExecutedLine} | card: ${(await txt(page, '#perfcard')).replace(/\n/g, ' | ').slice(0, 260)}`);
+}
+const log = await drive(page, { name: drill, ...opts, verbose: true });
+console.log(tag, JSON.stringify({ keys: log.keys, sim: log.wall1x.toFixed(0), a4: log.wallAdaptive4x.toFixed(0), a8: log.wallAdaptive8x.toFixed(0), wait: log.waitingSeconds.toFixed(0) }));
+await page.waitForSelector('#debrief', { timeout: 30000 }); await page.waitForSelector('#counterfactuals .cf-row', { timeout: 15000 }).catch(() => {});
+await page.waitForTimeout(300);
+const t = await txt(page, '#debrief'); console.log(t.slice(0, opts.chars ?? 5000));
+await shot(page, `${tag}-debrief`); await shot(page, `${tag}-debrief-full`, true);
+console.log('debrief height', await page.evaluate(() => document.documentElement.scrollHeight));
+await goto(page, '#/');
+console.log('home card:', (await txt(page, `.card[data-drill="${drill}"]`)).replace(/\n/g, ' | '));
+console.log('lastruns:', await txt(page, '#lastruns'));
+console.log('startpath:', JSON.stringify(await page.locator('#starthere-panel li').evaluateAll(l => l.map(x => (x.className || '-') + ':' + x.textContent))));
+console.log('errors', h.errors, 'dialogs', h.dialogs);
+await h.save(); await h.browser.close();

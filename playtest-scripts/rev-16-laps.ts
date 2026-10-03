@@ -1,0 +1,10 @@
+import { launch, shot, goto, txt, obs } from './rev-common.js';
+import { startRun, drive } from './rev-player.js';
+const h = await launch(undefined, true); const { page } = h;
+console.log('fresh cockpit deep link navnote:', JSON.stringify(await (async () => { await goto(page, '#/cockpit/drill/D01/0/5'); await page.waitForTimeout(400); return txt(page, '#navnote'); })()));
+await page.keyboard.press('Escape'); await startRun(page);
+await drive(page, { name: 'D01', lapMarkers: true }, 'o.tod > 28800 + 230');
+await page.waitForTimeout(150);
+console.log(await page.evaluate(() => { const l = document.querySelector('#laps') as HTMLElement; const i = document.querySelector('.instruments')!.getBoundingClientRect(); const b = l.getBoundingClientRect(); return JSON.stringify({ lapsBox: [b.top, b.bottom, b.height], instBottom: i.bottom, scrollH: l.scrollHeight, clientH: l.clientHeight, text: l.innerText.replace(/\n/g, ' | ').slice(0, 200), rows: l.children.length / 3 }); }));
+await shot(page, 'd01-laps-late-1366');
+await h.browser.close();

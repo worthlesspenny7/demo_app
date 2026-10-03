@@ -1,0 +1,22 @@
+import { launch, shot, goto, txt, STATE } from './rev-common.js';
+import { rmSync } from 'node:fs';
+rmSync(STATE, { force: true });
+const h = await launch({ width: 1366, height: 768 }, true); const { page } = h;
+await goto(page, '#/');
+console.log('navnote:', JSON.stringify(await txt(page, '#navnote')));
+console.log('startpanel:', await txt(page, '#starthere-panel'));
+console.log('page height', await page.evaluate(() => document.scrollingElement!.scrollHeight));
+await shot(page, 'home-1366x768');
+await shot(page, 'home-1366x768-full', true);
+console.log('cards', await page.locator('.card').count());
+console.log('D03 card:', await txt(page, '.card[data-drill="D03"]'));
+console.log('D01 card:', await txt(page, '.card[data-drill="D01"]'));
+console.log('D18 card:', await txt(page, '.card[data-drill="D18"]'));
+console.log('D02 card present?', await page.locator('.card[data-drill="D02"]').count());
+// Start here button
+await page.click('#starthere'); await page.waitForTimeout(200);
+console.log('hash after Start here:', await page.evaluate(() => location.hash));
+console.log('school text:', (await txt(page, '#view')).slice(0, 600));
+await shot(page, 'school-lesson1');
+console.log('errors', h.errors);
+await h.save(); await h.browser.close();

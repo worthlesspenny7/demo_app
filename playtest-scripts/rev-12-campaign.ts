@@ -1,0 +1,30 @@
+import { launch, shot, goto, txt, obs, adv } from './rev-common.js';
+const h = await launch(); const { page } = h;
+await goto(page, '#/');
+console.log('D13 card:', (await txt(page, '.card[data-drill="D13"]')).replace(/\n/g, ' | '));
+console.log('D12 card:', (await txt(page, '.card[data-drill="D12"]')).replace(/\n/g, ' | '));
+await goto(page, '#/campaign');
+console.log('CAMPAIGN:', (await txt(page, '#campaign')).replace(/\n/g, ' | ').slice(0, 900));
+await shot(page, 'campaign-1366');
+console.log('nav has Campaign link?', JSON.stringify(await page.locator('nav a, header a').allInnerTexts()));
+await page.setViewportSize({ width: 1920, height: 1080 }); await page.waitForTimeout(200); await shot(page, 'campaign-1920');
+await page.setViewportSize({ width: 1366, height: 768 });
+await page.locator('#camp-tier').selectOption('2'); console.log('tier select ok:', await page.locator('#camp-tier').inputValue());
+await page.locator('#camp-tier').selectOption('0');
+// Play stage 3
+await page.locator('button[data-stage="3"]').click(); await page.waitForTimeout(700);
+console.log('hash', await page.evaluate(() => location.hash));
+console.log('PREREAD head:', (await txt(page, '#preread')).replace(/\n/g, ' | ').slice(0, 500));
+await page.keyboard.press('Escape');
+const o = await obs(page); console.log('D13 lines', o.book.length, 'aids', JSON.stringify(o.aids), 'start', o.startTime);
+await shot(page, 'campaign-stage3-cockpit-1366');
+// force a result (hack) to test recording: depart, advance a bit, finish()
+await page.keyboard.press('d'); await adv(page, 120);
+await page.evaluate(() => (window as any).__rally.finish()); await page.waitForTimeout(800);
+console.log('after finish hash', await page.evaluate(() => location.hash));
+console.log('debrief head:', (await txt(page, '#debrief')).split('\n').slice(0, 6).join(' | '));
+await goto(page, '#/campaign');
+console.log('CAMPAIGN after:', (await txt(page, '#campaign')).replace(/\n/g, ' | ').slice(0, 700));
+await shot(page, 'campaign-after-stage-1366');
+console.log('errors', h.errors);
+await h.browser.close();

@@ -1,0 +1,12 @@
+import { launch, goto, obs, txt } from './rev-common.js';
+import { startRun, drive } from './rev-player.js';
+const h = await launch({ width: 1366, height: 768 }, true); const { page } = h;
+await goto(page, '#/reference');
+const table = await page.evaluate(() => { const d = document.querySelector('#answer-sheet')!; const t = d.querySelector('table')!; const heads = [...t.querySelectorAll('thead th')].slice(1).map(x => Number(x.textContent)); const loss = [...t.querySelectorAll('tbody tr')].map(r => [...r.querySelectorAll('td')].slice(1).map(x => Number(x.textContent))); return { speeds: heads, loss, turnExtra: 1.5 }; });
+await goto(page, '#/cockpit/drill/D03/2/1'); await page.waitForTimeout(400); await page.keyboard.press('Escape');
+await startRun(page, { noWatch: true });
+await drive(page, { name: 'D03', bezel: true, table, verbose: true }, 'o.stoppedAtLine === 7 && o.driver.waitingForGo && o.stopwatch.running');
+await drive(page, { name: 'D03', bezel: true, table, verbose: true }, 'o.tod > 29286 + 14');
+const info = await page.evaluate(() => { const R = (window as any).__rally; const ev = R.sim.events.filter((e: any) => /wait|stop|go|release/.test(e.type)).slice(-14).map((e: any) => `${e.type}@${e.tod.toFixed(1)} ${JSON.stringify(e.detail ?? {}).slice(0, 80)}`); const o = R.observe(); return { ev, tod: o.tod, v: o.speedo.reading, carStopped: o.carStopped, state: o.driver.state, wait: o.driver.waitingForGo }; });
+console.log(JSON.stringify(info, null, 1));
+await h.browser.close();

@@ -1,0 +1,12 @@
+import { launch, shot, goto, txt, obs } from './rev-common.js';
+const h = await launch(); const { page } = h;
+await goto(page, '#/cockpit/drill/D07/0/1'); await page.waitForTimeout(500);
+console.log('PREREAD:', (await txt(page, '#preread')).replace(/\n/g, ' | '));
+await page.keyboard.press('Escape');
+const o = await obs(page);
+console.log(JSON.stringify(o.aids), 'start', o.startTime);
+console.log(JSON.stringify(o.book, null, 0).slice(0, 3500));
+console.log('drawer bar:', await page.locator('.drawer .bar .muted').last().innerText());
+console.log('calbox:', (await txt(page, '#calbox')).replace(/\n/g, ' | '));
+await shot(page, 'd07-preread-1366x768');
+await h.browser.close();

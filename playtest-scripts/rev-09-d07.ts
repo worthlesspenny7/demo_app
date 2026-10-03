@@ -1,0 +1,44 @@
+import { launch, shot, goto, txt, obs, adv } from './rev-common.js';
+import { startRun, drive } from './rev-player.js';
+const h = await launch(); const { page } = h;
+await goto(page, '#/cockpit/drill/D07/0/1'); await page.waitForTimeout(500);
+await page.keyboard.press('Escape');
+await startRun(page, { departEarly: 5 });
+const o0 = await obs(page);
+const opts: any = { name: 'D07', lapMarkers: true, reaction: 0.3, verbose: true };
+await drive(page, opts, 'o.currentLine >= 6');   // after MILE 3 lap
+const st = await page.evaluate(() => { const o = (window as any).__rally.observe(); return { laps: o.stopwatch.laps as number[], line: o.currentLine, book: o.book.filter((b: any) => b.perfectCumulative !== undefined).map((b: any) => b.perfectCumulative) as number[] }; });
+console.log('laps', JSON.stringify(st.laps), 'Col C cumulative', JSON.stringify(st.book));
+// laps[0] is the lap at "Begin calibration"; compare cumulative from it with Column C
+const cum = st.laps.slice(1).map(x => x - st.laps[0]!); const perfect = st.book.slice(1, 1 + cum.length);
+const k = perfect[perfect.length - 1]! / cum[cum.length - 1]!;
+console.log('your cumulative', cum.map(c => c.toFixed(1)).join(', '), 'perfect', perfect.join(', '), '=> k = ', k.toFixed(4));
+await shot(page, 'd07-calib-before-k-1366');
+await page.locator('#cal-k').fill(k.toFixed(3)); await page.locator('#cal-k').press('Enter');
+await page.locator('#cal-setk').click();
+console.log('flash:', await txt(page, '#alert'), '| userFactor', await page.evaluate(() => (window as any).__rally.sim.speedo.userFactor));
+console.log('speedo caption after set:', await page.locator('.instruments .caption').nth(2).innerText());
+await shot(page, 'd07-calib-after-k-1366');
+await page.locator('#cal-k').blur();
+// keep the hold: re-call 50
+await page.keyboard.press('5'); await page.keyboard.press('0'); await page.keyboard.press('Enter');
+await drive(page, opts, 'o.currentLine >= 9 || o.driver.waitingForGo');
+const st2 = await page.evaluate(() => { const o = (window as any).__rally.observe(); return { laps: o.stopwatch.laps as number[], line: o.currentLine, st: o.stoppedAtLine, state: o.driver.state, tod: o.tod }; });
+const sp = st2.laps.map((x, i) => i ? (x - st2.laps[i - 1]!).toFixed(1) : x.toFixed(1));
+console.log('splits after factor:', sp.join(', '), '(perfect 180 each)', 'line', st2.line, 'stopped', st2.st, st2.state, st2.tod.toFixed(1));
+console.log('laps panel:', (await page.locator('#laps').innerText()).replace(/\n/g, ' | '));
+await shot(page, 'd07-after-calibration-1366');
+await drive(page, opts, 'o.tod > 30000');
+await shot(page, 'd07-restart-hold-1366');
+const o3 = await obs(page); console.log('restart state: stopped', o3.stoppedAtLine, 'cur', o3.currentLine, o3.driver.state, 'tod', o3.tod.toFixed(1));
+console.log('perfcard:', (await txt(page, '#perfcard')).replace(/\n/g, ' | '));
+console.log('pace text on road? hud:', (await txt(page, '.hud')).replace(/\n/g, ' | '));
+const log = await drive(page, opts);
+await page.waitForSelector('#debrief', { timeout: 30000 }); await page.waitForSelector('#counterfactuals .cf-row', { timeout: 15000 }).catch(() => {});
+await page.waitForTimeout(300);
+const t = await txt(page, '#debrief'); console.log(t.slice(0, 4500));
+await shot(page, 'd07-debrief', true);
+await goto(page, '#/');
+console.log('home D07:', (await txt(page, '.card[data-drill="D07"]')).replace(/\n/g, ' | '));
+console.log('errors', h.errors);
+await h.save(); await h.browser.close();
