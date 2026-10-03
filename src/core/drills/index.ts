@@ -267,7 +267,7 @@ const D17: Drill = {
 // ---------- D18 miniature combo leg (gate for D11) ----------
 const D18: Drill = {
   id: 'D18', title: 'Miniature leg: everything once', objective: 'One stop with pause, one timed segment, one landmark speed change, one trap, one hazard (a light you may declare as a Time Allowance, or a slow truck you must make up), one hidden checkpoint, in about five minutes.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8'], minutes: 6, kind: 'drive',
-  tiers: tiers([1, 1, 0]), unlock: [{ drill: 'D03', stars: 2 }, { drill: 'D04', stars: 2 }, { drill: 'D05', stars: 2 }, { drill: 'D08', stars: 2 }, { drill: 'D10', stars: 2 }],
+  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D03', stars: 2 }, { drill: 'D04', stars: 2 }, { drill: 'D05', stars: 2 }, { drill: 'D08', stars: 2 }, { drill: 'D10', stars: 2 }],
   scenario(seed, t) { const tier = tierOf(D18, t); const r = rng(seed); const b = base('D18', 'Miniature leg', seed, tier, { trafficWaitProbability: 0.2 }).start(r.pick([30, 35]));
     const order = r.pick([[4, 0, 1, 2, 3], [1, 4, 0, 3, 2], [4, 2, 3, 0, 1], [3, 4, 2, 1, 0]]);
     for (const k of order) {
@@ -290,7 +290,7 @@ function genOr(profileKey: string, fallback: () => Scenario, seed: number, stage
 }
 const D11: Drill = {
   id: 'D11', title: 'Full leg', objective: 'A real leg: 25-40 instructions, one hidden checkpoint, Great Race legal aids. Stay on course, stay on time.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8', 'P10'], minutes: 15, kind: 'drive',
-  tiers: tiers([1, 0, 0]), unlock: [{ drill: 'D18', stars: 1 }, { drill: 'D07', stars: 2 }],
+  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D18', stars: 1 }, { drill: 'D07', stars: 2 }],
   scenario(seed, t) { const tier = tierOf(D11, t); const sc = genOr('fullLeg', () => { const s = D18.scenario(seed, t); s.id = `D11-${seed}`; s.name = 'Full leg (fallback)'; return s; }, seed); return { ...sc, driver: tier.driver, aids: tier.aids, id: `D11-${seed}-${tier.name}` }; },
   rubric(r, sc) { return basicRubric(r, [2, 6, 13], [], sc.driver.skill, sc); },
 };

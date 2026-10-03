@@ -23,10 +23,14 @@ export function formatClock(tod: number): string {
 
 /** Elapsed M:SS.d (one decimal). Negative values keep a leading minus. */
 export function formatElapsed(sec: number, decimals = 1): string {
-  const neg = sec < 0; const a = Math.abs(sec);
+  const neg0 = sec < 0;
+  // N7: round to the printed precision BEFORE splitting into minutes, so 119.97 s reads 2:00.0 and never 1:60.0
+  const q = Math.pow(10, decimals);
+  const a = Math.round(Math.abs(sec) * q) / q;
+  const neg = neg0 && a > 0;   // a value that rounds to zero prints without a sign
   const m = Math.floor(a / 60);
   const s = a - m * 60;
-  const sStr = s.toFixed(decimals);
+  const sStr = Math.max(0, s).toFixed(decimals);
   const sPadded = s < 10 ? `0${sStr}` : sStr;
   return `${neg ? '-' : ''}${m}:${sPadded}`;
 }

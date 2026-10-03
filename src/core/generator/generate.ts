@@ -618,7 +618,7 @@ class Generator {
   private instruction(node: NodeSpec, ins: InsSpec): void { this.b.instruction(node, ins); this.lineNo++; }
 }
 
-function fmtT(sec: number): string { const m = Math.floor(sec / 60), s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; }
+function fmtT(sec0: number): string { const sec = Math.round(sec0); const m = Math.floor(sec / 60), s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; }
 
 /** GEN-008 self-check: one route exit per intersection, consistent with the callout band or the main-road rule. */
 export function checkRouteExits(sc: Scenario, rule: 'pavement-first' | 'straight-as-possible' = 'pavement-first'): string[] {

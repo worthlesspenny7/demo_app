@@ -33,9 +33,9 @@ describe('drill curriculum', () => {
     expect(isUnlocked(drillById('D12')!, { D11: 1 })).toBe(false); expect(isUnlocked(drillById('D12')!, { D11: 1, D15: 1, D16: 1 })).toBe(true);
     expect(isUnlocked(drillById('D13')!, { D12: 1 })).toBe(true);
   });
-  it('DRILL-005 aids defaults: rung 3 for D01-D05 Bronze, rung 1 for D18/D11 Bronze, rung 0 for D12+; legal mode has no aids', () => {
+  it('DRILL-005 aids defaults: rung 3 for D01-D05 Bronze, rung 2 for D18/D11 Bronze (coarse pace, the cliff fix), rung 0 for D12+; legal mode has no aids', () => {
     for (const id of ['D01', 'D03', 'D04', 'D05']) expect(drillById(id)!.tiers[0]!.aids.rung).toBe(3);
-    expect(drillById('D18')!.tiers[0]!.aids.rung).toBe(1); expect(drillById('D11')!.tiers[0]!.aids.rung).toBe(1);
+    expect(drillById('D18')!.tiers[0]!.aids.rung).toBe(2); expect(drillById('D11')!.tiers[0]!.aids.rung).toBe(2); expect(drillById('D11')!.tiers[1]!.aids.rung).toBe(1); expect(drillById('D11')!.tiers[2]!.aids.rung).toBe(0);
     for (const id of ['D12', 'D13']) for (const t of drillById(id)!.tiers) expect(t.aids.rung).toBe(0);
     const legal = aidsForRung(0); expect(legal).toEqual(LEGAL_AIDS); expect(legal.paceBar).toBe(false); expect(legal.countdown).toBe(false); expect(legal.cumulativeTimes).toBe(false); expect(legal.showSpeedo).toBe('marks');
   });

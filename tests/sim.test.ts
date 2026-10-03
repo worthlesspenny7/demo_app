@@ -221,3 +221,21 @@ describe('stops and pauses end to end', () => {
     expect(leg.error!).toBeGreaterThanOrEqual(Math.floor(loss) - 1); expect(leg.error!).toBeLessThanOrEqual(Math.ceil(loss) + 1);
   });
 });
+
+describe('stop records separate the navigator dwell from traffic holds', () => {
+  it('SIM-032 goDwell is the dwell at the go call and trafficWait is the hold after it; dwell = goDwell + trafficWait', () => {
+    const sc: Scenario = { ...new ScenarioBuilder({ startTime: T0, driver: quiet }).start(35).advanceMiles(0.5).stop('S', 35).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(), trafficWaitProbability: 1 };
+    const sim = new Simulator(sc); startLikeOracle(sim);
+    stepUntil(sim, () => sim.waitingForGo, 300);
+    sim.step(7); sim.act({ type: 'call.go' });
+    runToEnd(sim);
+    const st = sim.result().attribution[0]!.stops[0]!;
+    expect(st.goDwell).toBeCloseTo(7, 0);
+    expect(st.trafficWait).toBeGreaterThanOrEqual(0); expect(st.trafficWait).toBeLessThan(21);
+    expect(st.dwell).toBeCloseTo(st.goDwell + st.trafficWait, 1);
+    // no traffic: trafficWait is 0 and goDwell equals dwell
+    const sc2: Scenario = { ...sc, trafficWaitProbability: 0 };
+    const sim2 = new Simulator(sc2); startLikeOracle(sim2); stepUntil(sim2, () => sim2.waitingForGo, 300); sim2.step(7); sim2.act({ type: 'call.go' }); runToEnd(sim2);
+    const st2 = sim2.result().attribution[0]!.stops[0]!; expect(st2.trafficWait).toBe(0); expect(st2.goDwell).toBeCloseTo(st2.dwell, 1);
+  });
+});

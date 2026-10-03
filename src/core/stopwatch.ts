@@ -12,7 +12,11 @@ export class Stopwatch {
   constructor(readonly kind: WatchKind = 'analog', dialSeconds = 60) { this.dialSeconds = dialSeconds; }
   setBezel(seconds: number): void { const d = this.dialSeconds; this.bezel = ((Math.round(seconds * 10) / 10) % d + d) % d; }
   /** Seconds until the sweep hand reaches the bezel index (wraps on the dial). */
-  bezelRemaining(now: number): number { const d = this.dialSeconds; const pos = this.elapsed(now) % d; return ((this.bezel - pos) % d + d) % d; }
+  bezelRemaining(now: number): number {
+    const d = this.dialSeconds; const pos = this.elapsed(now) % d; const r = ((this.bezel - pos) % d + d) % d;
+    // N6: float noise at the index (20.200000000000003 vs 20.2) must read 0.0 at the index, never a wrapped 60.0
+    return r < 1e-6 || r > d - 1e-6 ? 0 : r;
+  }
 
   /** Raw elapsed seconds at simulator time `now`. */
   elapsed(now: number): number {
@@ -45,5 +49,5 @@ export class RallyClock {
   tod(now: number): number { return now; }
   setBezel(seconds: number): void { this.bezel = ((Math.round(seconds) % 60) + 60) % 60; }
   /** Seconds until the second hand reaches the bezel index. */
-  bezelRemaining(now: number): number { const sec = now % 60; return ((this.bezel - sec) % 60 + 60) % 60; }
+  bezelRemaining(now: number): number { const sec = now % 60; const r = ((this.bezel - sec) % 60 + 60) % 60; return r < 1e-6 || r > 60 - 1e-6 ? 0 : r; }
 }

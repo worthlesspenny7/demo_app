@@ -164,3 +164,23 @@ describe('re-validation specs (2026-10-03)', () => {
     expect(drillById('D07')!.scenario(1, 2).car.a0).toBe(FORD_1939.a0);
   });
 });
+
+describe('check-off honesty', () => {
+  it('DRV-019 "Did the turn" only after a called turn; no call at a turn line says so; off-route says nothing', async () => {
+    const { ScenarioBuilder, EXITS } = await import('../src/core/builder.js');
+    const { DRIVER_EXPERT, aidsForRung } = await import('../src/core/course.js');
+    const { hms } = await import('../src/core/units.js');
+    const { stepUntil, runToEnd, startLikeOracle, nodeS } = await import('./helpers.js');
+    const mk = (route: 'turn' | 'straight') => new ScenarioBuilder({ startTime: hms(8, 0, 0), driver: { ...DRIVER_EXPERT, inconsistency: 0 }, excursionFt: 1200, aids: aidsForRung(2) }).start(45).advanceMiles(0.6).instruction({ exits: EXITS.sideRoad('R', { route }), sightDistance: 700 }, { turn: route === 'turn' ? 'R' : 'S', speed: 35 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+    const texts = (sim: Simulator) => sim.events.filter(e => e.type === 'driver').map(e => String(e.detail?.text));
+    // called in time and taken
+    const ok = new Simulator(mk('turn')); startLikeOracle(ok); const s = nodeS(ok.sc, 'n2'); stepUntil(ok, () => ok.car.s >= s - 600); ok.act({ type: 'call.turn', dir: 'R' }); runToEnd(ok);
+    expect(texts(ok).some(t => /Did the turn, line 2/.test(t))).toBe(true);
+    // no call: the car goes straight (off route) and the driver must not claim the turn
+    const none = new Simulator(mk('turn')); startLikeOracle(none); runToEnd(none);
+    expect(texts(none).some(t => /Did the turn/.test(t))).toBe(false); expect(none.offCourseCount).toBeGreaterThanOrEqual(1);
+    // a turn line whose route is actually straight-through ('S'): no call is fine, he just checks it off
+    const st = new Simulator(mk('straight')); startLikeOracle(st); runToEnd(st);
+    expect(texts(st).some(t => /Did that one, line 2/.test(t))).toBe(true); expect(st.offCourseCount).toBe(0);
+  });
+});

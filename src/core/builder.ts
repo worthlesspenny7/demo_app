@@ -86,7 +86,7 @@ export function describeInstruction(spec: InsSpec, node: NodeSpec): string {
   else if (spec.speed !== undefined) parts.push(`Speed ${spec.speed}`);
   return parts.join('. ') || 'Continue';
 }
-function fmtT(sec: number): string { const m = Math.floor(sec / 60), s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; }
+function fmtT(sec0: number): string { const sec = Math.round(sec0); const m = Math.floor(sec / 60), s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; }
 
 export class ScenarioBuilder {
   private nodes: Node[] = [];

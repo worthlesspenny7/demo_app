@@ -67,7 +67,7 @@ export interface Observation {
 export interface SimEvent { tod: number; s: number; type: string; detail?: Record<string, unknown> }
 
 export type Bucket = 'cruise' | 'stop' | 'speedChange' | 'timedChange' | 'hazard' | 'offCourse' | 'turn' | 'start' | 'ta';
-export interface LegAttribution { legIndex: number; buckets: Record<Bucket, number>; cruiseSeconds: number; meanSpeedRatio: number; stops: { nodeId: string; line: number | null; pause: number; actualCost: number; dwell: number; vIn: number; vOut: number; turn: string | null }[] }
+export interface LegAttribution { legIndex: number; buckets: Record<Bucket, number>; cruiseSeconds: number; meanSpeedRatio: number; stops: { nodeId: string; line: number | null; pause: number; actualCost: number; dwell: number; /** dwell up to the navigator's go call (the part the navigator controls) */ goDwell: number; /** seconds the driver was held by traffic after the go call (ledger-eligible, not the navigator's error) */ trafficWait: number; vIn: number; vOut: number; turn: string | null }[] }
 
 export interface StageResult {
   scenarioId: string;
@@ -169,7 +169,7 @@ export class Simulator {
   private cruiseDt = 0; private cruiseDs = 0; private cruiseGhostDs = 0;
   private legStops: LegAttribution['stops'] = [];
   attribution: LegAttribution[] = [];
-  private curStop: { nodeId: string; line: number | null; pause: number; startTod: number; dwellStart: number | null; dwell: number; vIn: number; vOut: number; turn: string | null } | null = null;
+  private curStop: { nodeId: string; line: number | null; pause: number; startTod: number; dwellStart: number | null; dwell: number; goCalledAt: number | null; vIn: number; vOut: number; turn: string | null } | null = null;
   private rampTarget: number | null = null; private rampKind: 'speedChange' | 'timedChange' | null = null;
   private lastSpeedChangeWasTimed = false;
   private timedChange: { atS: number; atTod: number; nodeId: string } | null = null;
@@ -246,6 +246,7 @@ export class Simulator {
         this.log('call.go');
         if (this.phase === 'preread') { this.depart(); break; }
         if (this.waitingForGo && (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish')) {
+          if (this.curStop && this.curStop.goCalledAt === null) this.curStop.goCalledAt = this.tod;
           if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); this.log('traffic', { wait: this.trafficClearTod - this.tod, ledgerEligible: true }); }
           else { this.say('Going', 'readback'); this.release(this.waitReason); }
         }
@@ -291,7 +292,7 @@ export class Simulator {
     if (this.sc.aids.cumulativeTimes) { const ins = this.sc.book[this.currentLine - 1]; if (ins) aids.cumulativePerfectAtNextLine = ghostTimeAt(this.ghost, nodeById(this.sc.course, ins.nodeId).s) - this.sc.startTime; }
     return {
       phase: this.phase, tod: this.tod, secondsToStart: this.sc.startTime - this.tod,
-      stopwatch: { kind: this.watch.kind, running: this.watch.running, reading: this.watch.reading(this.tod), laps: [...this.watch.laps], bezel: this.watch.bezel, bezelRemaining: Math.round(this.watch.bezelRemaining(this.tod) * 5) / 5, dialSeconds: this.watch.dialSeconds },
+      stopwatch: { kind: this.watch.kind, running: this.watch.running, reading: this.watch.reading(this.tod), laps: [...this.watch.laps], bezel: this.watch.bezel, bezelRemaining: (Math.round(this.watch.bezelRemaining(this.tod) * 5) / 5) % this.watch.dialSeconds, dialSeconds: this.watch.dialSeconds },
       ledger: this.ledger,
       bezel: this.clock.bezel,
       speedo: { reading: this.navigatorSpeedoReading(), kind: this.sc.speedo.kind },
@@ -503,7 +504,7 @@ export class Simulator {
     this.car.step(dt, targetTrue, stopAt);
     if (stopAt !== null && node && this.car.v === 0 && Math.abs(this.car.s - stopAt) <= 2 && !this.waitingForGo) {
       this.beginWait(node);
-      if (this.goRequestedEarly) { this.goRequestedEarly = false; if (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish') { if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); } else { this.say('Going', 'readback'); this.release(this.waitReason); } } }
+      if (this.goRequestedEarly) { this.goRequestedEarly = false; if (this.curStop && this.curStop.goCalledAt === null) this.curStop.goCalledAt = this.tod; if (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish') { if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); } else { this.say('Going', 'readback'); this.release(this.waitReason); } } }
       this.car.step(0, 0, stopAt); return;
     }
     if (this.pullover && this.car.v === 0) { if (!this.waitingForGo) { this.waitingForGo = true; this.waitReason = 'finish'; this.waitStartTod = this.tod; this.log('pulledOver'); } }
@@ -516,6 +517,7 @@ export class Simulator {
   private waitNodeId: string | null = null;
   private trafficClearTod = 0;
   private goPending = false;
+  private turnConsumed = false;
   private goRequestedEarly = false;
 
   private mustStopAt(node: Node): boolean {
@@ -563,7 +565,7 @@ export class Simulator {
     const node = this.nextNode();
     if (node && !this.curStop && this.car.mode === 'stopping' && this.mustStopAt(node) && !this.releasedNodeId && !this.isRestartNode(node) && node.kind !== 'finish') {
       const ins = this.sc.book.find(i => i.nodeId === node.id);
-      this.curStop = { nodeId: node.id, line: ins?.n ?? null, pause: ins?.pause ?? 0, startTod: this.tod, dwellStart: null, dwell: 0, vIn: Math.round(this.car.mph()), vOut: ins?.timed ? ins.timed.holdSpeed : ins?.speed ?? Math.round(this.car.mph()), turn: ins?.turn ?? null };
+      this.curStop = { nodeId: node.id, line: ins?.n ?? null, pause: ins?.pause ?? 0, startTod: this.tod, dwellStart: null, dwell: 0, goCalledAt: null, vIn: Math.round(this.car.mph()), vOut: ins?.timed ? ins.timed.holdSpeed : ins?.speed ?? Math.round(this.car.mph()), turn: ins?.turn ?? null };
       this.stopBucketAtStopStart = this.buckets.stop;
       this.log('stop.begin', { nodeId: node.id });
     }
@@ -602,7 +604,8 @@ export class Simulator {
   private closeStop(): void {
     if (!this.curStop) return;
     const cost = this.buckets.stop; // bucket since leg start; approximate per-stop by delta
-    this.legStops.push({ nodeId: this.curStop.nodeId, line: this.curStop.line, pause: this.curStop.pause, actualCost: cost - this.stopBucketAtStopStart, dwell: this.curStop.dwell, vIn: this.curStop.vIn, vOut: this.curStop.vOut, turn: this.curStop.turn });
+    const goDwell = this.curStop.goCalledAt !== null && this.curStop.dwellStart !== null ? Math.max(0, this.curStop.goCalledAt - this.curStop.dwellStart) : this.curStop.dwell;
+    this.legStops.push({ nodeId: this.curStop.nodeId, line: this.curStop.line, pause: this.curStop.pause, actualCost: cost - this.stopBucketAtStopStart, dwell: this.curStop.dwell, goDwell, trafficWait: Math.max(0, this.curStop.dwell - goDwell), vIn: this.curStop.vIn, vOut: this.curStop.vOut, turn: this.curStop.turn });
     this.log('stop.end', { nodeId: this.curStop.nodeId, dwell: this.curStop.dwell });
     this.curStop = null;
   }
@@ -638,7 +641,6 @@ export class Simulator {
     const ins = this.sc.book.find(i => i.nodeId === n.id);
     if (ins) {
       this.executed.add(ins.n); this.lastExecutedLine = ins.n;
-      if (this.sc.aids.checkOff && ins.section !== 'start') this.say(`Did ${ins.turn ? 'the turn' : ins.pause ? 'the stop' : 'that one'}, line ${ins.n}`, 'info');
       if (this.sc.aids.autoAdvanceLine) this.currentLine = Math.min(this.sc.book.length, ins.n + 1);
       if (ins.pause) { this.buckets.stop -= ins.pause; if (!this.curStop) { /* pause without a stop node: still credited to stop bucket */ } }
       if (ins.restartTime !== undefined && ins.section === 'restart') {
@@ -652,8 +654,9 @@ export class Simulator {
       else if (ins.speed !== undefined || ins.pause || ins.turn) { this.timedChange = null; } // a later speed/pause/turn line ends any earlier timed segment
       else if (ins.speed !== undefined && this.timedChange && this.tod > this.timedChange.atTod - 60) { /* speed change after a timed segment */ }
     }
+    let offRoute = false; let turnCalledHere = false;
     if (n.kind === 'intersection' && n.exits && n.exits.length) {
-      const chosen = this.chooseExit(n);
+      const chosen = this.chooseExit(n); turnCalledHere = this.turnConsumed; this.turnConsumed = false;
       const angle = Math.abs(chosen.angle);
       let taken = chosen;
       if (angle >= 20) {
@@ -672,6 +675,13 @@ export class Simulator {
         }
       }
       if (!taken.isRoute) this.goOffCourse(n, taken);
+      offRoute = !taken.isRoute;
+    }
+    // Driver check-off (aid): says what he actually did, never "did the turn" when no turn was called or the car went straight on.
+    if (ins && this.sc.aids.checkOff && ins.section !== 'start' && !offRoute) {
+      const what = ins.turn && ins.turn !== 'S' ? (turnCalledHere ? 'the turn' : null) : ins.pause ? 'the stop' : 'that one';
+      if (what) this.say(`Did ${what}, line ${ins.n}`, 'info');
+      else this.say(`Straight on past line ${ins.n}, you did not call a turn`, 'question');
     }
     if (n.control === 'YIELD' || n.control === 'BLINKER') { const cap = mphToFps(n.control === 'YIELD' ? 10 : 20); if (this.car.s >= this.turnZoneEndS || cap < this.turnCap) { this.turnCap = this.car.s < this.turnZoneEndS ? Math.min(cap, this.turnCap) : cap; this.turnZoneEndS = Math.max(this.turnZoneEndS, n.s + 40); if (this.car.v > this.turnCap) this.car.v = this.turnCap; } }
     if (n.kind === 'finish' && this.waitReason !== 'finish') { /* finish banner: course ends at lengthFt */ }
@@ -697,7 +707,7 @@ export class Simulator {
       const dir = this.pendingTurn;
       const band = bandFor(dir);
       const cands = roads.filter(e => e.angle >= band[0] && e.angle <= band[1]).sort((a, b) => Math.abs(a.angle - band[2]) - Math.abs(b.angle - band[2]));
-      if (cands.length) { this.pendingTurn = null; this.log('turn', { dir, angle: cands[0]!.angle, route: cands[0]!.isRoute }); return cands[0]!; }
+      if (cands.length) { this.pendingTurn = null; this.turnConsumed = true; this.log('turn', { dir, angle: cands[0]!.angle, route: cands[0]!.isRoute }); return cands[0]!; }
       if (dir === 'S' || dir === 'JL' || dir === 'JR') this.pendingTurn = null;
       else this.say(`No ${turnWord(dir).toLowerCase()} here, staying on`, 'question');
     }
