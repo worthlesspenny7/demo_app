@@ -6,7 +6,13 @@ export class Stopwatch {
   private elapsedAtStop = 0;
   private startedAt: number | null = null;
   laps: number[] = [];
-  constructor(readonly kind: WatchKind = 'analog') {}
+  /** Countdown bezel index (seconds on the dial). Analog only; dial is `dialSeconds` long. */
+  bezel = 0;
+  readonly dialSeconds: number;
+  constructor(readonly kind: WatchKind = 'analog', dialSeconds = 60) { this.dialSeconds = dialSeconds; }
+  setBezel(seconds: number): void { const d = this.dialSeconds; this.bezel = ((Math.round(seconds * 10) / 10) % d + d) % d; }
+  /** Seconds until the sweep hand reaches the bezel index (wraps on the dial). */
+  bezelRemaining(now: number): number { const d = this.dialSeconds; const pos = this.elapsed(now) % d; return ((this.bezel - pos) % d + d) % d; }
 
   /** Raw elapsed seconds at simulator time `now`. */
   elapsed(now: number): number {

@@ -135,6 +135,8 @@ export interface Scenario {
   aids: AidsConfig;
   /** Off-course excursion length (ft) used when a wrong exit is taken. */
   excursionFt?: number;
+  /** Probability that cross traffic holds the car at a STOP for an extra 2-12 s. */
+  trafficWaitProbability?: number;
   tags?: string[];
 }
 

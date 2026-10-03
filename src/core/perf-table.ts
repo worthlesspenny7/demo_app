@@ -20,16 +20,17 @@ export function rampLead(v1: number, v2: number, car: CarSpec): number { return 
  * Time lost by a full stop from vIn and re-acceleration to vOut with ZERO dwell,
  * compared with the ghost car (which changes speed instantly at the stop line).
  */
-export function stopLoss(vIn: number, vOut: number, car: CarSpec): number {
+export function stopLoss(vIn: number, vOut: number, car: CarSpec, turnCapMph?: number): number {
   const c = new Car(car); c.v = mphToFps(vIn); c.mode = 'cruise';
   const vi = mphToFps(vIn), vo = mphToFps(vOut);
   const line = 3000; // far enough to brake
   let t = 0;
   // approach and stop at the line
-  while (c.mode !== 'stopped' && t < 200) { c.step(DT, vi, line); t += DT; }
+  while ((c.mode as string) !== 'stopped' && t < 200) { c.step(DT, vi, line); t += DT; }
   const sStop = c.s;
-  // accelerate to vOut
-  while (c.v < vo - 0.15 && t < 400) { c.step(DT, vo, null); t += DT; }
+  // accelerate to vOut (capped through the 60 ft turn zone if turning)
+  const cap = turnCapMph !== undefined ? mphToFps(turnCapMph) : Infinity;
+  while (c.v < vo - 0.15 && t < 400) { c.step(DT, c.s < line + 60 ? Math.min(vo, cap) : vo, null); t += DT; }
   // continue a little at vOut to be safe, then compare with ghost: ghost spends (line/vi) + ((c.s - line)/vo)
   const ghost = line / vi + (c.s - line) / vo;
   void sStop;

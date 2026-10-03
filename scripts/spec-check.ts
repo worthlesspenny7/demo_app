@@ -10,7 +10,7 @@ function walk(dir: string): string[] {
   });
 }
 let tests = '';
-try { tests = walk('tests').map(p => readFileSync(p, 'utf8')).join('\n'); } catch { /* no tests yet */ }
+for (const dir of ['tests', 'e2e']) { try { tests += walk(dir).map(p => readFileSync(p, 'utf8')).join('\n'); } catch { /* none yet */ } }
 const missing = ids.filter(id => !tests.includes(id));
 const covered = ids.length - missing.length;
 console.log(`specs: ${ids.length}, covered: ${covered}, missing: ${missing.length}`);

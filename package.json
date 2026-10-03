@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "spec:check": "tsx scripts/spec-check.ts"
+    "spec:check": "tsx scripts/spec-check.ts",
+    "test:e2e": "playwright test"
   },
   "repository": {
     "type": "git",
@@ -17,6 +18,7 @@
   "type": "module",
   "private": "true",
   "devDependencies": {
+    "@playwright/test": "1.56",
     "@types/node": "^26.6.4",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

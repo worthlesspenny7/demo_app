@@ -6,6 +6,8 @@ import {
 } from './course.js';
 import { milesToFt, mphToFps } from './units.js';
 
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+
 export const PERFECT_TIMEWISE: SpeedoSpec = { kind: 'timewise', gain: 1, offset: 0, quad: 0, tau: 0.3, bounce: 0 };
 export const STOCK_1939_SPEEDO: SpeedoSpec = { kind: 'mechanical', gain: 1.03, offset: 1.0, quad: 0.0003, tau: 1.0, bounce: 0.7 };
 
@@ -32,7 +34,7 @@ export interface InsSpec {
 export interface BuilderOptions {
   id?: string; name?: string; seed?: number; startTime?: number;
   car?: CarSpec; speedo?: SpeedoSpec; driver?: DriverSpec; rules?: Partial<RulesConfig>; aids?: AidsConfig;
-  prereadSeconds?: number; excursionFt?: number; tags?: string[];
+  prereadSeconds?: number; excursionFt?: number; tags?: string[]; trafficWaitProbability?: number;
 }
 
 /** Standard exits for common intersections (angle: negative = left). */
@@ -94,15 +96,17 @@ export class ScenarioBuilder {
   private s = 0;
   private nid = 0;
   private cpid = 0;
+  private trafficWaitProbability: number;
   readonly opts: Required<Pick<BuilderOptions, 'id' | 'name' | 'seed' | 'startTime' | 'car' | 'speedo' | 'driver' | 'aids' | 'prereadSeconds' | 'excursionFt'>> & { rules: RulesConfig; tags: string[] };
 
   constructor(o: BuilderOptions = {}) {
     this.opts = {
       id: o.id ?? 'scenario', name: o.name ?? 'Scenario', seed: o.seed ?? 1, startTime: o.startTime ?? 8 * 3600,
       car: o.car ?? FORD_1939, speedo: o.speedo ?? PERFECT_TIMEWISE, driver: o.driver ?? DRIVER_EXPERT,
-      rules: { ...DEFAULT_RULES, ...(o.rules ?? {}) }, aids: o.aids ?? TRAINING_AIDS, prereadSeconds: o.prereadSeconds ?? 0,
+      rules: { ...DEFAULT_RULES, ...(o.rules ?? {}) }, aids: o.aids ?? TRAINING_AIDS, prereadSeconds: o.prereadSeconds ?? 30,
       excursionFt: o.excursionFt ?? 2640, tags: o.tags ?? [],
     };
+    this.trafficWaitProbability = o.trafficWaitProbability ?? 0;
   }
 
   get position(): number { return this.s; }
@@ -158,7 +162,7 @@ export class ScenarioBuilder {
     return this.instruction({ kind: 'finish', control: 'none', sightDistance: 400, label: 'Finish banner' }, { section: 'finish', text: 'FINISH. Stop at Observation Checkpoint' });
   }
 
-  hazard(h: Omit<Hazard, 's'> & { s?: number }): this {
+  hazard(h: DistributiveOmit<Hazard, 's'> & { s?: number }): this {
     this.hazards.push({ ...h, s: h.s ?? this.s } as Hazard);
     return this;
   }
@@ -174,7 +178,7 @@ export class ScenarioBuilder {
     return {
       id: this.opts.id, name: this.opts.name, seed: this.opts.seed, car: this.opts.car, speedo: this.opts.speedo, driver: this.opts.driver,
       course: { nodes: [...this.nodes].sort((a, b) => a.s - b.s), lengthFt }, book: this.book, checkpoints: [...this.checkpoints].sort((a, b) => a.s - b.s), hazards: this.hazards,
-      startTime: this.opts.startTime, prereadSeconds: this.opts.prereadSeconds, rules: this.opts.rules, aids: this.opts.aids, excursionFt: this.opts.excursionFt, tags: this.opts.tags,
+      startTime: this.opts.startTime, prereadSeconds: this.opts.prereadSeconds, rules: this.opts.rules, aids: this.opts.aids, excursionFt: this.opts.excursionFt, tags: this.opts.tags, trafficWaitProbability: this.trafficWaitProbability,
     };
   }
 }
