@@ -6,17 +6,19 @@ import { drawTimeline } from '../render/timeline.js';
 import { prepare, themeFromCss } from '../render/common.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
-import { app, el, escapeHtml, sourceHash } from '../state.js';
+import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
+import { nextDrill } from '../viewmodels/curriculum.js';
 
 const BUCKET_COLOR: Record<Bucket, string> = { cruise: '#4fd1c5', stop: '#f0b35b', speedChange: '#9b8cff', timedChange: '#ff8fab', hazard: '#ef5a5a', offCourse: '#c0392b', turn: '#e67e22', start: '#7f8c8d', ta: '#4cc38a' };
 
 export function renderDebrief(root: HTMLElement): void {
-  const last = app.lastResult;
+  const last = app.lastResult ?? restoreLastRun();
   if (!last) { root.replaceChildren(el('div', { class: 'page' }, el('h1', {}, 'Debrief'), el('p', {}, 'No finished run yet. ', el('a', { href: '#/' }, 'Pick a drill')))); return; }
   const { run, result } = last;
   let history: Record<string, number[]> = {}; try { history = app.progress.maneuverHistory(); } catch { history = {}; }
   const vm: DebriefVm = debriefViewModel(result, run.scenario, { history });
   const page = el('div', { class: 'page debrief', id: 'debrief' });
+  if (run.aborted) page.append(el('div', { class: 'banner', id: 'aborted' }, el('b', {}, 'Run ended early: '), 'this run was ended before the finish, so it is not recorded (no stars, history or bias entries). The numbers below describe only what was driven.'));
   // rubric
   let rubricHtml = '';
   if (run.drill) { try { const rb = run.drill.rubric(result, run.scenario); rubricHtml = `<div class="pill" style="font-size:16px;padding:6px 12px">${'★'.repeat(rb.stars)}${'☆'.repeat(3 - rb.stars)} ${escapeHtml(rb.headline)}</div><ul>${rb.feedback.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>`; } catch { rubricHtml = ''; } }
@@ -28,18 +30,28 @@ export function renderDebrief(root: HTMLElement): void {
   const tb = el('tbody', {});
   for (const r of vm.rows) tb.append(el('tr', { class: r.ace ? 'ace' : '' }, el('td', {}, `${r.legIndex} (${r.cpId})`), el('td', { class: 'mono' }, r.perfect), el('td', { class: 'mono' }, r.actual), el('td', { class: 'num' }, r.errorText), el('td', { class: 'num' }, String(r.penalty)), el('td', {}, r.ace ? 'ACE' : r.missed ? 'missed' : r.sightZone ? 'sight-zone penalty' : r.taCredit ? `TA credit ${r.taCredit}` : '')));
   table.append(tb);
-  head.append(headline, el('div', { class: 'panel' }, el('h3', {}, 'Checkpoints'), table, el('div', { class: 'tip', id: 'tip', style: 'margin-top:10px' }, el('b', {}, 'Fix this next: '), vm.tip)));
+  head.append(headline, el('div', { class: 'panel' }, el('h3', {}, 'Checkpoints'), table, el('div', { class: 'tip', id: 'tip', style: 'margin-top:10px' }, el('b', {}, 'Fix this next: '), vm.tip), ...vm.tips.slice(1).map(t => el('div', { class: 'tip', style: 'margin-top:6px' }, el('b', {}, 'Also: '), t))));
   page.append(head);
   // actions
   const actions = el('div', { style: 'display:flex;gap:8px;margin:14px 0' });
-  const retry = el('button', { class: 'primary', id: 'retry' }, 'Retry this run'); retry.onclick = () => { location.hash = '#/'; setTimeout(() => { location.hash = sourceHash(run.source); }, 0); };
-  const next = el('button', { id: 'next' }, run.source.kind === 'drill' ? 'Next seed' : 'Next scenario'); next.onclick = () => { const s = run.source; location.hash = '#/'; setTimeout(() => { location.hash = sourceHash({ ...s, seed: s.seed + 1 }); }, 0); };
+  const retry = el('button', { class: 'primary', id: 'retry' }, 'Retry this run'); retry.onclick = () => { location.hash = sourceHash(run.source); };
+  const next = el('button', { id: 'next' }, run.source.kind === 'drill' ? 'Next seed' : 'Next scenario'); next.onclick = () => { const s = run.source; location.hash = sourceHash({ ...s, seed: s.seed + 1 }); };
   const home = el('button', {}, 'Home'); home.onclick = () => { location.hash = '#/'; };
   actions.append(retry, next, home);
-  if (run.source.kind === 'drill') { try { const ds = allDrills(); const i = ds.findIndex(d => d.id === (run.source as { drillId: string }).drillId); const nd = ds[i + 1]; if (nd && nd.kind === 'drive') { const b = el('button', {}, `Next drill: ${nd.id}`); b.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: nd.id, tier: 0, seed: 1 }); }; actions.append(b); } } catch { /* none */ } }
+  if (run.source.kind === 'drill') {
+    try {
+      const ds = allDrills(); const prog = app.progress.load(); const best: Record<string, number> = {}; for (const [id, p] of Object.entries(prog.drills)) best[id] = p.stars;
+      const nd = nextDrill(run.source.drillId, ds, best);
+      if (nd) {
+        const b = el('button', { id: 'nextdrill', class: nd.locked ? 'locked-btn' : '' }, nd.locked ? `🔒 Next drill: ${nd.drill.id} (needs ${nd.needs})` : `Next drill: ${nd.drill.id}`);
+        if (nd.locked) b.setAttribute('disabled', ''); else b.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: nd.drill.id, tier: 0, seed: 1 }); };
+        actions.append(b);
+      }
+    } catch { /* none */ }
+  }
   page.append(actions);
   // attribution bars + timeline
-  const two = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1.3fr' });
+  const two = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1.3fr;align-items:start' });
   const bars = el('div', { class: 'panel bars' }, el('h3', {}, 'Seconds lost by cause, per leg'));
   const maxAbs = Math.max(5, ...vm.legs.flatMap(l => l.segments.map(s => Math.abs(s.seconds))), ...vm.legs.map(l => Math.abs(l.sum)));
   for (const l of vm.legs) {
@@ -57,6 +69,7 @@ export function renderDebrief(root: HTMLElement): void {
   const worked = el('div', { class: 'panel worked', id: 'worked', style: 'margin-top:14px' }, el('h3', {}, 'Worked arithmetic per maneuver'));
   const ul = el('ul', {});
   for (const s of vm.stops) ul.append(el('li', {}, `Stop, line ${s.line ?? '?'}: entry ${s.entrySpeed ?? '?'} / exit ${s.exitSpeed ?? '?'}; pause ${s.pause}; car loss ${s.cardLoss?.toFixed(1) ?? '?'} s; ideal dwell ${s.correctDwell?.toFixed(1) ?? '?'} s; your dwell ${s.yourDwell.toFixed(1)} s → ${sgn(s.delta)} s`));
+  for (const r of vm.restarts) ul.append(el('li', {}, r.text));
   for (const t of vm.timed) ul.append(el('li', {}, t.text));
   for (const t of vm.landmarks) ul.append(el('li', {}, t.text));
   for (const t of vm.turns) ul.append(el('li', { class: t.late ? 'danger' : '' }, t.text));
@@ -67,7 +80,7 @@ export function renderDebrief(root: HTMLElement): void {
   const cf = el('div', { class: 'panel', id: 'counterfactuals', style: 'margin-top:14px' }, el('h3', {}, 'What if'), el('p', { class: 'muted' }, 'Each row re-runs your action log through the simulator with one thing changed.'));
   const cfBody = el('div', {}, el('div', { class: 'muted' }, 'Replaying…')); cf.append(cfBody); page.append(cf);
   // ledger + bias/noise
-  const three = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1fr;margin-top:14px' });
+  const three = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1fr;margin-top:14px;align-items:start' });
   const ledger = el('div', { class: 'panel' }, el('h3', {}, 'Your ledger vs the truth'), el('p', {}, vm.ledger.text));
   if (vm.ledger.rows.length) { const t = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Time'), el('th', { class: 'num' }, 'You said'), el('th', { class: 'num' }, 'Truth'), el('th', { class: 'num' }, 'Off by')))); const b = el('tbody', {}); for (const r of vm.ledger.rows) b.append(el('tr', {}, el('td', { class: 'mono' }, formatClock(r.tod)), el('td', { class: 'num' }, sgn(r.believed)), el('td', { class: 'num' }, sgn(r.truth)), el('td', { class: `num ${Math.abs(r.diff) > 3 ? 'danger' : 'ok'}` }, sgn(r.diff)))); t.append(b); ledger.append(t); }
   const bias = el('div', { class: 'panel' }, el('h3', {}, 'Bias or noise?'), el('p', { class: 'muted' }, 'Bias (|mean| > sd) is fixed by a number on the card; noise only by practice. History: your last 10 runs.'));

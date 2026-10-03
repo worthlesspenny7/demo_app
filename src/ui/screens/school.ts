@@ -6,7 +6,7 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
   const page = el('div', { class: 'page' });
   const lesson = LESSONS.find(l => l.id === lessonId);
   if (!lesson) {
-    page.append(el('h1', {}, 'School'), el('p', { class: 'muted' }, 'Six readings, three or four minutes each, one check question at the end. Then go drive.'));
+    page.append(el('h1', {}, 'School'), el('p', { class: 'muted' }, `${LESSONS.length} readings, three or four minutes each, one check question at the end. Then go drive.`));
     const cards = el('div', { class: 'cards' });
     for (const l of LESSONS) {
       const done = app.progress.lessonDone(l.id);
@@ -34,7 +34,7 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
     const nav = el('div', { class: 'actions', style: 'display:flex;gap:8px;margin-top:12px' });
     const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/school'; }; nav.append(back);
     if (LESSONS[idx + 1]) { const n = el('button', { class: 'primary' }, `Next: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
-    else { const n = el('button', { class: 'primary' }, 'To the cockpit'); n.onclick = () => { location.hash = '#/'; }; nav.append(n); }
+    else { const n = el('button', { class: 'primary' }, 'To the drills'); n.onclick = () => { location.hash = '#/'; }; nav.append(n); }
     box.append(nav); page.append(box);
   }
   root.replaceChildren(page);

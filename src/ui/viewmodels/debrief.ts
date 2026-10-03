@@ -462,7 +462,7 @@ function headlineTip(totals: Record<Bucket, number>, rows: CpRow[], result: Stag
     hazard: `Hazards cost ${n} s. Start the watch when you are held by a light or a train and declare the time allowance (T) before the checkpoint.`,
     offCourse: `Off-course cost ${n} s. Read the CAMEO before the intersection and call the turn 500-600 ft out; when unsure, stop before the leading edge.`,
     turn: `Turns cost ${n} s: the car must slow for a 90; recover by holding +5 mph for (v/5) x the seconds lost (8 s late at 35: 40 mph for 56 s).`,
-    start: late ? `You left the start ${n} s late. Leave on the official second, or a few seconds early to cover the standing-start loss.` : `You left the start ${n} s early. The start-line loss is about 4 s at 35 mph; do not lead by more than that.`,
+    start: late ? `You left the start ${n} s late. Leave on the official second, or a few seconds early to cover the standing-start loss.` : `You left the start ${n} s early. The start-line loss is your car's standing-start loss (about 4-7 s depending on speed); do not lead by more than that.`,
     ta: `Time allowance changed the score by ${n} s. Declare only what the hazard cost; over-declaring is penalised.`,
   };
   return { headline, tip: tips[worst] };

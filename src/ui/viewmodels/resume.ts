@@ -27,7 +27,7 @@ export interface StoredRun {
 export const LIVE_KEY = 'rally-trainer.live-run.v1';
 export const LAST_KEY = 'rally-trainer.last-run.v1';
 
-export interface KeyValueStore { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem(k: string): void }
+export interface KeyValueStore { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem?(k: string): void }
 function defaultStore(): KeyValueStore | null { try { if (typeof localStorage !== 'undefined') { localStorage.getItem(LIVE_KEY); return localStorage; } } catch { /* blocked */ } return null; }
 
 export function saveStored(key: string, run: StoredRun, store: KeyValueStore | null = defaultStore()): boolean {
@@ -43,7 +43,7 @@ export function loadStored(key: string, store: KeyValueStore | null = defaultSto
     return p as StoredRun;
   } catch { return null; }
 }
-export function clearStored(key: string, store: KeyValueStore | null = defaultStore()): void { try { store?.removeItem(key); } catch { /* ignore */ } }
+export function clearStored(key: string, store: KeyValueStore | null = defaultStore()): void { try { store?.removeItem?.(key); } catch { /* ignore */ } }
 
 export function snapshotRun(sim: Simulator, source: StoredSource, extra: { driverSkill: string; watch: 'analog' | 'digital'; annotations: string | null; scaleMax: number; aborted?: boolean }, now = Date.now()): StoredRun {
   return { v: 1, engineVersion: ENGINE_VERSION, source, driverSkill: extra.driverSkill, watch: extra.watch, actions: sim.actions.map(a => ({ tick: a.tick, action: a.action })), tick: sim.tick, annotations: extra.annotations, scaleMax: extra.scaleMax, aborted: extra.aborted, savedAt: now };

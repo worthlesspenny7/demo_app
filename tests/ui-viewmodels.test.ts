@@ -19,6 +19,18 @@ import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
 import { Simulator } from '../src/core/sim.js';
 import type { Instruction } from '../src/core/course.js';
 import { runToEnd, startAtOfficialTime, stepUntil } from './helpers.js';
+import '../src/core/drills/index.js';
+import { drillById, allDrills } from '../src/core/drills/registry.js';
+import { OracleBot, runBot } from '../src/agent/bots.js';
+import { instrumentPolicy, stopCardFor, cardDwell, focusLine, perfCardFor, waitMore, restartLabel } from '../src/ui/viewmodels/cockpitinfo.js';
+import { nextDrill, startPathState, CURRICULUM } from '../src/ui/viewmodels/curriculum.js';
+import { snapshotRun, restoreSim, saveStored, loadStored, LIVE_KEY } from '../src/ui/viewmodels/resume.js';
+import { recordCampaignStage, loadCampaign, campaignSummary } from '../src/ui/viewmodels/campaign.js';
+import { drillHint } from '../src/ui/viewmodels/hints.js';
+import { trapCards, mathCards } from '../src/ui/screens/quiz.js';
+import { headlineTip } from '../src/core/drills/rubrics.js';
+import { workedStops, workedTurns, workedRestarts, rankTips } from '../src/ui/viewmodels/debrief.js';
+import { stopLoss } from '../src/core/perf-table.js';
 
 describe('UI-001 stopwatchViewModel', () => {
   it('UI-001 maps 0.2 s to 2.4 degrees on the 30 s dial and 60 s to one register minute', () => {
@@ -501,5 +513,212 @@ describe('DEBRIEF-004 immediate CP card', () => {
     expect(cpCards(r.events, r.attribution, LEGAL_AIDS, sc)).toEqual([]);
     expect(cpCards(r.events, r.attribution, aidsForRung(1), sc)).toEqual([]);
     expect(cpCards(undefined, undefined, TRAINING_AIDS)).toEqual([]);
+  });
+});
+
+
+// ---------------------------------------------------------------------------------------------------------------------
+// UI fix sprint: one stop loss everywhere, stop card, restart holds, tip ranking, legal mode, resume, campaign, quizzes
+// ---------------------------------------------------------------------------------------------------------------------
+function oracleRun(id: string, seed: number, tier: number) {
+  const d = drillById(id)!; const sc = d.scenario(seed, tier);
+  const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
+  return { d, sc, sim, r };
+}
+
+describe('UI-014 one turn-capped stop loss for the book strip, the perf card and the Debrief (PT-03 W1)', () => {
+  it('UI-014 card dwell == Debrief ideal dwell for every pause line of D03 seeds 1-10, including turning stops', () => {
+    let turning = 0, checked = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const { sc, r } = oracleRun('D03', seed, 0);
+      const vm = debriefViewModel(r, sc);
+      for (const st of vm.stops) {
+        if (st.line === null || !st.pause) continue;
+        const card = stopCardFor(sc, st.line)!;
+        expect(card.loss).toBeCloseTo(st.carLoss!, 6);
+        expect(card.dwell).toBeCloseTo(st.idealDwell!, 6);
+        expect(cardDwell(sc, st.line)).toBeCloseTo(st.idealDwell!, 6);
+        if (sc.book[st.line - 1]!.turn && sc.book[st.line - 1]!.turn !== 'S') { turning++; expect(card.cap).toBe(sc.car.turnSpeedMph.turn); }
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(20); expect(turning).toBeGreaterThan(5);
+  });
+  it('UI-014 the turn cap lowers the dwell: a 90-degree turning stop loses more than the straight stop at the same speeds', () => {
+    const { sc } = oracleRun('D03', 1, 0);
+    const line = sc.book.find(i => i.pause && i.turn === 'L')!;
+    const straight = stopLoss(40, 40, sc.car);
+    expect(stopCardFor(sc, line.n)!.loss).toBeGreaterThan(0);
+    expect(stopLoss(40, 40, sc.car, sc.car.turnSpeedMph.turn)).toBeGreaterThan(straight);
+  });
+  it('UI-015 the Debrief stop rows come from the engine attribution (line, pause, dwell) and agree with the event log', () => {
+    const { sc, r } = oracleRun('D03', 2, 0);
+    const att = r.attribution.flatMap(a => a.stops);
+    const rows = workedStops(r.events, sc, r.attribution);
+    expect(att.length).toBeGreaterThan(3);
+    for (const a of att) { const row = rows.find(x => x.nodeId === a.nodeId)!; expect(row.line).toBe(a.line); expect(row.pause).toBe(a.pause); expect(row.yourDwell).toBeCloseTo(Math.round(a.dwell * 10) / 10, 1); }
+  });
+});
+
+describe('UI-016 stopped line, line focus and the legal-mode policy', () => {
+  it('UI-016 focusLine: the stopped line wins; at rung >= 1 the pointer is last executed + 1; at rung 0 it is the book pointer', () => {
+    const o = (stopped: number | null, cur: number, le: number | null) => ({ stoppedAtLine: stopped, currentLine: cur, driver: { lastExecutedLine: le } });
+    expect(focusLine(o(4, 1, 2), 3, 10)).toEqual({ line: 4, stopped: true });
+    expect(focusLine(o(null, 1, 3), 1, 10)).toEqual({ line: 4, stopped: false });
+    expect(focusLine(o(null, 2, 3), 0, 10)).toEqual({ line: 2, stopped: false });
+    expect(focusLine(o(null, 1, 10), 2, 10)).toEqual({ line: 10, stopped: false });
+  });
+  it('UI-016 a real STOP exposes stoppedAtLine and the card for that line with a wait-more countdown', () => {
+    const { sc } = oracleRun('D03', 1, 0);
+    const sim = new Simulator(sc); startAtOfficialTime(sim);
+    stepUntil(sim, () => sim.observe({ peek: true }).stoppedAtLine !== null, 900);
+    const o = sim.observe({ peek: true });
+    expect(o.stoppedAtLine).toBe(2);
+    const card = perfCardFor(sc, 2, instrumentPolicy(sc.aids))!;
+    expect(card.mode).toBe('answers'); expect(card.stop!.cap).toBe(12);
+    expect(waitMore(card.stop!, 3)).toBeCloseTo(card.stop!.dwell - 3, 6);
+  });
+  it('UI-017 legal mode: rung <= 1 hides digital readouts and the computed card; rung >= 2 keeps them; the card then has only own annotations', () => {
+    expect(instrumentPolicy(aidsForRung(0))).toMatchObject({ digitalReadouts: false, computedCard: false });
+    expect(instrumentPolicy(aidsForRung(1))).toMatchObject({ digitalReadouts: false, computedCard: false });
+    expect(instrumentPolicy(aidsForRung(2))).toMatchObject({ digitalReadouts: true, computedCard: true });
+    expect(instrumentPolicy(aidsForRung(3))).toMatchObject({ digitalReadouts: true, computedCard: true });
+    const { sc } = oracleRun('D03', 1, 0);
+    const legal = perfCardFor(sc, 2, instrumentPolicy(aidsForRung(0)))!;
+    expect(legal.mode).toBe('own'); expect(legal.stop).toBeUndefined(); expect(legal.timed).toBeUndefined();
+  });
+  it('UI-017 restart lines print their out-time and are never a stop card', () => {
+    const sc = drillById('D16')!.scenario(1, 0);
+    const rl = sc.book.filter(i => restartLabel(i));
+    expect(rl.length).toBeGreaterThan(0);
+    expect(restartLabel(rl[0])).toMatch(/^RESTART at \d\d:\d\d:\d\d$/);
+    const card = perfCardFor(sc, rl[0]!.n, instrumentPolicy(sc.aids))!;
+    expect(card.restart).toBeTruthy(); expect(card.stop).toBeUndefined();
+  });
+});
+
+describe('DEBRIEF-005 restart holds, tip ranking and turn callouts', () => {
+  it('DEBRIEF-005 a lunch / restart hold is judged against the out-time, not billed as a stop dwell', () => {
+    const { sc, r } = oracleRun('D16', 1, 0);
+    const vm = debriefViewModel(r, sc);
+    const restartNodes = new Set(sc.book.filter(i => restartLabel(i)).map(i => i.nodeId));
+    expect(vm.restarts.length).toBeGreaterThan(0);
+    for (const s of vm.stops) expect(restartNodes.has(s.nodeId ?? '')).toBe(false);
+    expect(vm.restarts[0]!.text).toMatch(/out-time \d\d:\d\d:\d\d/);
+    expect(Math.abs(vm.restarts[0]!.delta ?? 0)).toBeLessThan(20);
+    expect(vm.bias.rows.find(x => x.type === 'restart')).toBeTruthy();
+    expect(vm.tip).not.toMatch(/subtract \d{2,} more/);
+    expect(workedRestarts(r.events, sc).length).toBe(vm.restarts.length);
+  });
+  it('DEBRIEF-005 the first tip is the engine headline (largest bucket); a perfect Timewise speedo never reads "low"', () => {
+    for (const [id, seed, tier] of [['D03', 1, 0], ['D04', 1, 2], ['D11', 1, 1]] as const) {
+      const d = drillById(id)!; const sc = d.scenario(seed, tier);
+      const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { latency: 1.5 }));
+      const vm = debriefViewModel(r, sc);
+      expect(vm.tips[0]).toBe(headlineTip(r, sc)); expect(vm.tip).toBe(vm.tips[0]);
+      expect(vm.tips.length).toBeLessThanOrEqual(2);
+      if (sc.speedo.kind === 'timewise' && sc.speedo.gain === 1) expect(vm.tips.join(' ')).not.toMatch(/speedometer reads low/i);
+    }
+  });
+  it('DEBRIEF-005 a turn tip never outranks a larger stops bucket; callouts made while stopped are not graded', () => {
+    const { sc, r } = oracleRun('D03', 3, 0);
+    const turns = workedTurns(r.events, sc);
+    expect(turns.length).toBeGreaterThan(0);
+    for (const t of turns) { if (t.whileStopped) { expect(t.late).toBe(false); expect(t.lateBy).toBe(0); } }
+    const vm = debriefViewModel(r, sc);
+    for (const x of vm.bias.errors.turn) expect(x).toBeGreaterThanOrEqual(0);
+    expect(vm.bias.errors.turn.length).toBe(turns.filter(t => !t.whileStopped && t.lateBy !== null).length);
+    // synthetic: a big stops bucket suppresses a turn follow-up
+    const fakeBias = { rows: [{ type: 'turn' as const, label: 't', n: 2, mean: 2, sd: 0, histN: 2, histMean: 2, histSd: 0, verdict: 'bias' as const, fix: 'TURN FIX' }], tip: 'TURN FIX', topType: 'turn' as const, errors: { stop: [], timed: [], landmark: [], turn: [2, 2], cruise: [], restart: [] } };
+    const totals = { cruise: 0, stop: 41, speedChange: 0, timedChange: 0, hazard: 0, offCourse: 0, turn: 3, start: 0, ta: 0 };
+    const simBad = new Simulator(sc); const bad = runBot(simBad, new OracleBot(simBad, { ignoreLosses: true }));
+    expect(headlineTip(bad, sc)).not.toMatch(/^Clean run/);
+    expect(rankTips(bad, sc, true, 'x', fakeBias, totals)).not.toContain('TURN FIX');
+    expect(rankTips(bad, sc, true, 'x', fakeBias, { ...totals, stop: 0, turn: 20 })).toContain('TURN FIX');
+    expect(rankTips(r, sc, true, 'x', fakeBias, { ...totals, stop: 0, turn: 20 })).not.toContain('TURN FIX');   // a clean run gets no follow-up
+  });
+});
+
+describe('UI-018 progress per tier, honest persistence flag, resume and campaign', () => {
+  const mem = (): StorageLike & { map: Map<string, string> } => { const map = new Map<string, string>(); return { map, getItem: k => map.get(k) ?? null, setItem: (k, v) => { map.set(k, v); }, removeItem: k => { map.delete(k); } }; };
+  it('UI-018 stars are stored per tier (Bronze/Silver/Gold), the best across tiers still drives unlocks, runs keep raw seconds', () => {
+    const st = createProgressStore(mem());
+    st.recordRun('D03', { stars: 2, aces: 1, score: 3, tier: 0, raw: 12, unit: 'raw' });
+    st.recordRun('D03', { stars: 3, aces: 0, score: 1, tier: 2, raw: 5, unit: 'raw' });
+    st.recordRun('D03', { stars: 1, aces: 0, score: 4, tier: 0, raw: 20, unit: 'raw' });
+    const p = st.get('D03')!;
+    expect(p.tierStars).toEqual([2, 0, 3]); expect(p.stars).toBe(3); expect(p.bestRaw).toBe(5);
+    expect(st.recentRuns(3).map(r => r.raw)).toEqual([12, 5, 20]);
+  });
+  it('UI-018 C2: a working store reports persistent before anything was written; a throwing store reports false', () => {
+    expect(createProgressStore(mem()).persistent).toBe(true);
+    const bad: StorageLike = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+    expect(createProgressStore(bad).persistent).toBe(false);
+  });
+  it('UI-018 a live run saved as {actions, tick} restores to the identical simulator state (replay)', () => {
+    const d = drillById('D03')!; const sc = d.scenario(1, 0);
+    const sim = new Simulator(sc, { watch: 'analog' });
+    sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.act({ type: 'start' }); sim.act({ type: 'watch.toggle' });
+    for (let i = 0; i < 300; i++) { sim.step(0.1); if (i === 50) sim.act({ type: 'call.speed', mph: 36 }); if (i === 120) sim.act({ type: 'line.set', n: 3 }); }
+    const snap = snapshotRun(sim, { kind: 'drill', drillId: 'D03', tier: 0, seed: 1 }, { driverSkill: 'scenario', watch: 'analog', annotations: null, scaleMax: 1 });
+    const store = mem(); expect(saveStored(LIVE_KEY, snap, store)).toBe(true);
+    const back = loadStored(LIVE_KEY, store)!;
+    const re = restoreSim(sc, back);
+    expect(re.tick).toBe(sim.tick);
+    const a = sim.observe({ peek: true }), b = re.observe({ peek: true });
+    expect(b.tod).toBe(a.tod); expect(b.currentLine).toBe(a.currentLine); expect(b.stopwatch.reading).toBe(a.stopwatch.reading); expect(b.speedo.reading).toBe(a.speedo.reading); expect(b.driver.targetIndicated).toBe(a.driver.targetIndicated);
+    // and both continue identically
+    sim.step(30); re.step(30);
+    expect(re.observe({ peek: true }).tod).toBe(sim.observe({ peek: true }).tod); expect(re.car.s).toBe(sim.car.s);
+    expect(() => restoreSim(sc, { ...back, engineVersion: '0.0.1' })).toThrow();
+  });
+  it('UI-020 D13 campaign: nine stages, best score per stage kept, cumulative total, per tier', () => {
+    const store = mem();
+    recordCampaignStage({ stage: 1, tier: 0, raw: 60, score: 50.7, aces: 1 }, store, 1);
+    recordCampaignStage({ stage: 1, tier: 0, raw: 90, score: 76.1, aces: 0 }, store, 2);   // worse replay: ignored
+    recordCampaignStage({ stage: 2, tier: 0, raw: 40, score: 33.8, aces: 2 }, store, 3);
+    recordCampaignStage({ stage: 1, tier: 1, raw: 10, score: 8.5, aces: 0 }, store, 4);
+    recordCampaignStage({ stage: 12, tier: 0, raw: 1, score: 1, aces: 0 }, store, 5);        // out of range
+    const s0 = campaignSummary(loadCampaign(store), 0);
+    expect(s0.rows.length).toBe(9); expect(s0.played).toBe(2); expect(s0.total).toBeCloseTo(84.5, 5); expect(s0.rows[0]!.score).toBeCloseTo(50.7, 5); expect(s0.rows[1]!.cumulative).toBeCloseTo(84.5, 5); expect(s0.complete).toBe(false);
+    expect(campaignSummary(loadCampaign(store), 1).played).toBe(1);
+    expect(drillById('D13')!.scenario(3, 0).id).not.toBe(drillById('D13')!.scenario(4, 0).id);
+  });
+});
+
+describe('UI-019 first-run clarity and the curriculum order', () => {
+  it('UI-019 Start here: lesson 1 first, then D01, D03; the current step is the first one not done', () => {
+    const none = startPathState({}, () => false);
+    expect(none[0]!.step.id).toBe('ghost-car'); expect(none[0]!.current).toBe(true); expect(none.filter(x => x.current).length).toBe(1);
+    const some = startPathState({ D01: 1 }, id => id === 'ghost-car');
+    expect(some.find(x => x.current)!.step.id).toBe('D03');
+    expect(startPathState({}, () => true).some(x => x.current)).toBe(true);   // drills still pending
+  });
+  it('UI-019 next drill follows the curriculum, D18 gets a Next (D11) and a locked next drill reports its lock', () => {
+    const ds = allDrills();
+    expect(CURRICULUM.indexOf('D18')).toBeLessThan(CURRICULUM.indexOf('D11'));
+    const n = nextDrill('D18', ds, {})!;
+    expect(n.drill.id).toBe('D11'); expect(n.locked).toBe(true); expect(n.needs).toMatch(/D18/);
+    expect(nextDrill('D18', ds, { D18: 1, D07: 2 })!.locked).toBe(false);
+    expect(nextDrill('D11', ds, {})!.drill.id).toBe('D12');
+  });
+  it('UI-019 D01 gets its own objective keys and pre-read; other drills get the generic three', () => {
+    expect(drillHint('D01').preread).toMatch(/front bumper/); expect(drillHint('D01').keys.map(k => k[0])).toEqual(['D', 'Space', 'L']);
+    expect(drillHint('D99').preread).toBeNull(); expect(drillHint('D03').keys.length).toBe(3);
+  });
+});
+
+describe('UI-021 quizzes: distinct cards, distinct options, no printed answers', () => {
+  it('UI-021 D09: 20 distinct cards drawn from the 24-card trap library, four distinct options, the answer is in the options and not in the prompt', () => {
+    for (const seed of [1, 7, 42, 311, 999]) {
+      const cards = trapCards(seed);
+      expect(cards.length).toBe(20); expect(new Set(cards.map(c => c.prompt)).size).toBe(20);
+      for (const c of cards) { expect(c.options.length).toBe(4); expect(new Set(c.options).size).toBe(4); expect(c.answer).toBeGreaterThanOrEqual(0); expect(c.prompt).not.toContain(c.options[c.answer]!); }
+    }
+  });
+  it('UI-021 D14 (PT-03 W2): no duplicate options for 300 seeds; the recovery card uses the stopwatch form t = E v / 5', () => {
+    for (let seed = 1; seed <= 300; seed++) for (const c of mathCards(seed)) { expect(new Set(c.options).size).toBe(c.options.length); expect(c.options.length).toBe(4); }
+    const c = mathCards(5).find(x => x.prompt.includes('hold +5 mph'))!;
+    expect(c.tip).toContain('E x v / d');
   });
 });

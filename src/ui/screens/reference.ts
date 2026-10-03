@@ -3,7 +3,7 @@ import { FORD_1939 } from '../../core/course.js';
 import { stopLoss, rampLead, accelLoss, SPEEDS } from '../../core/perf-table.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
 import { EXITS } from '../../core/builder.js';
-import { el } from '../state.js';
+import { app, el } from '../state.js';
 
 let perfCache: { stop: number[][]; lead: number[][]; accel: number[] } | null = null;
 function perf(): { stop: number[][]; lead: number[][]; accel: number[] } {
@@ -20,22 +20,26 @@ export function renderReference(root: HTMLElement): void {
   const page = el('div', { class: 'page ref' }, el('h1', {}, 'Reference'), el('p', { class: 'muted' }, 'Everything here is legal on paper in the car. Calculators are not.'));
   const g = el('div', { class: 'grid2' });
   // seconds per mile
-  const spm = el('div', { class: 'panel' }, el('h3', {}, 'Seconds per mile'), el('p', { class: 'muted' }, '3600 / mph. A 0.1-mile error at 30 mph is 12 s.'));
+  const spm = el('div', { class: 'panel' }, el('h3', {}, 'Seconds per mile (SCCA / odometer-style rallies only)'), el('p', { class: 'muted' }, '3600 / mph. A 0.1-mile error at 30 mph is 12 s. The Great Race covers the odometer and gives no distances, so this table is odometer-rally arithmetic, not a Great Race tool.'));
   const t1 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'mph'), el('th', { class: 'num' }, 's / mile'), el('th', { class: 'num' }, 's / 0.1 mile'), el('th', { class: 'num' }, 'ft / s'))));
   const tb1 = el('tbody', {}); for (let v = 20; v <= 60; v += 5) tb1.append(el('tr', {}, el('td', {}, String(v)), el('td', { class: 'num' }, (3600 / v).toFixed(1)), el('td', { class: 'num' }, (360 / v).toFixed(1)), el('td', { class: 'num' }, (v * 1.46667).toFixed(1)))); t1.append(tb1); spm.append(t1);
   // recovery factors
-  const rec = el('div', { class: 'panel' }, el('h3', {}, 'Recovery factors'), el('p', { class: 'muted' }, 'Seconds of ghost time at the higher speed needed to make up one second: (v / 5 + 1) at +5 mph, (v / 10 + 1) at +10. Field rule: 10 % over for 10x the delay, 20 % over for 5x (slightly conservative on purpose).'));
-  const t2 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'assigned'), el('th', { class: 'num' }, '+5 mph: s per s'), el('th', { class: 'num' }, '+10 mph: s per s'), el('th', { class: 'num' }, '10 % rule'), el('th', { class: 'num' }, '20 % rule'))));
-  const tb2 = el('tbody', {}); for (let v = 20; v <= 60; v += 5) tb2.append(el('tr', {}, el('td', {}, String(v)), el('td', { class: 'num' }, (v / 5 + 1).toFixed(0)), el('td', { class: 'num' }, (v / 10 + 1).toFixed(0)), el('td', { class: 'num' }, `${(v * 1.1).toFixed(1)} for 10x`), el('td', { class: 'num' }, `${(v * 1.2).toFixed(1)} for 5x`))); t2.append(tb2); rec.append(t2);
+  const rec = el('div', { class: 'panel' }, el('h3', {}, 'Recovery factors'), el('p', { class: 'muted' }, 'On your stopwatch, holding +d mph recovers E seconds after t = E x v / d seconds: +5 mph needs v/5 watch seconds per second owed, +10 mph needs v/10 (8 s late at 35: 40 mph for 56 s). The 10 % rule (10 % over for 10x the delay) and the 20 % rule (5x) are the same formula and are exact on the watch. In ghost time the factors are v/d + 1 (the older table), which a watch cannot show.'));
+  const t2 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'assigned'), el('th', { class: 'num' }, '+5 mph: watch s per s (v/5)'), el('th', { class: 'num' }, '+10 mph: watch s per s (v/10)'), el('th', { class: 'num' }, '10 % rule'), el('th', { class: 'num' }, '20 % rule'))));
+  const tb2 = el('tbody', {}); for (let v = 20; v <= 60; v += 5) tb2.append(el('tr', {}, el('td', {}, String(v)), el('td', { class: 'num' }, (v / 5).toFixed(1)), el('td', { class: 'num' }, (v / 10).toFixed(1)), el('td', { class: 'num' }, `${(v * 1.1).toFixed(1)} for 10x`), el('td', { class: 'num' }, `${(v * 1.2).toFixed(1)} for 5x`))); t2.append(tb2); rec.append(t2);
   // pause arithmetic / performance table
   const P = perf();
-  const pa = el('div', { class: 'panel', style: 'grid-column:1/3' }, el('h3', {}, 'Pause arithmetic: the 1939 Ford performance card'), el('p', { class: 'muted' }, 'dwell = printed pause - stop/start loss (entry -> exit). Measured by simulating the car model (DESIGN §12); your real car needs four runs per speed. Standing-start loss (leave early by this at the start line): ' + SPEEDS.map((v, i) => `${v}: ${P.accel[i] ?? '?'} s`).join(', ') + '.'));
+  const d06 = (app.progress.get('D06')?.stars ?? 0) >= 1;
+  const pa = el('div', { class: 'panel', style: 'grid-column:1/3' }, el('h3', {}, 'Pause arithmetic: the 1939 Ford performance card'), el('p', { class: 'muted' }, 'dwell = printed pause - stop/start loss (entry -> exit). Measured by simulating the car model (DESIGN §12); your real car needs four runs per speed. A stop that is also a turn loses a little more (the car crawls through the turn): the cockpit card and the Debrief include it, the straight-stop table below does not. Standing-start loss (leave early by this at the start line): ' + SPEEDS.map((v, i) => `${v}: ${P.accel[i] ?? '?'} s`).join(', ') + '.'));
+  const answerSheet = el('details', { id: 'answer-sheet' }, el('summary', {}, d06 ? 'Show the true Ford table anyway (you passed D06: build and use your own measured table)' : 'The true Ford table (answer sheet: in D06 you measure these yourself; Gold and legal runs hide the card)'));
+  if (!d06) answerSheet.setAttribute('open', '');
   const t3 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'in \\ out'), ...SPEEDS.map(w => el('th', { class: 'num' }, String(w))))));
   const tb3 = el('tbody', {}); SPEEDS.forEach((v, i) => tb3.append(el('tr', {}, el('td', {}, `${v} in`), ...SPEEDS.map((_, j) => el('td', { class: 'num' }, String(P.stop[i]?.[j] ?? '?')))))); t3.append(tb3);
-  pa.append(el('h3', {}, 'Stop/start loss (s)'), t3);
+  answerSheet.append(el('h3', {}, 'Stop/start loss (s)'), t3);
   const t4 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'from \\ to'), ...SPEEDS.map(w => el('th', { class: 'num' }, String(w))))));
   const tb4 = el('tbody', {}); SPEEDS.forEach((v, i) => tb4.append(el('tr', {}, el('td', {}, `${v}`), ...SPEEDS.map((_, j) => el('td', { class: 'num' }, String(P.lead[i]?.[j] ?? '?')))))); t4.append(tb4);
-  pa.append(el('h3', {}, 'Ramp lead (s): call the new speed this early so the ramp straddles the landmark'), t4);
+  answerSheet.append(el('h3', {}, 'Ramp lead (s): call the new speed this early so the ramp straddles the landmark'), t4);
+  pa.append(answerSheet);
   // CAMEO legend
   const cam = el('div', { class: 'panel' }, el('h3', {}, 'CAMEO legend'));
   const legend = el('div', { style: 'display:grid;grid-template-columns:72px 1fr;gap:6px 10px;align-items:center;color:var(--text)' });
@@ -54,14 +58,14 @@ export function renderReference(root: HTMLElement): void {
   const defs: [string, string][] = [
     ['Pause N', 'Add N seconds to the perfect time at this point. The ghost spends N seconds standing still; you spend N minus your stop/start loss.'],
     ['Timed segment "30 for 0:36 then 40"', 'Hold 30 for 36 s counted from the ghost\'s departure from the landmark (arrival plus any pause), then 40. Call the change half a ramp early.'],
-    ['Speed change at a landmark', 'The new speed applies from the leading edge of the landmark. Be mid-ramp as the bumper passes it.'],
-    ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or crawl inside the sight zone of the checkpoint sign (30 s penalty).'],
-    ['Observation checkpoint', 'A manned stop (typically the finish): stop within 200 ft after the line or take the 60 s penalty.'],
-    ['Time Allowance (TA)', 'Declare the seconds a train or signal held you; credited up to the measured delay, over-declaration beyond 5 s is flagged. Never also make the time up.'],
+    ['Speed change at a landmark', 'Simulator default (OPEN-QUESTIONS Q3, unconfirmed): the new speed applies at the near edge of a sign and the leading edge of an intersection. Be mid-ramp as the bumper passes it.'],
+    ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or crawl inside the sight zone of the checkpoint sign (simulator default penalty 30 s, pending confirmation: OPEN-QUESTIONS Q6).'],
+    ['Observation checkpoint', 'A manned stop (typically the finish): stop within 200 ft after the line or take the penalty (simulator default 60 s, pending confirmation: OPEN-QUESTIONS Q6/Q18).'],
+    ['Time Allowance (TA)', 'Declare the seconds a train or signal held you; credited up to the measured delay, over-declaration beyond 5 s is flagged (simulator defaults, pending confirmation: OPEN-QUESTIONS Q5/Q16). Only the wait is creditable, not your braking and acceleration loss. Never also make the time up.'],
     ['Ace', 'A checkpoint crossed at exactly the perfect second (error 0).'],
     ['Age factor', 'Raw seconds times a factor for the car\'s year: 0.845 for a 1939 car.'],
     ['Transit / free zone', 'Untimed sections between legs (section symbols in Column B). Drive normally, reset for the next start time.'],
-    ['Early restart', 'Leaving a lunch or restart more than 5 minutes early costs 60 s.'],
+    ['Early restart', 'Leaving a lunch or restart more than 5 minutes early costs 60 s (simulator default, pending confirmation: OPEN-QUESTIONS Q6/Q11). Go at the printed out-time minus your standing-start loss; a restart hold is not a stop.'],
   ];
   const dl = el('dl', {}); for (const [k, v] of defs) dl.append(el('dt', { style: 'font-weight:700;margin-top:6px' }, k), el('dd', { style: 'margin:0 0 4px 0;color:var(--muted)' }, v)); gi.append(dl);
   // rules summary with citations
@@ -69,17 +73,17 @@ export function renderReference(root: HTMLElement): void {
   const rl = el('ul', {});
   const cites: [string, string][] = [
     ['Permitted timing equipment: one analog speedometer, one analog time-of-day clock, one stopwatch; calculators and phones prohibited; paper tables legal; odometer covered.', 'docs/research/01-great-race-rules-and-format.md §1; docs/research/05 §5.3; REQUIREMENTS §0'],
-    ['Scoring: one point per second early or late at each hidden checkpoint; Ace = 0; maximum per checkpoint capped; stage raw multiplied by the age factor (1939 Ford: 0.845).', 'docs/research/01 §3; docs/research/07 §7; DESIGN §10'],
+    ['Scoring: one point per second early or late at each hidden checkpoint; Ace = 0; maximum per checkpoint capped (300 s is a simulator default, pending confirmation: OPEN-QUESTIONS Q6); stage raw multiplied by the age factor (1939 Ford: 0.845).', 'docs/research/01 §3; docs/research/07 §7; DESIGN §10'],
     ['The perfect time is integrated by a ghost car with instantaneous speed changes; pauses add the printed seconds; the leg clock resets at every checkpoint.', 'docs/research/07 §1, §4; DESIGN §4'],
     ['Stop/start and speed-change losses are measured per car (performance table); teams subtract them from the printed pause ("34 not 36").', 'docs/research/07 §2.1-2.3; docs/research/03 §1.7'],
     ['Calibration run each morning: k = perfect / actual; indicated speed to hold = assigned / k; a 1 % error is about 9 s over 15 minutes.', 'docs/research/07 §3; DESIGN §12'],
-    ['Recovery: 10 % over for 10x the delay or 20 % over for 5x; penalties are symmetric so never overshoot into early; stop correcting before likely checkpoint spots.', 'docs/research/03 §4.3; docs/research/07 §6'],
+    ['Recovery: 10 % over for 10x the delay or 20 % over for 5x (exact on the stopwatch: t = E x v / d); penalties are symmetric so never overshoot into early; stop correcting before likely checkpoint spots.', 'docs/research/03 §4.3; docs/research/07 §6'],
     ['Time allowances for trains and signals are declared at the checkpoint and credited up to the measured delay.', 'docs/research/01 §1 (R1.8); DESIGN §10'],
-    ['Typical scores: champions about 1 s per leg; a good rookie day 13-21 s; 46 s is a blown day.', 'docs/research/06 §4; STATUS.md key facts'],
+    ['Typical scores: champions about 1 s per leg; a normal rookie day is 20-46 s (Team Hagerty 34, 46 and 20 s; 13 s is the best rookie on record); well over 46 s is a blown day.', 'docs/research/06 §4; STATUS.md key facts'],
     ['Course following: dashed CAMEO lines are driveways/lots/unpaved/dead ends; quoted signs must match exactly; never go past the leading edge of an intersection you are unsure of.', 'docs/research/04 §2.2, §4; REQUIREMENTS P8'],
   ];
   for (const [t, c] of cites) rl.append(el('li', {}, t, ' ', el('span', { class: 'cite' }, `[${c}]`)));
-  rules.append(rl, el('p', { class: 'cite' }, 'Items marked UNVERIFIED in the research were paraphrased from search snippets; treat the exact numbers as configurable defaults (docs/spec/OPEN-QUESTIONS.md).'));
+  rules.append(rl, el('p', { class: 'cite' }, 'Penalty values (sight zone 30 s, observation miss 60 s, early restart 60 s / 5 min, TA tolerance 5 s, 300 s cap) are simulator defaults pending confirmation from the 2026 rule book (docs/spec/OPEN-QUESTIONS.md Q5, Q6, Q16, Q18): the research did not retrieve them. Treat them as configurable.'));
   g.append(spm, rec, pa, cam, gi, rules);
   page.append(g);
   root.replaceChildren(page);

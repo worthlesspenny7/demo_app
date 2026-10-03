@@ -4,6 +4,8 @@ export interface DrillProgress {
   stars: 0 | 1 | 2 | 3; aces: number; bestScore: number | null; runs: number; lastScore: number | null; lastPlayed: number;
   /** Best stars per tier index (0 Bronze, 1 Silver, 2 Gold). Absent in progress saved before tiers were tracked. */
   tierStars?: number[];
+  /** Best (lowest) raw stage points in seconds, the Debrief's unit; absent for quizzes. */
+  bestRaw?: number | null;
 }
 export interface RunRecord {
   id: string; at: number;
@@ -74,7 +76,9 @@ export function createProgressStore(storage?: StorageLike | null, key = PROGRESS
       const score = Number.isFinite(run.score) ? run.score : null;
       const tierStars = [...(prev?.tierStars ?? [])];
       if (typeof run.tier === 'number' && run.tier >= 0 && run.tier < 3) { while (tierStars.length < 3) tierStars.push(0); tierStars[run.tier] = Math.max(tierStars[run.tier] ?? 0, clampStars(run.stars)); }
+      const raw = typeof run.raw === 'number' && Number.isFinite(run.raw) ? run.raw : null;
       const entry: DrillProgress = {
+        bestRaw: raw === null ? prev?.bestRaw ?? null : prev?.bestRaw === null || prev?.bestRaw === undefined ? raw : Math.min(prev.bestRaw, raw),
         tierStars, stars, aces: (prev?.aces ?? 0) + Math.max(0, Math.round(run.aces || 0)),
         bestScore: prev?.bestScore === null || prev?.bestScore === undefined ? score : score === null ? prev.bestScore : Math.min(prev.bestScore, score),
         runs: (prev?.runs ?? 0) + 1, lastScore: score, lastPlayed: Date.now(),

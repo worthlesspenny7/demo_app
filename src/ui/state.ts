@@ -7,7 +7,6 @@ import { createProgressStore, type ProgressStore } from './viewmodels/progress.j
 import { builtinScenario } from '../agent/scenarios.js';
 import { allDrills } from '../core/drills/index.js';
 import { loadStored, replayFinished, LAST_KEY, type StoredSource } from './viewmodels/resume.js';
-import './engine-augment.js';
 
 export interface Settings { watch: 'analog' | 'digital'; timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
 export const DEFAULT_SETTINGS: Settings = { watch: 'analog', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };

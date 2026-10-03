@@ -2,9 +2,17 @@
 import type { Observation, VisibleFeature } from '../../core/sim.js';
 import { type Theme, label, roundRect } from './common.js';
 
-export interface RoadOverlay { pendingCallout: string | null; driverLine: string | null; pace: number | null; countdown: number | null; aheadDimmed?: boolean; offCourseHint?: boolean }
+export interface RoadOverlay {
+  pendingCallout: string | null; driverLine: string | null; pace: number | null; countdown: number | null; aheadDimmed?: boolean; offCourseHint?: boolean;
+  /** 'seconds' = signed early/late seconds; 'arrow' = only EARLY / LATE; 'wait' = "wait X more s" at a stop (rung 3). */
+  paceMode?: 'seconds' | 'arrow' | 'wait'; waitMore?: number | null;
+  /** Legal mode (aids rung <= 1) shows relative markers only: no feet labels. Default true. */
+  showDistances?: boolean;
+}
 
 const VIEW_FT = 1500;
+/** Turns are called 500-600 ft out (braking from 45 to 12 mph alone needs ~250 ft). */
+const CALL_TURN_FT = 550;
 
 export function drawRoad(ctx: CanvasRenderingContext2D, obs: Observation | null, w: number, h: number, th: Theme, ov: RoadOverlay): void {
   // ground
@@ -19,15 +27,16 @@ export function drawRoad(ctx: CanvasRenderingContext2D, obs: Observation | null,
   ctx.beginPath(); ctx.moveTo(cx - roadW / 2, 0); ctx.lineTo(cx - roadW / 2, h); ctx.moveTo(cx + roadW / 2, 0); ctx.lineTo(cx + roadW / 2, h); ctx.stroke();
   ctx.strokeStyle = '#d9b84a'; ctx.lineWidth = 2; ctx.setLineDash([14, 18]); ctx.lineDashOffset = -((obs?.tod ?? 0) * 60) % 32;
   ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, h); ctx.stroke(); ctx.setLineDash([]);
-  // distance scale on the left
-  for (let d = 250; d <= VIEW_FT; d += 250) { const y = yOf(d); ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.moveTo(cx - roadW / 2 - 40, y); ctx.lineTo(cx - roadW / 2 - 8, y); ctx.stroke(); label(ctx, `${d} ft`, cx - roadW / 2 - 44, y, 11, th.muted, '500', 'right'); }
-  // decision-point marker 150 ft ahead
-  const yd = yOf(150); ctx.strokeStyle = 'rgba(79,209,197,0.55)'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(cx - roadW / 2 - 6, yd); ctx.lineTo(cx + roadW / 2 + 6, yd); ctx.stroke(); ctx.setLineDash([]);
+  const showFt = ov.showDistances !== false;
+  // distance scale on the left: feet in training mode, unnumbered markers in legal mode
+  for (let d = 250; d <= VIEW_FT; d += 250) { const y = yOf(d); ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.moveTo(cx - roadW / 2 - (showFt ? 40 : 24), y); ctx.lineTo(cx - roadW / 2 - 8, y); ctx.stroke(); if (showFt) label(ctx, `${d} ft`, cx - roadW / 2 - 44, y, 11, th.muted, '500', 'right'); }
+  // decision-point marker: call turns before here (500-600 ft out)
+  const yd = yOf(CALL_TURN_FT); ctx.strokeStyle = 'rgba(79,209,197,0.55)'; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(cx - roadW / 2 - 6, yd); ctx.lineTo(cx + roadW / 2 + 6, yd); ctx.stroke(); ctx.setLineDash([]);
   label(ctx, 'call turns before here', cx + roadW / 2 + 10, yd, 10, 'rgba(79,209,197,0.8)', '500', 'left');
   // features
   const feats = (obs?.ahead ?? []).filter(f => f && Number.isFinite(f.approxDistanceFt));
   const sightLimit = feats.length ? Math.max(...feats.map(f => f.approxDistanceFt)) : 0;
-  for (const f of [...feats].sort((a, b) => b.approxDistanceFt - a.approxDistanceFt)) drawFeature(ctx, f, cx, yOf(Math.min(VIEW_FT, f.approxDistanceFt)), roadW, th);
+  for (const f of [...feats].sort((a, b) => b.approxDistanceFt - a.approxDistanceFt)) drawFeature(ctx, f, cx, yOf(Math.min(VIEW_FT, f.approxDistanceFt)), roadW, th, showFt);
   // fog beyond sight: dim everything farther than the farthest visible feature (or 700 ft)
   const fogFrom = yOf(Math.max(700, sightLimit + 100));
   const fog = ctx.createLinearGradient(0, 0, 0, Math.max(1, fogFrom + 60)); fog.addColorStop(0, 'rgba(10,13,18,0.92)'); fog.addColorStop(1, 'rgba(10,13,18,0)');
@@ -45,14 +54,21 @@ export function drawRoad(ctx: CanvasRenderingContext2D, obs: Observation | null,
   const pad = 10; let y = h - pad;
   if (ov.driverLine) { boxText(ctx, `Dad: ${ov.driverLine}`, pad, y, 13, th, '#f3efe4', 'rgba(20,26,34,0.85)'); y -= 30; }
   if (ov.pendingCallout) boxText(ctx, `Pending: ${ov.pendingCallout}`, pad, y, 13, th, th.accent, 'rgba(20,26,34,0.85)');
-  if (ov.pace !== null && Number.isFinite(ov.pace)) {
-    const txt = `${ov.pace > 0 ? '+' : ''}${ov.pace.toFixed(1)} s ${ov.pace > 0.05 ? 'late' : ov.pace < -0.05 ? 'early' : ''}`;
+  if (ov.paceMode === 'wait' && ov.waitMore !== null && ov.waitMore !== undefined) {
+    const more = ov.waitMore; const txt = more > 0.05 ? `wait ${more.toFixed(1)} more s` : 'GO now';
+    const col = more > 0.05 ? th.accent : th.ok;
+    ctx.font = '700 14px Inter, sans-serif'; const tw = ctx.measureText(txt).width + 20;
+    roundRect(ctx, w - pad - tw, h - pad - 26, tw, 26, 6); ctx.fillStyle = 'rgba(20,26,34,0.85)'; ctx.fill();
+    label(ctx, txt, w - pad - tw / 2, h - pad - 13, 14, col, '700');
+  } else if (ov.pace !== null && Number.isFinite(ov.pace)) {
+    const arrow = ov.paceMode === 'arrow';
+    const txt = arrow ? (ov.pace > 0.5 ? 'LATE \u25BC' : ov.pace < -0.5 ? 'EARLY \u25B2' : 'on time') : `${ov.pace > 0 ? '+' : ''}${ov.pace.toFixed(1)} s ${ov.pace > 0.05 ? 'late' : ov.pace < -0.05 ? 'early' : ''}`;
     const col = Math.abs(ov.pace) < 1 ? th.ok : ov.pace > 0 ? th.danger : th.accent2;
     ctx.font = '700 14px Inter, sans-serif'; const tw = ctx.measureText(txt).width + 20;
     roundRect(ctx, w - pad - tw, h - pad - 26, tw, 26, 6); ctx.fillStyle = 'rgba(20,26,34,0.85)'; ctx.fill();
     label(ctx, txt, w - pad - tw / 2, h - pad - 13, 14, col, '700');
-    const bw = 160, bx = w - pad - bw, by = h - pad - 40; ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(bx, by, bw, 6);
-    const frac = Math.max(-1, Math.min(1, ov.pace / 30)); ctx.fillStyle = col; ctx.fillRect(bx + bw / 2, by, frac * bw / 2, 6);
+    if (!arrow) { const bw = 160, bx = w - pad - bw, by = h - pad - 40; ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(bx, by, bw, 6);
+      const frac = Math.max(-1, Math.min(1, ov.pace / 30)); ctx.fillStyle = col; ctx.fillRect(bx + bw / 2, by, frac * bw / 2, 6); }
   }
   if (ov.countdown !== null && Number.isFinite(ov.countdown) && ov.countdown > -1 && ov.countdown < 60) label(ctx, `change in ${Math.max(0, ov.countdown).toFixed(1)} s`, w - pad - 80, h - pad - 60, 14, th.accent, '700');
 }
@@ -63,8 +79,8 @@ function boxText(ctx: CanvasRenderingContext2D, text: string, x: number, bottom:
   ctx.save(); ctx.beginPath(); ctx.rect(x, bottom - 24, tw, 24); ctx.clip(); label(ctx, text, x + 8, bottom - 12, size, color, '600', 'left'); ctx.restore(); void th;
 }
 
-function drawFeature(ctx: CanvasRenderingContext2D, f: VisibleFeature, cx: number, y: number, roadW: number, th: Theme): void {
-  const d = `~${Math.round(f.approxDistanceFt)} ft`;
+function drawFeature(ctx: CanvasRenderingContext2D, f: VisibleFeature, cx: number, y: number, roadW: number, th: Theme, showFt = true): void {
+  const d = showFt ? `~${Math.round(f.approxDistanceFt)} ft` : '';
   switch (f.kind) {
     case 'intersection': {
       for (const e of f.exits ?? []) {

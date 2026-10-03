@@ -7,6 +7,7 @@ import { renderDebrief } from './screens/debrief.js';
 import { renderReference } from './screens/reference.js';
 import { renderSettings } from './screens/settings.js';
 import { renderQuiz } from './screens/quiz.js';
+import { renderCampaign } from './screens/campaign.js';
 
 const root = document.getElementById('app') ?? document.body.appendChild(el('div', { id: 'app', class: 'app' }));
 applyTheme(app.settings);
@@ -34,8 +35,9 @@ function route(): void {
       case 'debrief': renderDebrief(view); break;
       case 'reference': renderReference(view); break;
       case 'settings': renderSettings(view); break;
-      case 'quiz': renderQuiz(view, 'quiz', parts[1] ?? 'D09'); break;
-      case 'math': renderQuiz(view, 'math', parts[1] ?? 'D14'); break;
+      case 'campaign': renderCampaign(view); break;
+      case 'quiz': cleanup = renderQuiz(view, 'quiz', parts[1] ?? 'D09'); break;
+      case 'math': cleanup = renderQuiz(view, 'math', parts[1] ?? 'D14'); break;
       default: renderHome(view);
     }
   } catch (e) {
