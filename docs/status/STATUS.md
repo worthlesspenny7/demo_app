@@ -19,8 +19,17 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [x] UI fix sprint 2 (all 12 items from that report + engine SIM-032/DRV-019/DRILL-005 cliff fix)
 - [x] Polish sprint 3: N5 perf card no longer clips, N11 'holding for restart' pace text, Start-here path counts Silver/Gold stars only (UI-028)
 
+## Phase IV (2026-10-03 evening): Rookie Handbook + 2026 Event Regulations supplied by Josh
+- [x] Extracted: docs/research/08-rookie-handbook-body.md, 08b-...-appendices.md, 09-event-regulations-2026.md; OPEN-QUESTIONS answered (Q1-Q26 table at the bottom)
+- [x] SPECS.md 'V2' section (REG, TA, GRIID, STAGE, CHART, LESSON, DRILL-021..025, CAMP, UI-029..034)
+- [ ] Core engine V2 (agent running): scoring caps/age table/discards, TA at TA points in 10 s multiples, Column C/B data, stage skeleton with ASP restarts, exact transits, free zones, handbook charts + Packard
+- [ ] Lessons + reference pages (agent running): Four S's, team protocol (Dad's card), notations, transits/restarts, regs tables
+- [ ] After core: UI (book in GRIID layout, charts, TA screen, restart/transit cards, scorecard) and drills (D16 ASP + exact transit, D08b TA point, D06 charts, D15 notations, D18/D11 skeleton, campaign division/ASP)
+- [ ] Re-validate realism against the new sources; STATUS/LOG; push
+- Josh's choices: analog clock and stopwatch default (digital kept); Dad has no protocol yet, teach best practices; YouTube transcripts (.vtt) may arrive
+
 ## Current step
-Ready for Josh. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
+Phase IV in progress (see above). Previous state: ready for Josh. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
 Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)

@@ -38,3 +38,13 @@ Tests: 216 unit (was 204), 22 e2e (was 14, new e2e/ui-fixes2.spec.ts), spec:chec
 - Start-here: Home uses `startPathFromProgress` (curriculum.ts), which feeds `unlockBest` (Silver/Gold rule of `unlockStars`) into `startPathState`, so a Bronze star no longer marks a drill step done.
 - New spec UI-028 (SPECS.md, before "## BACKLOG"); tests: tests/ui-viewmodels.test.ts (2 UI-028), e2e/ui-polish3.spec.ts (4 UI-028).
 - Verification: tsc clean, 218 unit (was 216), 26 e2e (was 22), build clean, spec:check 177/177. Not committed.
+
+## 2026-10-03 (evening) Phase IV: authoritative sources arrived
+- Josh supplied the Rookie Handbook (Croker 2015) and the 2026 Event Regulations. Extracted to docs/research/08, 08b, 09.
+- Big corrections: restart = base time + assigned start position minutes; calibration run and tire warm-up are free
+  zones with transit allowances; leg caps 2 min late / 5 min early, missed CP 3 min; exact age-factor table;
+  championship discards per division (rookie 6 over stages 1-7); TA in 10 s multiples at printed TA points within
+  15 min, never for navigation errors; Column C stacked syntax ("0 MPH / 0m15s / 45 MPH"); speed change at the
+  front tires even with the sign, at the stop sign or apex at intersections; pauses only where printed; speeds 15-55;
+  three handbook performance charts (accel/decel, stop & go, turns) with a 1936 Packard example.
+- Spec V2 written (49 new ids). Agents launched: core engine V2; lessons/reference. UI and drills follow.
