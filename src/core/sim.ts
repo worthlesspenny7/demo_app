@@ -419,7 +419,7 @@ export class Simulator {
 
   private release(reason: string): void {
     this.waitingForGo = false; this.waitReason = null; this.patienceWarned = false;
-    if (this.waitNodeId) { this.releasedNodeId = this.waitNodeId; this.waitNodeId = null; }
+    if (this.waitNodeId) { const wn = this.sc.course.nodes.find(x => x.id === this.waitNodeId); if (wn && this.isRestartNode(wn)) this.startRamp = true; this.releasedNodeId = this.waitNodeId; this.waitNodeId = null; }
     this.announceAtSpeed = true;
     if (this.curStop) { this.curStop.dwell = this.curStop.dwellStart !== null ? this.tod - this.curStop.dwellStart : 0; }
     this.car.accelFactor = 1 + this.rnd.gauss(0, this.sc.driver.inconsistency);

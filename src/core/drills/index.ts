@@ -17,6 +17,8 @@ let gen: GenHook = generator as unknown as GenHook;
 /** The generator module registers itself here (keeps drills free of a hard dependency). */
 export function setGenerator(g: GenHook): void { gen = g; }
 
+/** Gold tier: a hidden car variant (ramps +-15%) so the printed Ford table is only approximately right and the player must measure. */
+function goldCar(seed: number, base = FORD_1939): typeof FORD_1939 { const r = rng(seed * 7919 + 13); return { ...base, name: `${base.name} (this one)`, a0: base.a0 * (0.85 + 0.3 * r.next()), aDec: base.aDec * (0.85 + 0.3 * r.next()) }; }
 function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3, 2, 1]): DrillTier[] {
   const drivers: DriverSpec[] = [DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE];
   const names = ['Bronze', 'Silver', 'Gold'];
@@ -25,7 +27,8 @@ function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3, 2, 1])
 function legalTiers(): DrillTier[] { return [{ name: 'Rookie', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Great Race legal, sportsman driver' }, { name: 'Sportsman', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Great Race legal, stock speedometer' }, { name: 'Expert', aids: aidsForRung(0), driver: DRIVER_DAD_ROOKIE, description: 'Great Race legal, rookie driver, stock speedometer' }]; }
 function tierOf(d: Pick<Drill, 'tiers'>, t: number): DrillTier { return d.tiers[Math.max(0, Math.min(d.tiers.length - 1, t))]!; }
 function base(id: string, name: string, seed: number, tier: DrillTier, extra: Partial<ConstructorParameters<typeof ScenarioBuilder>[0]> = {}): ScenarioBuilder {
-  return new ScenarioBuilder({ id: `${id}-${seed}-${tier.name}`, name, seed, startTime: T0, driver: tier.driver, aids: tier.aids, speedo: PERFECT_TIMEWISE, car: FORD_1939, prereadSeconds: 60, ...extra });
+  const car = tier.name === 'Gold' && ['D03', 'D04', 'D05', 'D18'].includes(id) ? goldCar(seed) : FORD_1939;
+  return new ScenarioBuilder({ id: `${id}-${seed}-${tier.name}`, name, seed, startTime: T0, driver: tier.driver, aids: tier.aids, speedo: PERFECT_TIMEWISE, car, prereadSeconds: 60, ...extra });
 }
 
 // ---------- D01 stopwatch reaction ----------
@@ -69,7 +72,14 @@ const D04: Drill = {
       if (i === 2) { b.advanceMiles(0.5 + r.next() * 0.3); b.checkpoint(); }
     }
     return b.advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [1, 2.5, 5], ['Compound lines ("STOP P15, 25 for 40 then 45"): the 40 s starts when the ghost leaves, 15 s after arrival, not at your go.'], sc.driver.skill, sc); },
+  rubric(r, sc) {
+    const changes = sc.book.filter(i => i.timed).length || 1;
+    const perChange = r.attribution.reduce((a, x) => a + Math.abs(x.buckets.timedChange), 0) / changes;
+    const rb = basicRubric(r, [1, 2.5, 5], ['Compound lines ("STOP P15, 25 for 40 then 45"): the 40 s starts when the ghost leaves, 15 s after arrival, not at your go.'], sc.driver.skill, sc);
+    const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.6 ? 3 : perChange <= 1.2 ? 2 : perChange <= 2.5 ? 1 : 0;
+    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · timed changes ${perChange.toFixed(1)} s off each`;
+    return rb;
+  },
 };
 
 // ---------- D05 landmark speed changes ----------
@@ -79,7 +89,14 @@ const D05: Drill = {
   scenario(seed, t) { const tier = tierOf(D05, t); const r = rng(seed); const b = base('D05', 'Landmark speed changes', seed, tier).start(35); let v = 35;
     for (let i = 0; i < 8; i++) { b.advanceMiles(0.3 + r.next() * 0.4); const nv = r.pick([25, 30, 40, 45, 50].filter(x => Math.abs(x - v) >= 10)); b.speedAtSign(r.pick([`SPEED LIMIT ${nv}`, 'CURVE', 'END ROAD WORK', 'BRIDGE']), nv, { side: r.chance(0.3) ? 'L' : 'R', shape: r.chance(0.5) ? 'rect' : 'diamond' }); v = nv; if (i === 3) { b.advanceMiles(0.4); b.checkpoint(); } }
     return b.advanceMiles(0.4).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [1, 2, 4], ['Lead time = half the ramp time for that pair of speeds; it is on your performance card.'], sc.driver.skill, sc); },
+  rubric(r, sc) {
+    const changes = sc.book.filter(i => i.speed !== undefined && !i.pause && !i.timed && !i.turn && i.section !== 'start').length || 1;
+    const perChange = r.attribution.reduce((a, x) => a + Math.abs(x.buckets.speedChange), 0) / changes;
+    const rb = basicRubric(r, [1, 2, 4], ['Lead time = half the ramp time for that pair of speeds; it is on your performance card.'], sc.driver.skill, sc);
+    const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.35 ? 3 : perChange <= 0.7 ? 2 : perChange <= 1.2 ? 1 : 0;
+    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · landmark changes ${perChange.toFixed(2)} s off each`;
+    return rb;
+  },
 };
 
 // ---------- D06 build your performance table ----------
@@ -192,7 +209,21 @@ const D14: Drill = {
 const D15: Drill = {
   id: 'D15', title: 'Pre-read triage', objective: 'You get the book 30 minutes before the start. Annotate every pause with its dwell and mark the speed changes, then run the first 40 lines cold.', skills: ['P7'], minutes: 12, kind: 'drive',
   tiers: tiers([2, 1, 0]), unlock: [],
-  scenario(seed, t) { const sc = D18.scenario(seed, t); sc.prereadSeconds = 10 * 60; sc.id = `D15-${seed}`; sc.name = 'Pre-read triage'; return sc; },
+  scenario(seed, t) { const tier = tierOf(D15, t); const r = rng(seed); const b = base('D15', 'Pre-read triage', seed, tier, { prereadSeconds: 10 * 60 }).start(r.pick([30, 35]));
+    let stops = 0;
+    for (let i = 0; i < 36; i++) {
+      b.advanceMiles(0.15 + r.next() * 0.3);
+      const k = r.int(0, 9);
+      if (k <= 2 || (i > 30 && stops < 8)) { b.stop(r.pick(['S', 'S', 'L', 'R']), r.pick([30, 35, 40]), { pause: r.pick([15, 15, 15, 20, 30]) }); stops++; }
+      else if (k === 3) { const secs = 15 + r.int(0, 25); b.timedAt(r.pick(['bridge', 'RR crossing', 'water tower']), { holdSpeed: 30, seconds: secs, thenSpeed: 40 }); b.advanceFt(30 * 1.4667 * secs + 300); }
+      else if (k === 4) b.speedAtSign(`SPEED LIMIT ${r.pick([35, 45])}`, r.pick([35, 45]));
+      else if (k === 5) b.instruction({ exits: EXITS.sideRoad(r.pick(['L', 'R']), { route: 'turn' }), sightDistance: 600 }, { turn: 'L', speed: 35, hint: r.chance(0.5) ? 'Comes quick' : undefined });
+      else b.instruction({ label: r.pick(['church on R', 'grain elevator', 'overpass', 'cemetery on L', 'bridge']), sightDistance: 500 }, { text: `At ${r.pick(['church on R', 'grain elevator', 'overpass', 'cemetery on L', 'bridge'])}. Continue`, speed: undefined });
+      if (i === 17) { b.advanceMiles(0.3); b.checkpoint(); }
+    }
+    const sc = b.advanceMiles(0.3).checkpoint().advanceFt(300).finish().build();
+    for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; if (n.exits && ins.turn) { const route = n.exits.find(e => e.isRoute)!; const nt = Math.abs(route.angle) < 20 ? 'S' : Math.abs(route.angle) < 60 ? (route.angle < 0 ? 'BL' : 'BR') : route.angle < 0 ? 'L' : 'R'; if (nt !== ins.turn) { ins.turn = nt; ins.text = describeInstruction({ turn: nt, speed: ins.speed, pause: ins.pause, hint: ins.hint }, { control: n.control, exits: n.exits, sign: n.sign, label: n.label }); } } }
+    return sc; },
   rubric(r, sc) {
     const startTick = r.actions.find(a => a.action.type === 'start')?.tick ?? Infinity;
     let v = sc.book[0]!.speed ?? 35; let total = 0, marked = 0, accurate = 0; const lines: string[] = [];
@@ -201,8 +232,9 @@ const D15: Drill = {
       if (ins.pause) {
         total++;
         const ann = r.actions.filter(a => a.action.type === 'line.annotate' && a.action.n === ins.n && a.tick <= startTick).pop();
-        const ideal = dwellFor(ins.pause, vIn || vOut, vOut, sc.car, ins.turn ? (['BL', 'BR'].includes(ins.turn) ? sc.car.turnSpeedMph.bear : ['AL', 'AR'].includes(ins.turn) ? sc.car.turnSpeedMph.acute : sc.car.turnSpeedMph.turn) : undefined);
-        if (ann && ann.action.type === 'line.annotate') { marked++; const num = parseFloat(ann.action.text); if (Number.isFinite(num) && Math.abs(num - ideal) <= 2) accurate++; else lines.push(`Line ${ins.n}: you wrote "${ann.action.text}", ideal dwell ${ideal.toFixed(1)} s`); }
+        const ideal = dwellFor(ins.pause, vIn || vOut, vOut, sc.car, ins.turn && ins.turn !== 'S' ? (['BL', 'BR'].includes(ins.turn) ? sc.car.turnSpeedMph.bear : ['AL', 'AR'].includes(ins.turn) ? sc.car.turnSpeedMph.acute : sc.car.turnSpeedMph.turn) : undefined);
+        const numIn = (t: string): number => { const m = t.match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : NaN; };
+        if (ann && ann.action.type === 'line.annotate' && ann.action.text.trim() !== '') { marked++; const num = numIn(ann.action.text); if (Number.isFinite(num) && Math.abs(num - ideal) <= 2) accurate++; else lines.push(`Line ${ins.n}: you wrote "${ann.action.text}", ideal dwell ${ideal.toFixed(1)} s`); }
         else lines.push(`Line ${ins.n}: pause not marked before the start (ideal dwell ${ideal.toFixed(1)} s)`);
       }
       v = ins.timed ? ins.timed.thenSpeed : vOut;
@@ -237,17 +269,17 @@ const D18: Drill = {
   id: 'D18', title: 'Miniature leg: everything once', objective: 'One stop with pause, one timed segment, one landmark speed change, one trap, one hazard (a light you may declare as a Time Allowance, or a slow truck you must make up), one hidden checkpoint, in about five minutes.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8'], minutes: 6, kind: 'drive',
   tiers: tiers([1, 1, 0]), unlock: [{ drill: 'D03', stars: 2 }, { drill: 'D04', stars: 2 }, { drill: 'D05', stars: 2 }, { drill: 'D08', stars: 2 }, { drill: 'D10', stars: 2 }],
   scenario(seed, t) { const tier = tierOf(D18, t); const r = rng(seed); const b = base('D18', 'Miniature leg', seed, tier, { trafficWaitProbability: 0.2 }).start(r.pick([30, 35]));
-    const order = r.pick([[0, 1, 2, 3, 4], [1, 0, 3, 2, 4], [2, 3, 0, 1, 4], [3, 2, 1, 0, 4]]);
+    const order = r.pick([[4, 0, 1, 2, 3], [1, 4, 0, 3, 2], [4, 2, 3, 0, 1], [3, 4, 2, 1, 0]]);
     for (const k of order) {
       b.advanceMiles(0.3 + r.next() * 0.3);
       if (k === 0) b.stop(r.pick(['L', 'R', 'S']), r.pick([30, 35, 40]));
-      else if (k === 1) b.timedAt(r.pick(['bridge', 'RR crossing', 'water tower']), { holdSpeed: 30, seconds: 20 + r.int(0, 25), thenSpeed: 40 });
+      else if (k === 1) { const secs = 20 + r.int(0, 25); b.timedAt(r.pick(['bridge', 'RR crossing', 'water tower']), { holdSpeed: 30, seconds: secs, thenSpeed: 40 }); b.advanceFt(30 * 1.4667 * secs + 300); }
       else if (k === 2) b.speedAtSign(`SPEED LIMIT ${r.pick([35, 45])}`, r.pick([35, 45]));
       else if (k === 3) { b.node({ exits: EXITS.sideRoad('R', { kind: 'driveway' }), sightDistance: 400, label: 'driveway' }); b.advanceFt(450); b.instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 600 }, { turn: 'R', speed: 35, hint: '1st paved road' }); }
       else { if (r.chance(0.5)) { b.instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 15 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 55) }); } else { b.hazard({ kind: 'slow', speedMph: 28, lengthFt: 1500, passWindowAfterFt: 900 }); b.advanceMiles(0.4); } }
     }
     return b.advanceMiles(0.25 + r.next() * 0.3).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [2, 5, 10], [], sc.driver.skill, sc); },
+  rubric(r, sc) { return basicRubric(r, [3, 6, 12], [], sc.driver.skill, sc); },
 };
 
 // ---------- D11 / D12 / D13 generator-backed ----------

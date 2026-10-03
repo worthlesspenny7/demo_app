@@ -200,6 +200,11 @@ DRV-018 A 90-degree-or-sharper turn called so late that the car is still above 1
 GEN-009 A generated stage's calibration run is a transit: an official restart line follows "END CALIBRATION" with restartTime rounded up to the minute 2-3 min after the ghost's arrival, the book text shows the restart clock time, and leg 1's clock starts at that restart. [P1]
 GEN-010 Generated stages place at most 2 railroad crossings with trains and at most 1 that actually blocks; a "SPEED LIMIT NN" sign never posts a limit below the assigned speed. [P2]
 BOT-006 The oracle declares the measured qualifying delay as a Time Allowance once per leg, and times a compound STOP + timed line from the ghost's departure of its own node, never a stale earlier segment. [P2]
+RUB-001 Debrief headline: "Clean run" only when the mean |leg error| <= 3 s and the car never left the course; otherwise the headline names the largest cause whose sign matches the net error, and when stops (or another cause) lost time that cruise clawed back it says "lost N s in stops and recovered M s in cruise" instead of calling the recovery a wandering driver. [P1]
+RUB-002 Attribution after a restart release: the acceleration ramp from a lunch/calibration restart to the assigned speed is booked to the 'start' bucket, not 'cruise'. [P2]
+DRILL-018 D15 is its own scenario (about 40 lines, >= 8 pause lines, >= 2 timed lines, 10 min pre-read); its rubric ignores empty annotations, reads the first number in free text ("go at 7.3s"), and applies no turn cap to a straight-through STOP. [P1]
+DRILL-019 D04 and D05 stars are capped by the mean per-change error (timedChange / speedChange buckets per instruction): D04 3/2/1 stars at <= 0.6/1.2/2.5 s, D05 at <= 0.35/0.7/1.2 s, so a run that nets out by luck cannot score 3 stars. [P2]
+DRILL-020 Gold tier on D03, D04, D05 and D18 drives a seeded hidden car variant (ramps within +-15 % of the 1939 Ford preset) so the printed card is only approximately right; Bronze and Silver drive the preset. [P2]
 
 ## BACKLOG
 # [P3] future specs from the design reviews; not required for v1 and ignored by spec-check.

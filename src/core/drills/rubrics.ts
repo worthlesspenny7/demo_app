@@ -13,8 +13,14 @@ export function meanAbs(xs: number[]): number { return xs.length ? xs.reduce((a,
 export function headlineTip(r: StageResult, sc?: Scenario): string {
   const totals: Record<string, number> = {};
   for (const a of r.attribution) for (const [k, v] of Object.entries(a.buckets)) totals[k] = (totals[k] ?? 0) + v;
-  const [k, v] = Object.entries(totals).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0] ?? ['cruise', 0];
-  if (Math.abs(v) < 2) return 'Clean run. The remaining seconds are speed-holding noise; consistency is what wins over nine days.';
+  const errs = legErrors(r); const mean = meanAbs(errs);
+  if (mean <= 3 && r.offCourseCount === 0) return 'Clean run. The remaining seconds are speed-holding noise; consistency is what wins over nine days.';
+  const net = Object.values(totals).reduce((a, b) => a + b, 0);
+  // the largest cause with the same sign as the net error (a negative cruise bucket against positive stops is recovery, not a fault)
+  const sameSign = Object.entries(totals).filter(([, v]) => Math.sign(v) === Math.sign(net) && Math.abs(v) >= 1.5).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const [k, v] = sameSign[0] ?? Object.entries(totals).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0] ?? ['cruise', 0];
+  const recovered = -Math.min(0, totals.cruise ?? 0);
+  if (k !== 'cruise' && recovered > 3 && net > 0) return `You lost ${Math.round(v)} s in ${k === 'stop' ? 'stops' : k} and recovered ${Math.round(recovered)} s in cruise; recover a little more, or earlier, next time.`;
   const late = v > 0;
   switch (k) {
     case 'stop': return late ? 'Your stops cost more than the printed pause. Go earlier: dwell = pause - your car\'s stop/start loss (write it on the card).' : 'You left stops too early: you are not using the whole pause. Dwell = pause - stop/start loss, no less.';

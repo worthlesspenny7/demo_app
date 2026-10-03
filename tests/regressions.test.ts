@@ -9,6 +9,9 @@ import { annotatePerfectTimes } from '../src/core/ghost.js';
 import { milesToFt } from '../src/core/units.js';
 import '../src/core/drills/index.js';
 import { drillById } from '../src/core/drills/registry.js';
+import { headlineTip } from '../src/core/drills/rubrics.js';
+import { dwellFor } from '../src/core/perf-table.js';
+import { FORD_1939 } from '../src/core/course.js';
 
 describe('PT-01 regressions', () => {
   it('PT01-BUG1 go scheduled on carStopped is honoured in the same tick the car stops', () => {
@@ -121,5 +124,43 @@ describe('post-validation specs', () => {
     for (let seed = 1; seed <= 10; seed++) { const sc = d.scenario(seed, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim)); expect(d.rubric(r, sc).stars, `seed ${seed}`).toBe(3); }
     const b = drillById('D08b')!; const sc = b.scenario(2, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
     expect(r.actions.some(a => a.action.type === 'ta.declare')).toBe(true); expect(b.rubric(r, sc).stars).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('re-validation specs (2026-10-03)', () => {
+  it('RUB-001 clean run only at mean error <= 3 s; stops lost + cruise recovered is labelled a recovery, not a wandering driver', () => {
+    const d = drillById('D03')!; const sc = d.scenario(3, 0);
+    const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
+    expect(headlineTip(r, sc)).toMatch(/^Clean run/);
+    const fake = { ...r, offCourseCount: 0, score: { ...r.score, legs: r.score.legs.map(l => ({ ...l, error: 9, penalty: 9 })) }, attribution: [{ legIndex: 0, buckets: { stop: 14, cruise: -5, start: 0, speedChange: 0, timedChange: 0, turn: 0, hazard: 0, ta: 0 } }] } as typeof r;
+    const tip = headlineTip(fake, sc); expect(tip).not.toMatch(/^Clean run/); expect(tip).toMatch(/lost 14 s in stops and recovered 5 s in cruise/);
+    const noisy = { ...fake, attribution: [{ legIndex: 0, buckets: { stop: 0, cruise: 9, start: 0, speedChange: 0, timedChange: 0, turn: 0, hazard: 0, ta: 0 } }] } as typeof r;
+    expect(headlineTip(noisy, sc)).not.toMatch(/^Clean run/);
+  });
+  it('RUB-002 the ramp after a restart release is booked to start, not cruise', () => {
+    const d = drillById('D16')!; const sc = d.scenario(1, 0);
+    const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
+    const restartLeg = sc.book.findIndex(i => i.section === 'restart' && i.restartTime !== undefined && i.n > 1);
+    expect(restartLeg).toBeGreaterThan(0);
+    const after = r.attribution.find(a => a.legIndex === sc.checkpoints.findIndex(cp => cp.s > sc.course.nodes.find(n => n.id === sc.book[restartLeg]!.nodeId)!.s));
+    expect(after).toBeDefined(); expect(Math.abs(after!.buckets.start)).toBeGreaterThan(0); expect(Math.abs(after!.buckets.cruise)).toBeLessThan(2.5);
+  });
+  it('DRILL-018 D15 is a 40-line triage scenario; rubric skips empty text, parses "go at 7.3s", no turn cap on straight STOPs', () => {
+    const d = drillById('D15')!; const sc = d.scenario(1, 0);
+    expect(sc.book.length).toBeGreaterThanOrEqual(36); expect(sc.book.filter(i => i.pause).length).toBeGreaterThanOrEqual(8); expect(sc.book.filter(i => i.timed).length).toBeGreaterThanOrEqual(2);
+    const sim = new Simulator(sc); let v = sc.book[0]!.speed ?? 35; let n = 0;
+    for (const ins of sc.book) { const vIn = v, vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? v; if (ins.pause) { const cap = ins.turn && ins.turn !== 'S' ? (['BL', 'BR'].includes(ins.turn) ? sc.car.turnSpeedMph.bear : sc.car.turnSpeedMph.turn) : undefined; const ideal = dwellFor(ins.pause, vIn || vOut, vOut, sc.car, cap); sim.act({ type: 'line.annotate', n: ins.n, text: n++ % 2 ? `go at ${ideal.toFixed(1)}s` : ideal.toFixed(1) }); } else if (ins.n === 2) sim.act({ type: 'line.annotate', n: ins.n, text: '   ' }); v = ins.timed ? ins.timed.thenSpeed : vOut; }
+    const r = runBot(sim, new OracleBot(sim)); const rb = d.rubric(r, sc);
+    expect(rb.stars).toBeGreaterThanOrEqual(2); expect(rb.feedback.join(' ')).not.toMatch(/you wrote "/);
+  });
+  it('DRILL-019 D04/D05 stars are capped by per-change error; a lucky net-zero run with bad changes does not get 3 stars', () => {
+    for (const id of ['D04', 'D05']) { const d = drillById(id)!; const sc = d.scenario(2, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim)); expect(d.rubric(r, sc).stars, id).toBe(3);
+      const bucket = id === 'D04' ? 'timedChange' : 'speedChange';
+      const lucky = { ...r, attribution: r.attribution.map(a => ({ ...a, buckets: { ...a.buckets, [bucket]: 6, cruise: -6 } })) } as typeof r;
+      expect(d.rubric(lucky, sc).stars, id).toBeLessThanOrEqual(1); }
+  });
+  it('DRILL-020 Gold on D03/D04/D05/D18 drives a hidden car variant; Bronze and Silver drive the preset', () => {
+    for (const id of ['D03', 'D04', 'D05', 'D18']) { const d = drillById(id)!; expect(d.scenario(1, 0).car.a0, id).toBe(FORD_1939.a0); expect(d.scenario(1, 1).car.a0, id).toBe(FORD_1939.a0); const g = d.scenario(1, 2).car; expect(g.a0, id).not.toBe(FORD_1939.a0); expect(Math.abs(g.a0 / FORD_1939.a0 - 1)).toBeLessThanOrEqual(0.15); expect(d.scenario(1, 2).car.a0).toBe(d.scenario(1, 2).car.a0); expect(d.scenario(2, 2).car.a0).not.toBe(g.a0); }
+    expect(drillById('D07')!.scenario(1, 2).car.a0).toBe(FORD_1939.a0);
   });
 });
