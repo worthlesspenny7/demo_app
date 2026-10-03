@@ -6,7 +6,7 @@ import { accelLoss, stopLoss, rampLead } from '../core/perf-table.js';
 import { mphToFps } from '../core/units.js';
 import { rng, type Rng } from '../core/rng.js';
 
-export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'random' | 'none';
+export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'goCount' | 'random' | 'none';
 
 export interface Bot { name: string; onTick(sim: Simulator): void }
 
@@ -35,6 +35,8 @@ export interface OracleOptions {
   useWatch?: boolean;
   /** Disable truth-based recovery in cruise (to measure uncorrected errors). */
   noRecovery?: boolean;
+  /** Start timed-segment counts at our own 'go' instead of the ghost's departure (BOT-005). */
+  goCount?: boolean;
 }
 
 export class OracleBot implements Bot {
@@ -50,6 +52,7 @@ export class OracleBot implements Bot {
     if (o.ignoreLosses) this.name = 'rookie';
     if (o.forgetPauses) this.name = 'noPause';
     if (o.latency) this.name = 'lateCall';
+    if (o.goCount) this.name = 'goCount';
   }
   private act(a: Action): void { if (this.o.latency) this.queue.push({ at: this.sim.tod + this.o.latency, a }); else this.sim.act(a); }
   private flush(): void { const now = this.sim.tod; const due = this.queue.filter(q => q.at <= now); this.queue = this.queue.filter(q => q.at > now); for (const q of due) this.sim.act(q.a); }
@@ -116,7 +119,7 @@ export class OracleBot implements Bot {
       const ghostTod = sim.timedChangeGhostTod();
       const lead = this.o.ignoreLosses ? 0 : rampLead(seg.holdSpeed, seg.thenSpeed, sc.car);
       let due: boolean;
-      if (this.o.ignoreLosses) { due = tp.plan.crossedTod !== null ? sim.tod >= tp.plan.crossedTod + seg.seconds - 30 + 30 : false; if (tp.plan.crossedTod === null && car.s > tp.plan.s) tp.plan.crossedTod = sim.tod; }
+      if (this.o.ignoreLosses || this.o.goCount) { if (tp.plan.crossedTod === null && car.s > tp.plan.s) tp.plan.crossedTod = sim.tod; due = tp.plan.crossedTod !== null && sim.tod >= tp.plan.crossedTod + seg.seconds - (this.o.goCount ? lead : 0); }
       else due = ghostTod !== null && sim.tod >= ghostTod - lead;
       if (due) { tp.called = true; this.act({ type: 'call.speed', mph: tp.thenSpeed }); }
     }
@@ -177,6 +180,7 @@ export function makeBot(name: BotName, sim: Simulator, seed = 1): Bot | null {
     case 'rookie': return new OracleBot(sim, { ignoreLosses: true });
     case 'noPause': return new OracleBot(sim, { forgetPauses: true });
     case 'lateCall': return new OracleBot(sim, { latency: 1.5 });
+    case 'goCount': return new OracleBot(sim, { goCount: true });
     case 'random': return new RandomBot(sim, seed);
     case 'none': return null;
   }

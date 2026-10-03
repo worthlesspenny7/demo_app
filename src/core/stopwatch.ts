@@ -21,16 +21,19 @@ export class Stopwatch {
   start(now: number): void { if (!this.running) { this.running = true; this.startedAt = now; } }
   stop(now: number): void { if (this.running) { this.elapsedAtStop = this.elapsed(now); this.running = false; this.startedAt = null; } }
   toggle(now: number): void { this.running ? this.stop(now) : this.start(now); }
-  lap(now: number): number { const e = this.elapsed(now); this.laps.push(e); return e; }
+  /** Digital: display freezes on the split until recall(); analog: the hand keeps sweeping. */
+  frozenAt: number | null = null;
+  lap(now: number): number { const e = this.elapsed(now); this.laps.push(e); if (this.kind === 'digital') this.frozenAt = e; return e; }
+  recall(): void { this.frozenAt = null; }
   /** Analog watches reset only when stopped (the crown); digital anytime. */
   reset(now: number): boolean {
     if (this.kind === 'analog' && this.running) return false;
-    this.running = false; this.startedAt = null; this.elapsedAtStop = 0; this.laps = []; void now;
+    this.running = false; this.startedAt = null; this.elapsedAtStop = 0; this.laps = []; this.frozenAt = null; void now;
     return true;
   }
   /** Reading at the dial's resolution: analog 1/5 s, digital 1/100 s. */
   reading(now: number): number {
-    const e = this.elapsed(now);
+    const e = this.frozenAt !== null ? this.frozenAt : this.elapsed(now);
     const q = this.kind === 'analog' ? 0.2 : 0.01;
     return Math.round(e / q) * q;
   }

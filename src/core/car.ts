@@ -26,7 +26,7 @@ export class Car {
    * reachable, the car brakes to stop exactly there and holds.
    */
   step(dt: number, targetV: number, stopAt: number | null): void {
-    const kP = 2.0;
+    const kP = this.spec.a0 >= 1e4 ? 1e6 : 2.0; // the instant (ghost) preset snaps to target
     let aCmd = clamp(kP * (targetV - this.v), -this.aDec(), this.aAcc(this.v));
     // Snap small differences to avoid dithering.
     if (Math.abs(targetV - this.v) < 0.02) { this.v = targetV; aCmd = 0; }
@@ -37,16 +37,17 @@ export class Car {
       const need = dist > 0 ? (this.v * this.v) / (2 * dist) : Infinity;
       if (need >= this.aDec() * 0.98 || dist <= 0) {
         // Brake: choose deceleration that lands exactly on the line (bounded by hard braking).
-        const dec = clamp(need, this.aDec() * 0.98, 14);
+        const dec = clamp(need, this.aDec() * 0.98, Math.max(14, this.aDec()));
         aCmd = -dec;
         this.mode = 'stopping';
       }
     }
     this.a = aCmd;
     let vNext = this.v + aCmd * dt;
+    if (stopAt === null || this.mode !== 'stopping') { if ((targetV - this.v) * (targetV - vNext) <= 0) vNext = targetV; } // never overshoot the target
     if (vNext < 0) vNext = 0;
     let ds = (this.v + vNext) / 2 * dt;
-    if (stopAt !== null && this.s + ds >= stopAt - 0.05 && aCmd < 0) { ds = Math.max(0, stopAt - this.s); vNext = 0; }
+    if (stopAt !== null && this.s + ds >= stopAt - 0.05) { ds = Math.max(0, stopAt - this.s); vNext = 0; this.mode = 'stopping'; } // never pass a stop line
     this.s += ds;
     this.v = vNext;
     if (stopAt !== null && this.v === 0 && Math.abs(this.s - stopAt) < 1) { this.mode = 'stopped'; this.s = stopAt; }

@@ -78,7 +78,7 @@ SIM-010 act('line.set', n) is reflected in observe().currentLine and has no effe
 SIM-011 act('note', text) appends to observe().notes (the lapboard).
 SIM-012 act('speedo.setFactor', k) changes the Timewise reading immediately; it is rejected with an error for the mechanical speedo.
 SIM-013 act('card.set', {assigned: indicated}) causes call.speed(assigned) to request the indicated value when options.useCard is true.
-SIM-014 The ghost car (an oracle driver with instantaneous speed changes) scores exactly 0 at every checkpoint on any generated scenario (property test over 20 seeds).
+SIM-014 An instantaneous car with a perfect driver and no losses scores |error| <= 1 at every checkpoint (whole-second rounding of arrival times, as in the real event) and 0 on at least half of them, over 20 seeded scenarios.
 SIM-015 The event log records every node crossing, stop, go, hazard start/end, checkpoint, and callout with TOD.
 SIM-016 observe().ahead lists exits for intersections with angle, surface, kind and controlFacingUs so a CAMEO can be drawn; sign text is present only when within half the sight distance.
 SIM-017 A finished stage reports elapsed real driving time and the number of instructions executed.

@@ -13,13 +13,13 @@ import { scoreLeg, scoreStage, type CheckpointRecord, type LegScore, type StageS
 import { mphToFps, fpsToMph, roundToSecond } from './units.js';
 
 export type Action =
-  | { type: 'watch.start' } | { type: 'watch.stop' } | { type: 'watch.toggle' } | { type: 'watch.lap' } | { type: 'watch.reset' } | { type: 'watch.bezel'; seconds: number }
+  | { type: 'watch.start' } | { type: 'watch.stop' } | { type: 'watch.toggle' } | { type: 'watch.lap' } | { type: 'watch.recall' } | { type: 'watch.reset' } | { type: 'watch.bezel'; seconds: number }
   | { type: 'ledger.set'; seconds: number }
   | { type: 'bezel.set'; seconds: number }
   | { type: 'call.speed'; mph: number }
   | { type: 'call.turn'; dir: TurnDir }
   | { type: 'call.stop' } | { type: 'call.go' } | { type: 'call.uturn' } | { type: 'call.pass' } | { type: 'call.pullover' }
-  | { type: 'line.set'; n: number } | { type: 'note'; text: string }
+  | { type: 'line.set'; n: number } | { type: 'line.annotate'; n: number; text: string } | { type: 'note'; text: string } | { type: 'abort' }
   | { type: 'ta.declare'; seconds: number }
   | { type: 'speedo.setFactor'; k: number } | { type: 'card.set'; card: Record<string, number> }
   | { type: 'start' } | { type: 'skipPreread' };
@@ -50,12 +50,14 @@ export interface Observation {
   book: Instruction[];
   currentLine: number;
   ahead: VisibleFeature[];
-  driver: { messages: DriverMessage[]; state: string; targetIndicated: number | null; pendingTurn: TurnDir | null; waitingForGo: boolean };
+  driver: { messages: DriverMessage[]; state: string; targetIndicated: number | null; pendingTurn: TurnDir | null; waitingForGo: boolean; lastExecutedLine: number | null };
+  annotations: Record<number, string>;
   carStopped: boolean;
   offCourseHint: boolean;
   aids: { earlyLate?: number; countdown?: number | null; cumulativePerfectAtNextLine?: number };
   notes: string[];
-  legIndex: number;
+  /** Hidden at aids rung <= 1 (SIM-027). */
+  legIndex: number | null;
   startTime: number;
   rules: Scenario['rules'];
 }
@@ -77,7 +79,12 @@ export interface StageResult {
   observationMissed: boolean;
   ghostEndTod: number;
   ledgerLog: { tod: number; believed: number; truth: number; legIndex: number }[];
+  actions: { tick: number; action: Action }[];
+  secondsLateAtStart: number;
+  prereadCoverage: number;
+  engineVersion: string;
 }
+export const ENGINE_VERSION = '1.0.0';
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
@@ -157,6 +164,7 @@ export class Simulator {
     this.useCard = opts.useCard ?? false;
     this.mainRoadRule = opts.mainRoadRule ?? 'pavement-first';
     this.tod = sc.startTime - sc.prereadSeconds;
+    this.tod0 = this.tod;
     this.legAnchorActual = sc.startTime;
     this.legAnchorGhost = sc.startTime;
     this.nextNodeIdx = 0;
@@ -169,12 +177,16 @@ export class Simulator {
   // ---------- public API ----------
   act(a: Action): void {
     const now = this.tod;
+    this.actions.push({ tick: this.tick, action: a });
     switch (a.type) {
       case 'watch.start': this.watch.start(now); break;
       case 'watch.stop': this.watch.stop(now); break;
       case 'watch.toggle': this.watch.toggle(now); break;
       case 'watch.lap': this.watch.lap(now); break;
       case 'watch.reset': this.watch.reset(now); break;
+      case 'watch.recall': this.watch.recall(); break;
+      case 'abort': if (this.phase !== 'finished') { this.phase = 'finished'; this.log('abort'); } break;
+      case 'line.annotate': this.annotations[a.n] = a.text; break;
       case 'watch.bezel': this.watch.setBezel(a.seconds); break;
       case 'ledger.set': this.ledger = a.seconds; this.ledgerLog.push({ tod: now, believed: a.seconds, truth: this.phase === 'running' ? this.pace() : 0, legIndex: this.legIndex }); this.log('ledger.set', { seconds: a.seconds, truth: this.phase === 'running' ? this.pace() : null }); break;
       case 'bezel.set': this.clock.setBezel(a.seconds); break;
@@ -188,7 +200,7 @@ export class Simulator {
       case 'call.speed': {
         let mph = a.mph;
         if (this.useCard && this.card[String(a.mph)] !== undefined) mph = this.card[String(a.mph)]!;
-        this.targetIndicated = mph;
+        this.targetIndicated = mph; this.announceAtSpeed = true;
         this.say(`Holding ${mph}`, 'readback');
         this.log('call.speed', { mph });
         this.beginRamp();
@@ -202,7 +214,7 @@ export class Simulator {
         this.log('call.go');
         if (this.phase === 'preread') { this.depart(); break; }
         if (this.waitingForGo && (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish')) {
-          if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting for traffic', 'info'); }
+          if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); }
           else { this.say('Going', 'readback'); this.release(this.waitReason); }
         }
         else if (this.waitingForGo) this.say(`Can't go yet (${this.waitReason})`, 'info');
@@ -225,7 +237,7 @@ export class Simulator {
     const early = this.sc.startTime - this.tod;
     this.log('depart', { early });
     if (early > 0) this.buckets.start -= early; // ghost anchor is official start: leaving early = early
-    else this.buckets.start += -early;
+    else { this.buckets.start += -early; this.secondsLateAtStart = -early; }
     this.say(early > 2 ? `Leaving ${Math.round(early)} s early` : early < -2 ? `Leaving ${Math.round(-early)} s late` : 'Rolling on time', 'info');
     const first = this.sc.book[0]!;
     if (first.speed !== undefined && this.targetIndicated === null) this.targetIndicated = this.useCard && this.card[String(first.speed)] !== undefined ? this.card[String(first.speed)]! : first.speed;
@@ -234,6 +246,7 @@ export class Simulator {
     if (this.nextNodeIdx < 0) this.nextNodeIdx = this.sc.course.nodes.length;
     this.car.mode = 'cruise';
     this.startRamp = true;
+    if (this.sc.car.a0 >= 1e4 && this.targetIndicated !== null) this.car.v = mphToFps(this.speedo.inverse(this.targetIndicated)); // instant (ghost) car leaves at speed
   }
 
   observe(): Observation {
@@ -248,31 +261,41 @@ export class Simulator {
       stopwatch: { kind: this.watch.kind, running: this.watch.running, reading: this.watch.reading(this.tod), laps: [...this.watch.laps], bezel: this.watch.bezel, bezelRemaining: Math.round(this.watch.bezelRemaining(this.tod) * 5) / 5, dialSeconds: this.watch.dialSeconds },
       ledger: this.ledger,
       bezel: this.clock.bezel,
-      speedo: { reading: this.speedo.reading(this.car.mph()), kind: this.sc.speedo.kind },
+      speedo: { reading: this.navigatorSpeedoReading(), kind: this.sc.speedo.kind },
       book: this.sc.book, currentLine: this.currentLine, ahead,
-      driver: { messages: msgs, state: this.driverState(), targetIndicated: this.targetIndicated, pendingTurn: this.pendingTurn, waitingForGo: this.waitingForGo },
+      driver: { messages: msgs, state: this.driverState(), targetIndicated: this.targetIndicated, pendingTurn: this.pendingTurn, waitingForGo: this.waitingForGo, lastExecutedLine: this.sc.aids.checkOff ? this.lastExecutedLine : null },
+      annotations: { ...this.annotations },
       carStopped: this.car.v === 0, offCourseHint: this.off !== null && this.off.branchDist > this.sc.excursionFt! * 0.5,
-      aids, notes: [...this.notes], legIndex: this.legIndex, startTime: this.sc.startTime, rules: this.sc.rules,
+      aids, notes: [...this.notes], legIndex: this.sc.aids.rung >= 2 ? this.legIndex : null, startTime: this.sc.startTime, rules: this.sc.rules,
     };
   }
 
   /** Advance simulated time; always integrates in fixed 0.1 s ticks for determinism. */
   step(dt: number): void {
     this.accum += dt;
-    while (this.accum >= TICK - 1e-9 && this.phase !== 'finished') { this.accum -= TICK; this.tick(TICK); }
+    while (this.accum >= TICK - 1e-9 && this.phase !== 'finished') { this.accum -= TICK; this.doTick(TICK); }
     if (this.phase === 'finished') this.accum = 0;
   }
   private accum = 0;
+  /** Integer tick count since construction; tod = tod0 + tick * TICK exactly (SIM-025). */
+  tick = 0;
+  private readonly tod0: number;
+  actions: { tick: number; action: Action }[] = [];
+  annotations: Record<number, string> = {};
+  lastExecutedLine: number | null = null;
+  secondsLateAtStart = 0;
 
-  private tick(dt: number): void {
+  private doTick(dt: number): void {
     if (this.phase === 'finished') return;
-    if (this.phase === 'preread') { this.tod += dt; return; }
+    this.tick++;
+    const todNext = this.tod0 + this.tick * TICK;
+    if (this.phase === 'preread') { this.tod = todNext; return; }
     this.drivingSeconds += dt;
     const sBefore = this.car.s;
     const vgBefore = this.ghostSpeedAt(this.routeS());
     this.driverStep(dt);
     this.speedo.step(dt, this.car.mph());
-    this.tod += dt;
+    this.tod = todNext;
     if (this.off) this.offCourseStep(dt, sBefore);
     else this.routeStep(sBefore);
     // attribution increment: de = dt - ds/vg (ghost speed where the car is on the route)
@@ -287,13 +310,19 @@ export class Simulator {
 
   result(): StageResult {
     const legs = this.scoreLegs();
+    const attribution = [...this.attribution, this.currentAttribution()];
+    for (const l of legs) { const a = attribution.find(x => x.legIndex === l.index); if (a && l.taCredit) a.buckets.ta = -l.taCredit; }
+    const pauseLines = this.sc.book.filter(i => i.pause);
+    const startTick = this.actions.find(a => a.action.type === 'start')?.tick ?? Infinity;
+    const annotatedBefore = pauseLines.filter(i => this.actions.some(a => a.action.type === 'line.annotate' && a.action.n === i.n && a.tick <= startTick)).length;
     const obsRec = this.records.find(r => r.kind === 'observation');
     const observationMissed = this.sc.checkpoints.some(c => c.kind === 'observation') && !(obsRec && obsRec.stopped);
     const score = scoreStage(legs, this.sc.car.year, this.sc.rules, { observationMissed, earlyRestartMinutes: this.restartMinutesEarly });
     return {
-      scenarioId: this.sc.id, score, records: [...this.records], attribution: [...this.attribution, this.currentAttribution()],
+      scenarioId: this.sc.id, score, records: [...this.records], attribution,
       events: [...this.events], instructionsExecuted: this.executed.size, drivingSeconds: this.drivingSeconds, offCourseCount: this.offCourseCount,
       observationMissed, ghostEndTod: this.ghost.endTod, ledgerLog: [...this.ledgerLog],
+      actions: [...this.actions], secondsLateAtStart: this.secondsLateAtStart, prereadCoverage: pauseLines.length ? annotatedBefore / pauseLines.length : 1, engineVersion: ENGINE_VERSION,
     };
   }
 
@@ -301,6 +330,14 @@ export class Simulator {
   pace(): number {
     const g = ghostTimeAt(this.ghost, this.routeS());
     return (this.tod - this.legAnchorActual) - (g - this.legAnchorGhost);
+  }
+
+  /** SIM-019: the navigator glances at the driver's gauge and reads it to mark spacing unless aids allow the fine reading. */
+  private navigatorSpeedoReading(): number {
+    const fine = this.speedo.reading(this.car.mph());
+    if (this.sc.aids.showSpeedo === 'fine') return fine;
+    const q = this.sc.speedo.kind === 'mechanical' ? 5 : 1;
+    return Math.round(fine / q) * q;
   }
 
   // ---------- internals ----------
@@ -314,11 +351,12 @@ export class Simulator {
   private say(text: string, kind: DriverMessage['kind']): void { const m = { tod: this.tod, text, kind }; this.driverMsgs.push(m); this.pendingMsgs.push(m); this.log('driver', { text, kind }); }
   private driverState(): string {
     if (this.phase !== 'running') return this.phase;
-    if (this.off) return this.off.phase === 'out' ? 'offcourse' : this.off.phase === 'turning' ? 'uturn' : 'returning';
+    if (this.off) { if (!this.sc.aids.offCourseAlert) return this.off.phase === 'turning' ? 'uturn' : 'cruise'; return this.off.phase === 'out' ? 'offcourse' : this.off.phase === 'turning' ? 'uturn' : 'returning'; }
     if (this.waitingForGo) return `waiting:${this.waitReason}`;
     return this.car.mode;
   }
   private startRamp = false;
+  private announceAtSpeed = false;
   private currentBucket(): Bucket {
     if (this.off) return 'offCourse';
     if (this.startRamp) return 'start';
@@ -344,6 +382,7 @@ export class Simulator {
   private release(reason: string): void {
     this.waitingForGo = false; this.waitReason = null; this.patienceWarned = false;
     if (this.waitNodeId) { this.releasedNodeId = this.waitNodeId; this.waitNodeId = null; }
+    this.announceAtSpeed = true;
     if (this.curStop) { this.curStop.dwell = this.curStop.dwellStart !== null ? this.tod - this.curStop.dwellStart : 0; }
     this.car.accelFactor = 1 + this.rnd.gauss(0, this.sc.driver.inconsistency);
     this.log('release', { reason });
@@ -366,7 +405,7 @@ export class Simulator {
   private driverStep(dt: number): void {
     const drv = this.sc.driver;
     // speed-holding error process (indicated mph)
-    const sd = drv.skill === 'expert' ? 0.2 : drv.skill === 'sportsman' ? 0.5 : 1.0;
+    const sd = drv.skill === 'perfect' ? 0 : drv.skill === 'expert' ? 0.2 : drv.skill === 'sportsman' ? 0.5 : 1.0;
     const tauB = 30;
     this.bias += (-this.bias / tauB) * dt + sd * Math.sqrt(2 * dt / tauB) * this.rnd.gauss();
     const jitter = this.rnd.gauss(0, sd * 0.15);
@@ -425,7 +464,8 @@ export class Simulator {
     if (this.pullover && this.car.v === 0) { if (!this.waitingForGo) { this.waitingForGo = true; this.waitReason = 'finish'; this.waitStartTod = this.tod; this.log('pulledOver'); } }
     if (this.startRamp && this.targetIndicated !== null && this.car.v >= mphToFps(this.speedo.inverse(this.targetIndicated)) - 0.3) this.startRamp = false;
     // ramp bookkeeping
-    if (this.rampKind && this.rampTarget !== null && Math.abs(this.car.v - this.rampTarget) < 0.3) { this.rampKind = null; this.rampTarget = null; if (this.targetIndicated !== null) this.say(`At ${this.targetIndicated}`, 'info'); }
+    if (this.rampKind && this.rampTarget !== null && Math.abs(this.car.v - this.rampTarget) < 0.3) { this.rampKind = null; this.rampTarget = null; }
+    if (this.announceAtSpeed && this.targetIndicated !== null && !this.waitingForGo && this.car.v > 0 && Math.abs(this.car.v - mphToFps(this.speedo.inverse(this.targetIndicated))) < mphToFps(0.5)) { this.announceAtSpeed = false; this.say(`At ${this.targetIndicated}`, 'info'); }
   }
   private releasedNodeId: string | null = null;
   private waitNodeId: string | null = null;
@@ -456,10 +496,10 @@ export class Simulator {
 
   private beginWait(node: Node): void {
     this.waitingForGo = true; this.waitStartTod = this.tod; this.patienceWarned = false; this.waitNodeId = node.id;
-    if (node.control === 'SIGNAL' && this.signalRedAt(node)) { this.waitReason = 'signal'; this.say('Red light', 'info'); this.addQualifying(signalRedRemaining(this.sc.hazards.find(h => h.kind === 'signal' && Math.abs(h.s - node.s) < 1) as Extract<Hazard, { kind: 'signal' }>, this.tod)); }
+    if (node.control === 'SIGNAL' && this.signalRedAt(node)) { this.waitReason = 'signal'; this.say('Red light', 'info'); if (this.sc.rules.taForSignals) this.addQualifying(signalRedRemaining(this.sc.hazards.find(h => h.kind === 'signal' && Math.abs(h.s - node.s) < 1) as Extract<Hazard, { kind: 'signal' }>, this.tod)); }
     else if (node.control === 'RR' && this.trainAt(node)) { this.waitReason = 'train'; this.say('Train!', 'info'); this.addQualifying(trainRemaining(this.sc.hazards.find(h => h.kind === 'train' && Math.abs(h.s - node.s) < 1) as Extract<Hazard, { kind: 'train' }>, this.tod)); }
     else if (this.isRestartNode(node)) { this.waitReason = 'hold'; this.say('Lunch stop. Say go at our restart time', 'info'); }
-    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0 && this.rnd.chance(p)) { this.trafficClearTod = this.tod + 2 + this.rnd.next() * 10; this.log('traffic', { wait: this.trafficClearTod - this.tod }); } }
+    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0 && this.rnd.chance(p)) { this.trafficClearTod = this.tod + this.rnd.next() * 20; this.log('traffic', { wait: this.trafficClearTod - this.tod, ledgerEligible: true }); } }
     else if (this.holdRequested) { this.waitReason = node.kind === 'finish' ? 'finish' : 'hold'; this.say('Stopped here', 'info'); }
     else if (node.kind === 'intersection' && !this.pendingTurn) { this.waitReason = 'ask'; this.say('Left or right?', 'question'); }
     else { this.waitReason = 'hold'; }
@@ -485,7 +525,7 @@ export class Simulator {
       if (s >= cp.s - cp.sightDistance && sBefore < cp.s && cp.kind === 'timing') {
         if (this.car.v <= mphToFps(5)) { const rec = this.ensureRecord(cp); if (!rec.sightViolation) { rec.sightViolation = true; this.log('sightZoneViolation', { cpId: cp.id }); } }
       }
-      if (s >= cp.s && sBefore < cp.s) { this.crossCheckpoint(cp); this.nextCpIdx++; continue; }
+      if (s >= cp.s && sBefore < cp.s) { const frac = s > sBefore ? (cp.s - sBefore) / (s - sBefore) : 1; this.crossCheckpoint(cp, this.tod - TICK * (1 - frac)); this.nextCpIdx++; continue; }
       break;
     }
     // observation stop check
@@ -524,9 +564,9 @@ export class Simulator {
     return rec;
   }
 
-  private crossCheckpoint(cp: Checkpoint): void {
+  private crossCheckpoint(cp: Checkpoint, crossTod: number): void {
     const rec = this.ensureRecord(cp);
-    rec.rawTod = this.tod; rec.actualTod = roundToSecond(this.tod);
+    rec.rawTod = crossTod; rec.actualTod = roundToSecond(crossTod);
     this.log('checkpoint', { cpId: cp.id, kind: cp.kind, actualTod: rec.actualTod, pace: this.pace() });
     if (cp.kind === 'timing') {
       this.attribution.push(this.currentAttribution());
@@ -545,7 +585,8 @@ export class Simulator {
     this.log('node', { nodeId: n.id, kind: n.kind, control: n.control });
     const ins = this.sc.book.find(i => i.nodeId === n.id);
     if (ins) {
-      this.executed.add(ins.n);
+      this.executed.add(ins.n); this.lastExecutedLine = ins.n;
+      if (this.sc.aids.checkOff && ins.section !== 'start') this.say(`Did ${ins.turn ? 'the turn' : ins.pause ? 'the stop' : 'that one'}, line ${ins.n}`, 'info');
       if (this.sc.aids.autoAdvanceLine) this.currentLine = Math.min(this.sc.book.length, ins.n + 1);
       if (ins.pause) { this.buckets.stop -= ins.pause; if (!this.curStop) { /* pause without a stop node: still credited to stop bucket */ } }
       if (ins.restartTime !== undefined && ins.section === 'restart') {
@@ -642,6 +683,8 @@ export class Simulator {
     if (this.phase !== 'running') return;
     const end = this.sc.course.lengthFt;
     const stoppedAtFinish = this.waitingForGo && this.waitReason === 'finish';
+    const lastLeg = this.ghost.legs[this.ghost.legs.length - 1];
+    if (lastLeg && this.tod > lastLeg.perfectTod + this.sc.rules.missedCpLateMinutes * 60) { this.phase = 'finished'; this.log('finished', { reason: 'timeout' }); return; }
     if (this.car.s >= end || (stoppedAtFinish && this.car.v === 0)) {
       if (this.car.s >= end && this.car.v > 0) { this.car.v = 0; this.car.mode = 'stopped'; }
       this.phase = 'finished'; this.finishedTod = this.tod;
@@ -709,3 +752,20 @@ export function turnWord(dir: TurnDir): string {
   return { L: 'Left', R: 'Right', S: 'Straight', BL: 'Bear left', BR: 'Bear right', AL: 'Acute left', AR: 'Acute right', JL: 'Jog left', JR: 'Jog right' }[dir];
 }
 export { fpsToMph };
+
+
+/** SIM-022: re-run a scenario applying recorded actions at their ticks; identical result for identical inputs. */
+export function replay(scenario: Scenario, actions: { tick: number; action: Action }[], opts: SimOptions & { engineVersion?: string } = {}): Simulator {
+  if (opts.engineVersion && opts.engineVersion !== ENGINE_VERSION) throw new Error(`replay recorded with engine ${opts.engineVersion}, current ${ENGINE_VERSION}`);
+  const sim = new Simulator(scenario, opts);
+  const sorted = [...actions].sort((a, b) => a.tick - b.tick);
+  let i = 0;
+  const lastTick = sorted.length ? sorted[sorted.length - 1]!.tick : 0;
+  while ((sim.phase as string) !== 'finished') {
+    while (i < sorted.length && sorted[i]!.tick <= sim.tick) { sim.act(sorted[i]!.action); i++; }
+    if ((sim.phase as string) === 'finished') break;
+    sim.step(TICK);
+    if (sim.tick > lastTick + 36000 * 4) break; // safety: 4 h after the last action
+  }
+  return sim;
+}

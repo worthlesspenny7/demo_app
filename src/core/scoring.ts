@@ -29,8 +29,13 @@ export interface LegScore {
   ace: boolean;
 }
 
+export type Benchmark = 'champion' | 'expert' | 'sportsman' | 'rookie' | 'blown';
+/** SCORE-011: label a raw day score against the research benchmarks (R06 §4). */
+export function benchmarkLabel(raw: number): Benchmark { return raw <= 3 ? 'champion' : raw <= 13 ? 'expert' : raw <= 25 ? 'sportsman' : raw <= 46 ? 'rookie' : 'blown'; }
+
 export interface StageScore {
   legs: LegScore[];
+  benchmark: Benchmark;
   raw: number;
   ageFactor: number;
   score: number;              // raw * factor, 2 decimals
@@ -73,7 +78,8 @@ export function scoreLeg(inp: LegInputs, rules: RulesConfig): LegScore {
     rawError = Math.round(rawError);
     if (rawError > rules.missedCpLateMinutes * 60) { extras.missed = true; penalty = rules.maxPerCp; error = rawError; }
     else {
-      taCredit = Math.max(0, Math.min(inp.taDeclared, inp.taQualifying));
+      const g = Math.max(0.001, rules.taGranularitySeconds ?? 1);
+      taCredit = Math.round(Math.max(0, Math.min(inp.taDeclared, inp.taQualifying, Math.max(rawError, 0))) / g) * g;
       error = rawError - taCredit;
       penalty = Math.min(Math.abs(error), rules.maxPerCp);
     }
@@ -93,5 +99,5 @@ export function scoreStage(legs: LegScore[], year: number, rules: RulesConfig, e
   const earlyRestartPenalty = extra.earlyRestartMinutes > rules.earlyRestartMinutes ? rules.earlyRestartPenalty : 0;
   raw += earlyRestartPenalty;
   const f = ageFactor(year);
-  return { legs, raw, ageFactor: f, score: Math.round(raw * f * 100) / 100, aces: legs.filter(l => l.ace).length, earlyRestartPenalty };
+  return { legs, benchmark: benchmarkLabel(raw), raw, ageFactor: f, score: Math.round(raw * f * 100) / 100, aces: legs.filter(l => l.ace).length, earlyRestartPenalty };
 }
