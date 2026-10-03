@@ -1,7 +1,13 @@
 # SPECS - numbered, testable. Every id must appear in at least one test name.
 # Format: ID | statement | verification idea. Status column maintained by scripts/spec-check.
 # Priority tags at the end of a line: [P1] must have for a playable + validated v1, [P2] should have; untagged = original v1 set (treat as P1).
-# "## BACKLOG" at the bottom holds [P3] future specs; spec-check ignores everything after that heading.
+# "## ADDED AFTER VALIDATION (2026-10-03)
+DRV-018 A 90-degree-or-sharper turn called so late that the car is still above 1.6x the turn speed at the node is refused ("Too late, I can't make that turn"), logged as turnMissed, and the driver continues straight-as-possible (off course if that is not the route); a bear or a turn called in time is taken. [P1]
+GEN-009 A generated stage's calibration run is a transit: an official restart line follows "END CALIBRATION" with restartTime rounded up to the minute 2-3 min after the ghost's arrival, the book text shows the restart clock time, and leg 1's clock starts at that restart. [P1]
+GEN-010 Generated stages place at most 2 railroad crossings with trains and at most 1 that actually blocks; a "SPEED LIMIT NN" sign never posts a limit below the assigned speed. [P2]
+BOT-006 The oracle declares the measured qualifying delay as a Time Allowance once per leg, and times a compound STOP + timed line from the ghost's departure of its own node, never a stale earlier segment. [P2]
+
+## BACKLOG" at the bottom holds [P3] future specs; spec-check ignores everything after that heading.
 
 ## UNITS / RNG
 UNIT-001 mphToFps(60) = 88.0 exactly (60 mph = 88 ft/s) and fpsToMph inverts within 1e-9.

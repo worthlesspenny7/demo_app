@@ -5,6 +5,9 @@ import type { Simulator, StageResult } from '../core/sim.js';
 import type { Drill } from '../core/drills/types.js';
 import { createProgressStore, type ProgressStore } from './viewmodels/progress.js';
 import { builtinScenario } from '../agent/scenarios.js';
+import { allDrills } from '../core/drills/index.js';
+import { loadStored, replayFinished, LAST_KEY, type StoredSource } from './viewmodels/resume.js';
+import './engine-augment.js';
 
 export interface Settings { watch: 'analog' | 'digital'; timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
 export const DEFAULT_SETTINGS: Settings = { watch: 'analog', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };
@@ -20,11 +23,28 @@ export function applyTheme(s: Settings): void { try { document.documentElement.d
 /** What is being played: a drill (id/tier/seed) or a built-in scenario. */
 export type RunSource = { kind: 'drill'; drillId: string; tier: number; seed: number } | { kind: 'builtin'; name: string; seed: number };
 
-export interface Run { source: RunSource; scenario: Scenario; sim: Simulator; drill: Drill | null; result: StageResult | null; scaleMax: number; watch: 'analog' | 'digital'; annotations: string | null }
+export interface Run { source: RunSource; scenario: Scenario; sim: Simulator; drill: Drill | null; result: StageResult | null; scaleMax: number; watch: 'analog' | 'digital'; annotations: string | null; aborted?: boolean }
 
-export const app: { settings: Settings; progress: ProgressStore; run: Run | null; lastResult: { run: Run; result: StageResult } | null } = {
-  settings: loadSettings(), progress: createProgressStore(), run: null, lastResult: null,
+export const app: { settings: Settings; progress: ProgressStore; run: Run | null; lastResult: { run: Run; result: StageResult } | null; /** Home asked the cockpit to restore the saved live run. */ resume: boolean } = {
+  settings: loadSettings(), progress: createProgressStore(), run: null, lastResult: null, resume: false,
 };
+
+/** Rebuild the last finished run from its stored action log (the Debrief survives a reload). */
+export function restoreLastRun(): { run: Run; result: StageResult } | null {
+  if (app.lastResult) return app.lastResult;
+  const st = loadStored(LAST_KEY); if (!st) return null;
+  try {
+    let drills: Drill[] = []; try { drills = allDrills(); } catch { drills = []; }
+    const source: RunSource = st.source as StoredSource;
+    const built = buildScenario(source, drills); if (!built) return null;
+    const scenario = withDriver(built.scenario, st.driverSkill as Settings['driverSkill']);
+    const sim = replayFinished(scenario, st);
+    const result = sim.result();
+    const run: Run = { source, scenario, sim, drill: built.drill, result, scaleMax: st.scaleMax, watch: st.watch, annotations: st.annotations, aborted: !!st.aborted };
+    app.lastResult = { run, result };
+    return app.lastResult;
+  } catch { return null; }
+}
 
 export function withDriver(sc: Scenario, skill: Settings['driverSkill']): Scenario {
   if (skill === 'scenario') return sc;

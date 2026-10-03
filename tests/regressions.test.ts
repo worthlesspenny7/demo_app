@@ -91,3 +91,35 @@ describe('generator wiring and golden transcript', () => {
     expect(snapshot).toEqual(stored);
   });
 });
+
+describe('post-validation specs', () => {
+  it('DRV-018 a sharp turn called too late is refused and the car goes straight; called in time it is taken', async () => {
+    const { ScenarioBuilder, EXITS } = await import('../src/core/builder.js');
+    const { DRIVER_EXPERT } = await import('../src/core/course.js');
+    const { hms } = await import('../src/core/units.js');
+    const { stepUntil, runToEnd, startLikeOracle, nodeS } = await import('./helpers.js');
+    const mk = () => new ScenarioBuilder({ startTime: hms(8, 0, 0), driver: { ...DRIVER_EXPERT, inconsistency: 0 }, excursionFt: 1200 }).start(45).advanceMiles(0.6).instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 700 }, { turn: 'R', speed: 35 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+    const late = new Simulator(mk()); startLikeOracle(late); const s = nodeS(late.sc, 'n2');
+    stepUntil(late, () => late.car.s >= s - 60); late.act({ type: 'call.turn', dir: 'R' }); runToEnd(late);
+    expect(late.events.some(e => e.type === 'turnMissed')).toBe(true); expect(late.offCourseCount).toBe(1);
+    const early = new Simulator(mk()); startLikeOracle(early); stepUntil(early, () => early.car.s >= s - 600); early.act({ type: 'call.turn', dir: 'R' }); runToEnd(early);
+    expect(early.events.some(e => e.type === 'turnMissed')).toBe(false); expect(early.offCourseCount).toBe(0);
+  });
+  it('GEN-009/GEN-010 calibration restart, train caps and speed-limit text', () => {
+    for (const seed of [1, 2, 3]) {
+      const sc = generateStage(seed, PROFILES.fullStage!);
+      const cal = sc.book.filter(i => i.section === 'calibration'); const last = cal[cal.length - 1]!;
+      const restart = sc.book.find(i => i.section === 'restart' && i.n > last.n && /RESTART at \d\d:\d\d:\d\d/.test(i.text))!;
+      expect(restart).toBeTruthy(); expect(restart.restartTime! % 60).toBe(0); expect(restart.n).toBe(last.n + 1);
+      const trains = sc.hazards.filter(h => h.kind === 'train'); expect(trains.length).toBeLessThanOrEqual(2);
+      expect((sc.tags ?? []).filter(t => /^train:\d+:hit$/.test(t)).length).toBeLessThanOrEqual(1);
+      for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; const m = n.sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1]), `line ${ins.n}`).toBeGreaterThanOrEqual(ins.speed); }
+    }
+  });
+  it('BOT-006 oracle declares TA and handles compound STOP+timed lines (D04 3 stars on 10 seeds)', () => {
+    const d = drillById('D04')!;
+    for (let seed = 1; seed <= 10; seed++) { const sc = d.scenario(seed, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim)); expect(d.rubric(r, sc).stars, `seed ${seed}`).toBe(3); }
+    const b = drillById('D08b')!; const sc = b.scenario(2, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
+    expect(r.actions.some(a => a.action.type === 'ta.declare')).toBe(true); expect(b.rubric(r, sc).stars).toBeGreaterThanOrEqual(2);
+  });
+});
