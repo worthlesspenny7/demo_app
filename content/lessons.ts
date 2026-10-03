@@ -13,6 +13,14 @@ const CAL_CORRECT = 28 * 60 + 43.2, CAL_ACTUAL = 28 * 60 + 47.3, CAL_FACTOR = 43
 const CAL_NEW_FACTOR = Math.round(CAL_FACTOR * CAL_CORRECT / CAL_ACTUAL);
 const CAL_CLICKS = Math.round(CAL_FACTOR / 3600 * 10) / 10 * (2 * (CAL_ACTUAL - CAL_CORRECT)); // 1.2 clicks per s/h x 8.2 s/h = 9.84
 
+/** Calibration-run laps, worked example (Example Rally #5-#10 box values; the lap readings are an illustrative run that finishes 4.3 s late). */
+const CAL_BOX_CUM = [109.3, 441.3, 962.0, 1517.8];            // 1m49.3s, 7m21.3s, 16m02.0s, 25m17.8s printed in the boxes
+const CAL_LAPS = [110.1, 443.0, 965.3, 1522.1];               // 1m50.1s, 7m23.0s, 16m05.3s, 25m22.1s read off the stopwatch
+const mmss = (x: number): string => `${Math.floor(x / 60)}m${(x % 60).toFixed(1).padStart(4, '0')}s`;
+const LAP_ERR = CAL_LAPS[3]! - CAL_BOX_CUM[3]!;                // 4.3 s late at the last point
+const LAP_SPH = LAP_ERR * 3600 / CAL_BOX_CUM[3]!;              // seconds per hour
+const LAP_NEW = Math.round(CAL_FACTOR * CAL_BOX_CUM[3]! / CAL_LAPS[3]!);
+
 /** A lesson paragraph is plain text, or a richer block: a bulleted/numbered list, preformatted lines (call patterns, worked examples), a table or a printable card. */
 export type LessonBlock = string | { list: string[]; ordered?: boolean } | { pre: string[]; caption?: string } | { table: { head: string[]; rows: string[][] }; caption?: string } | { card: { title: string; lines: string[] } };
 export interface Lesson { id: string; title: string; minutes: number; body: LessonBlock[]; check: { question: string; options: string[]; answer: number; explain: string }; source: string }
@@ -75,12 +83,39 @@ export const LESSONS: Lesson[] = [
     check: { question: 'A farm tractor held you 0m45s. You made up 0m25s before the checkpoint. What do you request?', options: ['0m45s: the whole delay', 'Request 0m20s', 'Request 0m25s', 'Nothing: tractors never qualify'], answer: 1, explain: 'Delayed 0m45s, made up 0m25s: request 0m20s, a multiple of 10 s. The committee denies time you could have made up, so request only what you could not recover.' },
   },
   {
+    id: 'which-timer', title: 'Which timer, when', minutes: 4, source: 'docs/research/08-rookie-handbook-body.md §2, §5, §6, §8 (HB p.5, p.11-13); docs/research/09-event-regulations-2026.md §7.3, §8.5, §14 (REG V.C.1.b, VII.F, V.H.3)',
+    body: [
+      'You carry two timers and they do different jobs (HB p.5). The analog dash clock tells you what time of day it is. The digital stopwatch, with its lap/split and time-of-day functions, measures how long something takes. Most mistakes come from using one for the other\'s job.',
+      'The clock, synced to the WWV clock when the instructions are picked up (REG V.C.1.b), is the only source for time of day: starts and restarts (the printed base time plus your assigned start position), the IN and OUT times of an exact transit, and the 15-minute Time Allowance window.',
+      'The stopwatch is for every interval: the calibration run (start it at the asterisk sign and lap at every calibration point), timed speed changes (start at the sign, hold until the interval), pauses (count from the moment the wheels stop and go at the chart time), and the 10 % make-up count. An exact transit can also be run off the stopwatch if the navigator prefers an interval, but the OUT time is still checked against the clock.',
+      'Two things never to do: never read time of day off a running chrono, and never time an interval off the clock\'s second hand. The stopwatch\'s time-of-day mode is a backup, for when the clock fails.',
+      { table: { head: ['Situation', 'Device', 'What you write down'], rows: [
+        ['Start or restart', 'Clock', 'Restart time = base + ASP, on the restart line'],
+        ['Exact transit', 'Clock (or stopwatch interval)', 'IN time and OUT time = IN + interval'],
+        ['TA window (15 min)', 'Clock', 'Time you reached the TA point and the deadline'],
+        ['Calibration run', 'Stopwatch: start at the asterisk, lap at every point', 'Interval and cumulative for each point, against the box'],
+        ['Timed speed change', 'Stopwatch, started at the sign', 'The call time (interval minus the ramp lead)'],
+        ['Pause', 'Stopwatch, started when the wheels stop', 'The chart time beside the printed pause'],
+        ['10 % make-up count', 'Stopwatch', 'Seconds to hold the higher speed'],
+        ['Clock failure', 'Stopwatch time-of-day mode (backup only)', 'The offset to the clock, once it is back'],
+      ] }, caption: 'Which timer, when' },
+      'Worked example, the calibration run. The book prints a box at each calibration point with the interval over the cumulative official time (REG VII.F.1); the asterisk marks where the stopwatch starts. Lap at each point and compare the cumulative lap with the box, not the intervals, so errors do not stack.',
+      { pre: [
+        'point      box cumulative   your lap       late',
+        ...CAL_BOX_CUM.map((c, i) => `${("#" + [6, 7, 9, 10][i]).padEnd(11)}${mmss(c).padEnd(16)} ${mmss(CAL_LAPS[i]!).padEnd(14)} +${(CAL_LAPS[i]! - c).toFixed(1)} s`),
+        `Late ${LAP_ERR.toFixed(1)} s in ${mmss(CAL_BOX_CUM[3]!)}  ->  ${LAP_SPH.toFixed(1)} s per hour`,
+        `Timewise factor ${CAL_FACTOR} x ${CAL_BOX_CUM[3]!.toFixed(1)} / ${CAL_LAPS[3]!.toFixed(1)} = ${(CAL_FACTOR * CAL_BOX_CUM[3]! / CAL_LAPS[3]!).toFixed(1)} -> ${LAP_NEW}`,
+      ], caption: 'Calibration laps (box values from the Example Rally #6-#10; the laps are an illustration)' },
+    ],
+    check: { question: 'A timed segment reads "30 MPH / 0m36s / 45 MPH". How do you time the 36 seconds?', options: ['Note the clock\'s second hand at the sign and watch for 36 s later', 'Start the stopwatch at the sign and count the interval on it', 'Read the time of day off the running stopwatch', 'Use the stopwatch\'s time-of-day mode'], answer: 1, explain: 'Intervals belong to the stopwatch, started at the sign. The clock is for time of day only; never time an interval off its second hand, and never read time of day off a running chrono.' },
+  },
+  {
     id: 'pause-arithmetic', title: 'Pause arithmetic: dwell = pause - loss', minutes: 4, source: 'docs/research/08-rookie-handbook-body.md §3b (HB p.8), §5; docs/research/07 §2.1; CHART-004',
     body: [
       `Stopping from 35 mph and getting back to 35 costs the 1939 Ford about ${fmt1(LOSS_35_35)} seconds compared with the ghost, before you have waited at all. That number is your car's stop/start loss, measured on the performance table and written on your card for each entry/exit speed pair. (A stop that is also a turn loses a little more, because the car must crawl through the turn: the cockpit card and the Debrief both include that.)`,
       `The handbook calls this the Stop & Go chart (HB p.8): the instructions "usually say stop at the sign, pause for 15 seconds, and proceed at the assigned speed", and you replace the 15 s with the chart value for your IN/OUT speed pair. On the Packard example chart, 30 in and 40 out is 8.6 s. For the Ford here, the same arithmetic is dwell = pause - loss: at "STOP. Pause 15" you wait 15 - ${fmt1(LOSS_35_35)} = ${fmt1(15 - LOSS_35_35)} seconds after the wheels stop, then call "go". Wait the whole 15 and you arrive ${fmt1(LOSS_35_35)} seconds late; call go immediately and you are ${fmt1(LOSS_35_35)} seconds early.`,
       'Always check the course instructions carefully: "sometimes the instructed pause time may be different than 15 seconds." Then the chart value is not your answer. The chart loss is 15 minus the chart value (Packard 30 in, 40 out: 15 - 8.6 = 6.4 s); keep the printed pause and subtract that loss. Pause 20 at 30 in, 40 out: 20 - 6.4 = 13.6 s. If traffic holds you past your planned pause, make up the difference.',
-      'Set the stopwatch bezel so the sweep hand reaches the index at the dwell, count down out loud ("3, 2, 1, GO", always ending on GO) and keep the rhythm identical at every stop. A constant bias calibrates out on the card; scatter does not.',
+      'Start the stopwatch (or set the analog bezel so the sweep hand reaches the index) at the dwell, count down out loud ("3, 2, 1, GO", always ending on GO) and keep the rhythm identical at every stop. A constant bias calibrates out on the card; scatter does not.',
     ],
     check: { question: `Pause 20, entering at 40 and leaving at 30. Your card says the stop/start loss for 40 in / 30 out is ${fmt1(LOSS_40_30)} s. How long do you dwell?`, options: ['20 s', `${fmt1(20 - LOSS_40_30)} s`, `${fmt1(20 + LOSS_40_30)} s`, `${fmt1(LOSS_40_30)} s`], answer: 1, explain: `dwell = pause - loss = 20 - ${fmt1(LOSS_40_30)} = ${fmt1(20 - LOSS_40_30)} s after the driver says "stopped".` },
   },
@@ -90,7 +125,7 @@ export const LESSONS: Lesson[] = [
       'A speed change is instant for the ghost and a ramp for your car. The handbook rule is: split the speed change at the sign (HB p.12). Cross the sign at the midpoint speed and keep changing: going from 35 to 30, be at 32.5 as the bumper passes the sign and keep slowing. The gain before the sign and the loss after it cancel. (The regulations put the change when the front tires come even with the sign, VII.E.2.b.)',
       `Half a ramp early is the same thing, seen from the stopwatch. Your car needs time to ramp from 30 to 40 (about ${fmt1(RAMP_30_40)} s on the Ford). To centre the ramp on the instant the ghost changes, start the new speed half a ramp early: ${fmt1(LEAD_30_40)} s here. Being at the midpoint speed at the sign and calling the change ${fmt1(LEAD_30_40)} s early are one idea.`,
       `A timed segment such as "30 for 0:36 then 40" counts from where the previous speed change took effect, or, for a delayed change, from the row's own point (VII.E.2.d); in the sim that is the ghost's departure from the landmark: arrival plus any Pause, not your own "go". After 36 ghost seconds the ghost is at 40. So call 40 at 36 - ${fmt1(LEAD_30_40)} = ${fmt1(36 - LEAD_30_40)} s, not at 36.`,
-      'Lap the watch at the landmark (after the pause, when the car leaves), read the lap rather than the sweep, and set the bezel to the call time. A call that counts from your own "go" is late by the stop/start time.',
+      'Lap the watch at the landmark (after the pause, when the car leaves), read the lap rather than the sweep (or set the analog bezel to the call time). A call that counts from your own "go" is late by the stop/start time.',
     ],
     check: { question: `A timed segment reads "30 for 0:36 then 40". The ramp lead for 30 to 40 is ${fmt1(LEAD_30_40)} s. When, counted from the ghost's departure, do you call 40?`, options: ['At 36 s', `At ${fmt1(36 - LEAD_30_40)} s`, `At ${fmt1(36 + LEAD_30_40)} s`, 'When the sign appears'], answer: 1, explain: `Split the change at the sign, i.e. call half a ramp early: 36 - ${fmt1(LEAD_30_40)} = ${fmt1(36 - LEAD_30_40)} s after the ghost leaves the landmark.` },
   },

@@ -9,8 +9,8 @@ import { allDrills } from '../core/drills/index.js';
 import { scenarioMinutes } from './viewmodels/estimate.js';
 import { loadStored, replayFinished, LAST_KEY, type StoredSource } from './viewmodels/resume.js';
 
-export interface Settings { watch: 'analog' | 'digital'; /** UI-033: the time-of-day clock; analog by default, a digital readout is optional. Persisted here; cockpit wiring is separate. */ clock: 'analog' | 'digital'; timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
-export const DEFAULT_SETTINGS: Settings = { watch: 'analog', clock: 'analog', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };
+export interface Settings { watch: 'analog' | 'digital'; /** UI-033: the time-of-day clock; analog by default, a digital readout is optional. The stopwatch defaults to digital (HB p.5); analog stays selectable. */ clock: 'analog' | 'digital'; timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
+export const DEFAULT_SETTINGS: Settings = { watch: 'digital', clock: 'analog', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };
 const SETTINGS_KEY = 'rally-trainer.settings.v1';
 
 export function loadSettings(): Settings {

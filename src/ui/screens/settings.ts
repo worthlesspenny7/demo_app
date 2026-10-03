@@ -1,9 +1,9 @@
 /** Settings: watch kind, clock kind, default time scale, driver skill override, theme, audio. */
 import { app, saveSettings, el, DEFAULT_SETTINGS } from '../state.js';
 
-/** UI-033: what the Settings page says about the stopwatch and clock. Analog stays the default (Josh's choice); the digital option stays. */
-export const STOPWATCH_NOTE = 'The Rookie Handbook (HB p.5) recommends a good digital stopwatch with a lap/split function and a time-of-day function ("a necessity for accurate rallying"). Analog is the default here; the digital stopwatch is one click away and stays available.';
-export const CLOCK_NOTE = 'The handbook mounts an analog dash clock where both of you can read it (many teams use a continuous-motion rally clock with every second numbered). Analog is the default; a digital readout is optional. The choice is saved with your settings; the cockpit clock follows it once the option is wired in.';
+/** UI-033: instrument defaults follow the handbook (HB p.5): a digital stopwatch with lap/split and time of day, an analog dash clock. The analog stopwatch with countdown bezel stays selectable. */
+export const STOPWATCH_NOTE = 'Default: digital stopwatch with lap/split and a time-of-day mode, as the Rookie Handbook recommends (HB p.5: "a necessity for accurate rallying"). The analog stopwatch with the countdown bezel is an option, not the handbook\'s recommendation; it stays selectable here.';
+export const CLOCK_NOTE = 'The dash clock is analog by default: the handbook mounts one where both of you can read it, and time of day (starts, restarts, exact transits, the TA window) comes from it, synced to WWV. A digital readout is optional.';
 
 export function renderSettings(root: HTMLElement): void {
   const s = app.settings;
@@ -14,7 +14,7 @@ export function renderSettings(root: HTMLElement): void {
   const chk = (value: boolean, on: (v: boolean) => void): HTMLInputElement => { const e = el('input', { type: 'checkbox' }) as HTMLInputElement; e.checked = value; e.onchange = () => on(e.checked); return e; };
   const commit = (): void => { saveSettings(app.settings); };
   panel.append(
-    row('Stopwatch', sel(s.watch, [['analog', 'Analog, 1/5 s sweep, 60 s dial, countdown bezel'], ['digital', 'Digital, 1/100 s, split recall']], v => { app.settings.watch = v as 'analog' | 'digital'; commit(); }), 'Great Race rules allow one stopwatch, digital or analog. The analog crown refuses a reset while running.'),
+    row('Stopwatch', sel(s.watch, [['digital', 'Digital, 1/100 s, lap/split, time of day (handbook default)'], ['analog', 'Analog, 1/5 s sweep, 60 s dial, countdown bezel (not the handbook\'s recommendation)']], v => { app.settings.watch = v as 'analog' | 'digital'; commit(); }), 'Great Race rules allow one stopwatch, digital or analog. The analog crown refuses a reset while running.'),
     row('Time scale (default)', sel(String(s.timeScale), [['1', '1x real time'], ['2', '2x'], ['4', '4x'], ['8', '8x']], v => { app.settings.timeScale = Number(v) || 1; commit(); }), 'Adaptive: the cockpit drops to 1x whenever a feature is within 800 ft, the car is stopped or a count is near.'),
     row('Driver', sel(s.driverSkill, [['scenario', 'As the drill tier says'], ['expert', 'Expert (steady, 0.2 mph)'], ['sportsman', 'Dad, sportsman (0.5 mph)'], ['rookie', 'Dad, rookie (1 mph wander)']], v => { app.settings.driverSkill = v as typeof s.driverSkill; commit(); })),
     row('Theme', sel(s.theme, [['dusk', 'Cockpit at dusk (dark)'], ['light', 'Daylight']], v => { app.settings.theme = v as 'dusk' | 'light'; commit(); })),
