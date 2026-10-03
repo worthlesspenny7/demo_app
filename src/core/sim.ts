@@ -165,6 +165,7 @@ export class Simulator {
     this.mainRoadRule = opts.mainRoadRule ?? 'pavement-first';
     this.tod = sc.startTime - sc.prereadSeconds;
     this.tod0 = this.tod;
+    { const t = (sc.tags ?? []).find(x => x.startsWith('forceWatchReset:')); this.forceResetAt = t ? Number(t.split(':')[1]) : null; }
     this.legAnchorActual = sc.startTime;
     this.legAnchorGhost = sc.startTime;
     this.nextNodeIdx = 0;
@@ -277,6 +278,7 @@ export class Simulator {
     if (this.phase === 'finished') this.accum = 0;
   }
   private accum = 0;
+  private forceResetAt: number | null = null;
   /** Integer tick count since construction; tod = tod0 + tick * TICK exactly (SIM-025). */
   tick = 0;
   private readonly tod0: number;
@@ -291,6 +293,7 @@ export class Simulator {
     const todNext = this.tod0 + this.tick * TICK;
     if (this.phase === 'preread') { this.tod = todNext; return; }
     this.drivingSeconds += dt;
+    if (this.forceResetAt !== null && this.drivingSeconds >= this.forceResetAt) { this.forceResetAt = null; this.watch.stop(this.tod); this.watch.reset(this.tod); this.log('watchLost'); this.say('Your watch! It fell and reset', 'info'); }
     const sBefore = this.car.s;
     const vgBefore = this.ghostSpeedAt(this.routeS());
     this.driverStep(dt);
@@ -445,7 +448,7 @@ export class Simulator {
         if (this.waitReason === 'signal' && !this.signalRedAt(node)) { this.say('Green', 'info'); this.release('signal'); }
         if (this.waitReason === 'train' && !this.trainAt(node)) { this.say('Train cleared', 'info'); this.release('train'); }
         if (this.waitReason === 'stop' && this.goPending && this.tod >= this.trafficClearTod) { this.goPending = false; this.say('Clear, going', 'info'); this.release('stop'); }
-        if ((this.waitReason === 'stop' || this.waitReason === 'hold') && !this.holdRequested) {
+        if (this.waitReason === 'stop' && !this.holdRequested) {
           const waited = this.tod - this.waitStartTod;
           if (waited > drv.patienceSeconds && !this.patienceWarned) { this.patienceWarned = true; this.say('Going?', 'question'); }
           if (waited > 2 * drv.patienceSeconds) { this.say("I'm going", 'info'); this.release('patience'); }

@@ -76,7 +76,12 @@ export class OracleBot implements Bot {
       const node = nodeById(sc.course, p.ins.nodeId);
       const isStop = node.control === 'STOP' || p.ins.section === 'restart' || (p.ins.section === 'finish');
       // turn callout
-      if (p.ins.turn && !p.turnCalled && d <= 600) { p.turnCalled = true; this.act({ type: 'call.turn', dir: p.ins.turn }); }
+      if (p.ins.turn && !p.turnCalled && d <= 600) {
+        // do not arm while an intervening real-road exit would match the callout (the driver would take it)
+        const band = bandOf(p.ins.turn);
+        const decoy = sc.course.nodes.some(nd => nd.s > car.s - 1 && nd.s < p.s - 5 && nd.kind === 'intersection' && (nd.exits ?? []).some(e => e.kind !== 'driveway' && e.kind !== 'lot' && e.kind !== 'private' && e.angle >= band[0] && e.angle <= band[1] && (Math.abs(e.angle) >= 20 || p.ins.turn === 'S')));
+        if (!decoy || d <= 120) { p.turnCalled = true; this.act({ type: 'call.turn', dir: p.ins.turn }); }
+      }
       // finish: hold at the banner
       if (p.ins.section === 'finish' && !p.stopHandled && d <= 500) { p.stopHandled = true; this.act({ type: 'call.stop' }); }
       // landmark speed change (no stop): lead by half the ramp
@@ -149,6 +154,9 @@ export class OracleBot implements Bot {
       this.act({ type: 'call.speed', mph: this.recovering });
     }
   }
+}
+function bandOf(dir: TurnDir): [number, number] {
+  switch (dir) { case 'L': case 'JL': return [-120, -60]; case 'BL': return [-60, -20]; case 'S': return [-20, 20]; case 'BR': return [20, 60]; case 'R': case 'JR': return [60, 120]; case 'AL': return [-180, -120]; case 'AR': return [120, 180]; }
 }
 function turnAngle(dir: TurnDir): number { return { L: 90, R: 90, S: 0, BL: 45, BR: 45, AL: 150, AR: 150, JL: 90, JR: 90 }[dir]; }
 

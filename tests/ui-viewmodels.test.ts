@@ -4,7 +4,16 @@ import { clockViewModel } from '../src/ui/viewmodels/clock.js';
 import { speedoViewModel } from '../src/ui/viewmodels/speedo.js';
 import { cameoSvg, pickRouteExit } from '../src/ui/viewmodels/cameo.js';
 import { bookRows, columnC } from '../src/ui/viewmodels/book.js';
-import { debriefViewModel, BUCKETS } from '../src/ui/viewmodels/debrief.js';
+import { debriefViewModel, BUCKETS, workedTimed, workedCruise, ledgerAccuracy, biasNoise, cpCards, aidsRung } from '../src/ui/viewmodels/debrief.js';
+import { replay, counterfactuals, stopsFromEvents } from '../src/ui/viewmodels/counterfactual.js';
+import { effectiveScale, simAdvance, nextScale } from '../src/ui/viewmodels/timescale.js';
+import { KeyMapper } from '../src/ui/viewmodels/keys.js';
+import { audioCues } from '../src/ui/viewmodels/audio.js';
+import { createAnnotations } from '../src/ui/viewmodels/annotations.js';
+import { cockpitLayout, MIN_STOPWATCH_DIAL } from '../src/ui/viewmodels/layout.js';
+import { dwellFor, accelLoss } from '../src/core/perf-table.js';
+import { LEGAL_AIDS, TRAINING_AIDS, aidsForRung } from '../src/core/course.js';
+import type { Observation } from '../src/core/sim.js';
 import { createProgressStore, type StorageLike } from '../src/ui/viewmodels/progress.js';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
 import { Simulator } from '../src/core/sim.js';
@@ -202,5 +211,295 @@ describe('UI-008 progress store', () => {
     expect(none.get('D02')?.stars).toBe(1);
     const corrupt = fakeStorage(); corrupt.setItem('rally-trainer.progress.v1', '{not json');
     expect(createProgressStore(corrupt).load().drills).toEqual({});
+  });
+});
+
+// ---------- helpers for the debrief / counterfactual tests ----------
+function stopLeg(seed = 7) {
+  const b = new ScenarioBuilder({ id: 'cf-leg', seed, prereadSeconds: 0 });
+  b.start(35).advanceMiles(0.5).stop('S', 35, { pause: 15 }).advanceMiles(0.5).checkpoint('timing').advanceMiles(0.3).finish();
+  return b.build();
+}
+/** Run the stop leg with a given dwell at the STOP; returns the simulator (finished). */
+function runWithDwell(sc: ReturnType<typeof stopLeg>, dwell: number) {
+  const sim = new Simulator(sc);
+  startAtOfficialTime(sim);
+  stepUntil(sim, () => sim.observe().driver.waitingForGo, 600);
+  sim.step(dwell);
+  sim.act({ type: 'call.go' });
+  runToEnd(sim);
+  return sim;
+}
+
+describe('UI-009 cockpit layout', () => {
+  it('UI-009 road view >= 45 % of the left pane, stopwatch the largest instrument with a >= 240 px dial, book column on the right', () => {
+    for (const [w, h] of [[1280, 720], [1366, 768], [1600, 900], [1920, 1080]] as const) {
+      const L = cockpitLayout(w, h);
+      expect(L.roadFraction).toBeGreaterThanOrEqual(0.45);
+      expect(L.stopwatch.dial).toBeGreaterThanOrEqual(MIN_STOPWATCH_DIAL);
+      expect(L.stopwatch.dial).toBeGreaterThan(L.clock.dial);
+      expect(L.clock.dial).toBeGreaterThan(L.speedo.dial);
+      expect(L.book.x).toBe(L.leftPane.w);
+      expect(L.book.x + L.book.w).toBe(w);
+      expect(L.clock.rect.x).toBeLessThan(L.stopwatch.rect.x);
+      expect(L.stopwatch.rect.x).toBeLessThan(L.speedo.rect.x);
+      expect(L.drawer.y).toBe(L.leftPane.h);
+    }
+    expect(cockpitLayout(Number.NaN, Number.NaN).stopwatch.dial).toBeGreaterThanOrEqual(MIN_STOPWATCH_DIAL);
+  });
+});
+
+describe('UI-010 adaptive time scale', () => {
+  const base = { requested: 4, paused: false, phase: 'running', carStopped: false, waitingForGo: false, nearestFeatureFt: null, hazardActive: false, countdownSeconds: null, bezelRemaining: null } as const;
+  it('UI-010 runs at the requested scale only in dead cruise, drops to 1x near features / stops / countdowns, 0 while paused, capped catch-up', () => {
+    expect(effectiveScale({ ...base })).toBe(4);
+    expect(effectiveScale({ ...base, requested: 8, maxScale: 4 })).toBe(4);
+    expect(effectiveScale({ ...base, paused: true })).toBe(0);
+    expect(effectiveScale({ ...base, nearestFeatureFt: 750 })).toBe(1);
+    expect(effectiveScale({ ...base, nearestFeatureFt: 1200 })).toBe(4);
+    expect(effectiveScale({ ...base, carStopped: true })).toBe(1);
+    expect(effectiveScale({ ...base, waitingForGo: true })).toBe(1);
+    expect(effectiveScale({ ...base, hazardActive: true })).toBe(1);
+    expect(effectiveScale({ ...base, countdownSeconds: 12 })).toBe(1);
+    expect(effectiveScale({ ...base, countdownSeconds: 40 })).toBe(4);
+    expect(effectiveScale({ ...base, bezelRemaining: 9 })).toBe(1);
+    expect(effectiveScale({ ...base, lockedTo1x: true })).toBe(1);
+    expect(effectiveScale({ ...base, phase: 'finished' })).toBe(1);
+    expect(simAdvance(0.016, 4)).toBeCloseTo(0.064, 6);
+    expect(simAdvance(5, 8)).toBe(2);           // a stalled tab cannot fast-forward more than 2 s per frame
+    expect(simAdvance(0.016, 0)).toBe(0);       // paused: nothing advances
+    expect(nextScale(1, 1)).toBe(2); expect(nextScale(8, 1)).toBe(8); expect(nextScale(1, -1)).toBe(1);
+  });
+});
+
+describe('UI-011 keyboard mapping', () => {
+  it('UI-011 maps the cockpit keys: Space, L, Shift+R only, bezel brackets, arrows with B/A modifiers, G/S/U/P/T/N/D/E, digits+Enter, +/-', () => {
+    const k = new KeyMapper();
+    expect(k.keydown({ key: ' ' })).toEqual({ type: 'watch.toggle' });
+    expect(k.keydown({ key: 'l' })).toEqual({ type: 'watch.lap' });
+    expect(k.keydown({ key: 'Enter' })).toEqual({ type: 'watch.lap' });
+    expect(k.keydown({ key: 'r' })).toBeNull();                                   // plain R is a landmine: ignored
+    expect(k.keydown({ key: 'R', shiftKey: true })).toEqual({ type: 'watch.reset' });
+    expect(k.keydown({ key: '[' })).toEqual({ type: 'bezel', delta: -1 });
+    expect(k.keydown({ key: ']' })).toEqual({ type: 'bezel', delta: 1 });
+    expect(k.keydown({ key: '}', shiftKey: true })).toEqual({ type: 'bezel', delta: 0.2 });
+    expect(k.keydown({ key: 'ArrowLeft' })).toEqual({ type: 'call.turn', dir: 'L' });
+    expect(k.keydown({ key: 'ArrowUp' })).toEqual({ type: 'call.turn', dir: 'S' });
+    k.keydown({ key: 'b' }); expect(k.keydown({ key: 'ArrowRight' })).toEqual({ type: 'call.turn', dir: 'BR' }); k.keyup({ key: 'b' });
+    k.keydown({ key: 'a' }); expect(k.keydown({ key: 'ArrowLeft' })).toEqual({ type: 'call.turn', dir: 'AL' }); k.keyup({ key: 'a' });
+    k.keydown({ key: 'j' }); expect(k.keydown({ key: 'ArrowLeft' })).toEqual({ type: 'call.turn', dir: 'JL' }); k.keyup({ key: 'j' });
+    expect(k.keydown({ key: 'ArrowRight' })).toEqual({ type: 'call.turn', dir: 'R' });
+    expect(k.keydown({ key: 'g' })).toEqual({ type: 'call.go' });
+    expect(k.keydown({ key: 's' })).toEqual({ type: 'call.stop' });
+    expect(k.keydown({ key: 'u' })).toEqual({ type: 'call.uturn' });
+    expect(k.keydown({ key: 'p' })).toEqual({ type: 'call.pass' });
+    expect(k.keydown({ key: 't' })).toEqual({ type: 'ta' });
+    expect(k.keydown({ key: 'n' })).toEqual({ type: 'line', delta: 1 });
+    expect(k.keydown({ key: 'N', shiftKey: true })).toEqual({ type: 'line', delta: -1 });
+    expect(k.keydown({ key: 'd' })).toEqual({ type: 'depart' });
+    expect(k.keydown({ key: 'e' })).toEqual({ type: 'ledger' });
+    expect(k.keydown({ key: '3' })).toEqual({ type: 'buffer', text: '3' });
+    expect(k.keydown({ key: '6' })).toEqual({ type: 'buffer', text: '36' });
+    expect(k.keydown({ key: '.' })).toEqual({ type: 'buffer', text: '36.' });
+    expect(k.keydown({ key: '5' })).toEqual({ type: 'buffer', text: '36.5' });
+    expect(k.keydown({ key: 'Enter' })).toEqual({ type: 'call.speed', mph: 36.5 });
+    expect(k.buffer).toBe('');
+    expect(k.keydown({ key: '+' })).toEqual({ type: 'nudge', delta: 1 });
+    expect(k.keydown({ key: '-' })).toEqual({ type: 'nudge', delta: -1 });
+    expect(k.keydown({ key: 'Escape' })).toEqual({ type: 'pause' });
+    expect(k.keydown({ key: 'x', ctrlKey: true })).toBeNull();
+    expect(k.keydown({ key: 'z' })).toBeNull();
+    expect(k.keydown(null as unknown as { key: string })).toBeNull();
+  });
+});
+
+describe('UI-012 audio cues', () => {
+  function obs(p: Partial<Observation>): Observation {
+    return { phase: 'running', tod: 0, secondsToStart: 0, stopwatch: { kind: 'analog', running: false, reading: 0, laps: [], bezel: 0, bezelRemaining: 0, dialSeconds: 60 }, ledger: null, bezel: 0, speedo: { reading: 0, kind: 'timewise' }, book: [], currentLine: 1, ahead: [], driver: { messages: [], state: 'cruise', targetIndicated: null, pendingTurn: null, waitingForGo: false, lastExecutedLine: null }, annotations: {}, carStopped: false, offCourseHint: false, aids: {}, notes: [], legIndex: 1, startTime: 0, rules: { maxPerCp: 300, sightZonePenalty: 30, observationMissPenalty: 60, earlyRestartPenalty: 60, earlyRestartMinutes: 5, missedCpLateMinutes: 30, trophyRunCounts: false, rookieDropWorstLeg: false, taOverDeclareTolerance: 5 }, ...p } as Observation;
+  }
+  it('UI-012 clicks on start/stop/lap, speaks driver lines, beeps 3-2-1 only with the aid, train and signal sounds, silent when muted', () => {
+    const a = obs({});
+    const b = obs({ stopwatch: { kind: 'analog', running: true, reading: 0, laps: [], bezel: 0, bezelRemaining: 0, dialSeconds: 60 }, driver: { messages: [{ tod: 1, text: 'Holding 35', kind: 'readback' }], state: 'cruise', targetIndicated: 35, pendingTurn: null, waitingForGo: false, lastExecutedLine: null } });
+    const cues = audioCues(a, b);
+    expect(cues).toContainEqual({ kind: 'click' });
+    expect(cues).toContainEqual({ kind: 'speech', text: 'Holding 35' });
+    const c = obs({ stopwatch: { kind: 'analog', running: true, reading: 5, laps: [5], bezel: 0, bezelRemaining: 0, dialSeconds: 60 } });
+    expect(audioCues(b, c).filter(x => x.kind === 'click').length).toBe(1);
+    expect(audioCues(obs({ aids: { countdown: 3.4 } }), obs({ aids: { countdown: 2.9 } }), { countdownAid: true })).toEqual([{ kind: 'beep', n: 3 }]);
+    expect(audioCues(obs({ aids: { countdown: 3.4 } }), obs({ aids: { countdown: 2.9 } }), { countdownAid: false })).toEqual([]);
+    expect(audioCues(obs({}), obs({ ahead: [{ kind: 'intersection', approxDistanceFt: 400, gateDown: true }] }))).toEqual([{ kind: 'train' }]);
+    expect(audioCues(obs({}), obs({ ahead: [{ kind: 'intersection', approxDistanceFt: 400, signalColor: 'red' }] }))).toEqual([{ kind: 'signal' }]);
+    expect(audioCues(a, b, { muted: true })).toEqual([]);
+    expect(audioCues(null, undefined)).toEqual([]);
+  });
+});
+
+describe('UI-013 pre-read annotations', () => {
+  const book: Instruction[] = [
+    { n: 1, nodeId: 'n1', text: 'START. Speed 35', section: 'start', speed: 35, restartTime: 28800 },
+    { n: 2, nodeId: 'n2', text: 'Right at STOP. Pause 15', turn: 'R', pause: 15 },
+    { n: 3, nodeId: 'n3', text: 'At "Oak Rd". Speed 40', speed: 40 },
+    { n: 4, nodeId: 'n4', text: 'Left at STOP. Pause 20. Speed 35', turn: 'L', pause: 20, speed: 35 },
+  ];
+  it('UI-013 highlight colours, GO-time column, cheat card and coverage persist through serialize/restore', () => {
+    const a = createAnnotations();
+    expect(a.toggleHighlight(2, 'pause')).toEqual(['pause']);
+    expect(a.toggleHighlight(2, 'turn')).toEqual(['pause', 'turn']);
+    expect(a.toggleHighlight(2, 'pause')).toEqual(['turn']);
+    a.setGoTime(4, '12.5');
+    a.setCard({ '35': 36, '40': 41.2 });
+    expect(a.coverage(book)).toBeCloseTo(0.5, 6);         // line 4 has a GO time, line 2 lost its pause mark
+    a.toggleHighlight(2, 'pause');
+    expect(a.coverage(book)).toBe(1);
+    const b = createAnnotations(a.serialize());
+    expect(b.highlights(2)).toEqual(['turn', 'pause']);
+    expect(b.goTime(4)).toBe('12.5');
+    expect(b.card()).toEqual({ '35': 36, '40': 41.2 });
+    expect(b.suggested(book)[3]).toEqual(['speed', 'sign']);
+    expect(b.suggested(book)[4]).toEqual(['pause', 'speed', 'turn']);
+    expect(createAnnotations('{broken').coverage([])).toBe(1);
+    expect(createAnnotations(null).coverage(undefined)).toBe(1);
+  });
+});
+
+describe('DEBRIEF-001 worked arithmetic', () => {
+  it('DEBRIEF-001 stop rows carry entry/exit speed, card loss, correct dwell = pause - loss, your dwell, delta and the formula text', () => {
+    const sc = stopLeg();
+    const sim = runWithDwell(sc, 11.1);
+    const vm = debriefViewModel(sim.result(), sc);
+    expect(vm.stops.length).toBe(1);
+    const st = vm.stops[0]!;
+    expect(st.entrySpeed).toBe(35); expect(st.exitSpeed).toBe(35);
+    expect(st.cardLoss).toBeCloseTo(7.6, 1);
+    expect(st.correctDwell).toBeCloseTo(15 - st.cardLoss!, 1);
+    expect(st.yourDwell).toBeCloseTo(11.1, 0);
+    expect(st.delta).toBeCloseTo(st.yourDwell + st.cardLoss! - 15, 1);
+    expect(st.formulaText).toMatch(/^dwell = 15 - 7\.\d = 7\.\d s; you called go at 11\.\d s; \+3\.\d s$/);
+  });
+  it('DEBRIEF-001 timed-change rows give T, ramp lead, correct call and your call; cruise rows give ratio and seconds over', () => {
+    const b = new ScenarioBuilder({ id: 'timed', seed: 3, prereadSeconds: 0 });
+    b.start(30).advanceMiles(0.4).timedAt('bridge', { holdSpeed: 30, seconds: 36, thenSpeed: 40 }).advanceMiles(1).checkpoint('timing').advanceFt(300).finish();
+    const sc = b.build();
+    const sim = new Simulator(sc);
+    startAtOfficialTime(sim);
+    stepUntil(sim, () => sim.result().events.some(e => e.type === 'node' && e.detail?.nodeId === 'n2'), 600);
+    sim.step(36.4);
+    sim.act({ type: 'call.speed', mph: 40 });
+    runToEnd(sim);
+    const r = sim.result();
+    const rows = workedTimed(r.events, sc);
+    expect(rows.length).toBe(1);
+    const t = rows[0]!;
+    expect(t.T).toBe(36);
+    expect(t.rampLead).toBeGreaterThan(0.5);
+    expect(t.correctCall).toBeCloseTo(36 - t.rampLead, 1);
+    expect(t.yourCall).toBeCloseTo(36.4, 0);
+    expect(t.delta).toBeCloseTo(t.yourCall! - t.correctCall, 1);
+    const cr = workedCruise(r.attribution, sc);
+    expect(cr.length).toBeGreaterThan(0);
+    expect(cr[0]!.ratio).toBeGreaterThan(0.9);
+    expect(cr[0]!.text).toContain('ratio');
+    expect(workedTimed(undefined, null)).toEqual([]);
+  });
+  it('DEBRIEF-001 ledger accuracy grades believed vs truth', () => {
+    const sc = stopLeg();
+    const sim = new Simulator(sc);
+    startAtOfficialTime(sim);
+    sim.step(20);
+    sim.act({ type: 'ledger.set', seconds: 4 });
+    const truth = sim.pace();
+    runToEnd(sim);
+    const lv = ledgerAccuracy(sim.result().ledgerLog);
+    expect(lv.count).toBe(1);
+    expect(lv.rows[0]!.believed).toBe(4);
+    expect(lv.rows[0]!.truth).toBeCloseTo(truth, 1);
+    expect(lv.meanAbs).toBeCloseTo(Math.abs(4 - truth), 0);
+    expect(ledgerAccuracy(undefined).count).toBe(0);
+  });
+});
+
+describe('DEBRIEF-002 counterfactual replays', () => {
+  it('DEBRIEF-002 replaying the player\'s own action log reproduces the checkpoint error within 1 s', () => {
+    const sc = stopLeg();
+    const sim = runWithDwell(sc, 8);
+    const actual = sim.result();
+    const again = replay(sc, actual.events)!;
+    expect(again).not.toBeNull();
+    expect(again.score.legs[0]!.error).toBeCloseTo(actual.score.legs[0]!.error!, 0);
+    expect(stopsFromEvents(actual.events).length).toBe(1);
+  });
+  it('DEBRIEF-002 "go at the card dwell" removes the stop error, leaving only the standing-start loss; per-stop rows read "if you had called go at X"', () => {
+    const sc = stopLeg();
+    const sim = runWithDwell(sc, 15);           // full printed pause: ~7.5 s late at the stop
+    const actual = sim.result();
+    const was = actual.score.legs[0]!.error!;
+    const cfs = counterfactuals(actual, sc);
+    const card = cfs.find(c => c.id === 'cardDwell')!;
+    expect(card.applicable).toBe(true);
+    const e = card.rows[0]!.error!;
+    expect(e).toBeLessThan(was);
+    expect(Math.abs(e - accelLoss(35, sc.car))).toBeLessThanOrEqual(2);       // what remains is the start-line loss
+    expect(card.rows[0]!.text).toMatch(/^cp1: [+-]?\d+ \(was \+\d+\)$/);
+    const per = cfs.find(c => c.id === 'stop:0')!;
+    expect(per.label).toMatch(/if you had called go at 7\.\d s instead of 15\.\d s, cp1 would have been/);
+    // ATTR-001 holds for the replayed run too
+    const vm = debriefViewModel(card.result, sc);
+    expect(Math.abs(vm.legs[0]!.sum - (vm.legs[0]!.error ?? 0))).toBeLessThanOrEqual(1.5);
+    // not applicable rows are reported, never thrown
+    expect(cfs.find(c => c.id === 'fullTa')!.applicable).toBe(false);
+    expect(cfs.find(c => c.id === 'exactCard')!.applicable).toBe(false);
+    expect(counterfactuals(null, sc)).toEqual([]);
+    expect(replay(sc, null)).toBeNull();
+    expect(dwellFor(15, 35, 35, sc.car)).toBeCloseTo(7.4, 0);
+  });
+});
+
+describe('DEBRIEF-003 bias vs noise', () => {
+  it('DEBRIEF-003 labels a consistent late "go" as bias with one tip, scattered errors as noise, and merges the last-10-run history', () => {
+    const mk = (deltas: number[]) => ({
+      stops: deltas.map((d, i) => ({ legIndex: 1, nodeId: `n${i}`, line: i, vIn: 35, vOut: 35, entrySpeed: 35, exitSpeed: 35, pause: 15, carLoss: 7.5, cardLoss: 7.5, idealDwell: 7.5, correctDwell: 7.5, yourDwell: 7.5 + d, goAt: null, net: d, delta: d, waitTod: 0, releaseTod: null, text: '', formulaText: '' })),
+      timed: [], landmarks: [], turns: [], cruise: [],
+    });
+    const bias = biasNoise(mk([2.0, 2.4, 1.8, 2.2]), null);
+    const stop = bias.rows.find(r => r.type === 'stop')!;
+    expect(stop.verdict).toBe('bias');
+    expect(stop.mean).toBeCloseTo(2.1, 1);
+    expect(bias.tip).toMatch(/late/);
+    const noise = biasNoise(mk([-3, 3, -2.5, 2.5]), null);
+    expect(noise.rows.find(r => r.type === 'stop')!.verdict).toBe('noise');
+    expect(noise.tip).toMatch(/rhythm/);
+    // history: this run alone looks like noise, but with ten late runs behind it the verdict is bias
+    const withHist = biasNoise(mk([0.2]), { stop: [2, 2.5, 1.8, 2.2, 2.1, 1.9, 2.3, 2.0, 2.4, 2.2] });
+    expect(withHist.rows.find(r => r.type === 'stop')!.verdict).toBe('bias');
+    expect(withHist.rows.find(r => r.type === 'stop')!.histN).toBe(11);
+    expect(biasNoise(mk([]), null).tip).toBeNull();
+    // the debrief carries exactly one tip
+    const sc = stopLeg();
+    const vm = debriefViewModel(runWithDwell(sc, 15).result(), sc);
+    expect(typeof vm.tip).toBe('string');
+    expect(vm.tip.split(/(?<=\.)\s+(?=[A-Z])/).length).toBeLessThanOrEqual(2);
+    expect(vm.bias.rows.length).toBe(5);
+  });
+});
+
+describe('DEBRIEF-004 immediate CP card', () => {
+  it('DEBRIEF-004 at aids rung >= 2 a timing CP crossing yields a 3-second card with error, largest bucket and event; at rung <= 1 nothing', () => {
+    const sc = stopLeg();
+    const r = runWithDwell(sc, 15).result();
+    expect(aidsRung(TRAINING_AIDS)).toBe(3);
+    expect(aidsRung(LEGAL_AIDS)).toBe(0);
+    expect(aidsRung(aidsForRung(2))).toBe(2);
+    expect(aidsRung(aidsForRung(1))).toBe(1);
+    const cards = cpCards(r.events, r.attribution, TRAINING_AIDS, sc);
+    expect(cards.length).toBe(1);
+    const c = cards[0]!;
+    expect(c.cpId).toBe('cp1');
+    expect(c.showUntil - c.tod).toBeCloseTo(3, 6);
+    expect(c.error).toBe(r.score.legs[0]!.error);
+    expect(c.largestBucket).not.toBeNull();
+    expect(c.largestEvent).toMatch(/stop at line 2/);
+    expect(cpCards(r.events, r.attribution, LEGAL_AIDS, sc)).toEqual([]);
+    expect(cpCards(r.events, r.attribution, aidsForRung(1), sc)).toEqual([]);
+    expect(cpCards(undefined, undefined, TRAINING_AIDS)).toEqual([]);
   });
 });
