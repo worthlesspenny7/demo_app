@@ -15,7 +15,7 @@ import { audioCues, AudioPlayer } from '../viewmodels/audio.js';
 import { createAnnotations, HIGHLIGHTS, type Highlight } from '../viewmodels/annotations.js';
 import { cockpitLayout } from '../viewmodels/layout.js';
 import { cpCards, debriefViewModel, type CpCard } from '../viewmodels/debrief.js';
-import { instrumentPolicy, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, finishPrompt, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
+import { instrumentPolicy, paceAidText, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, finishPrompt, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
 import { drillHint, hintBarText, scaleHintText } from '../viewmodels/hints.js';
 import { LIVE_KEY, LAST_KEY, snapshotRun, saveStored, loadStored, clearStored, restoreSim, describeSource, sameDrillSource, type StoredSource } from '../viewmodels/resume.js';
 import { recordCampaignStage } from '../viewmodels/campaign.js';
@@ -132,7 +132,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   };
   const notesList = el('div', { class: 'mono', style: 'font-size:12px' }); notesBox.append(noteInput, notesList);
   const cardTitle = el('h4', {}, 'Perf card'); const cardBox = el('div', { class: 'box', id: 'perfcard' }, cardTitle); const cardBody = el('div', {}); cardBox.append(cardBody);
-  const ledgerBox = el('div', { class: 'box' }, el('h4', {}, 'Ledger (E) and time allowance (T)')); const ledgerBody = el('div', {}); ledgerBox.append(ledgerBody);
+  const ledgerBox = el('div', { class: 'box', id: 'ledgerbox' }, el('h4', {}, 'Ledger (E) and time allowance (T)')); const ledgerBody = el('div', {}); ledgerBox.append(ledgerBody);
   const logBox = el('div', { class: 'box log' }, el('h4', {}, 'Driver')); const logBody = el('div', { id: 'driverlog' }); logBox.append(logBody);
   const lapboard = el('div', { class: `lapboard${hasCal ? ' with-cal' : ''}` }, ledgerBox, cardBox, notesBox, logBox);
   if (hasCal) lapboard.append(calibrationBox());
@@ -349,7 +349,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     callout.textContent = keys.buffer ? `${keys.buffer}_ (Enter calls it)` : o.driver.pendingTurn ? `turn ${o.driver.pendingTurn} pending` : o.driver.targetIndicated !== null ? `holding ${o.driver.targetIndicated}` : '-';
     if (finishAsk) callout.textContent = `${finishAsk}`;
     if (keys.modifiers.length) callout.textContent += `  [${keys.modifiers.join('')}+arrow]`;
-    ledgerBody.innerHTML = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div><div class="muted">Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.</div>${o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${o.aids.earlyLate > 0 ? '+' : ''}${o.aids.earlyLate.toFixed(1)} s</b></div>` : ''}`;
+    ledgerBody.innerHTML = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div><div class="muted">Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.</div>${o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${escapeHtml(paceAidText(o.aids.earlyLate, sim.waitReason))}</b></div>` : ''}`;
     renderPerfCard(o, dwellSoFar);
     notesList.innerHTML = o.notes.slice(-4).map(n => `<div>· ${escapeHtml(n)}</div>`).join('');
     logBody.innerHTML = driverLog.slice(-6).map(m => `<div class="${m.kind === 'question' ? 'q' : ''}"><span class="muted mono">${policy.digitalReadouts ? escapeHtml(formatClock(m.tod)) : ''}</span> ${escapeHtml(m.text)}</div>`).join('') || '<div class="muted">Dad has not said anything yet.</div>';

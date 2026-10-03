@@ -116,6 +116,8 @@ tr.ace td { color: var(--ok); }
 .drawer .lapboard.with-cal { grid-template-columns: 1fr 1.2fr 0.9fr 1fr 1.5fr; }
 .drawer .lapboard .box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 80px; max-height: 150px; overflow: auto; min-width: 0; }
 .cockpit.compact .drawer .lapboard .box { max-height: 124px; min-height: 70px; font-size: 12px; }
+/* N5: the perf card (and the ledger box, whose Pace aid row was half hidden too) grow to fit their content (the "Book is on line N: press N" hint must never be clipped) */
+.drawer .lapboard .box#perfcard, .cockpit.compact .drawer .lapboard .box#perfcard, .drawer .lapboard .box#ledgerbox, .cockpit.compact .drawer .lapboard .box#ledgerbox { max-height: none; overflow: visible; }
 .drawer .lapboard .stopnow { margin-top: 4px; padding: 3px 6px; border-left: 3px solid var(--danger); background: var(--panel-2); }
 .drawer .lapboard .hintline { margin-top: 4px; color: var(--accent); }
 .drawer .lapboard .cal input { font-size: 12px; padding: 2px 4px; }

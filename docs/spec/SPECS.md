@@ -215,6 +215,7 @@ UI-024 Drill and built-in cards show minutes computed from the 1x ghost time plu
 UI-025 #/campaign honours the D13 lock (redirect Home with a note) and the top nav links to it only when D13 is unlocked. [P3]
 UI-026 When the finish banner or the observation checkpoint is in sight and the book asks for a stop, the pending callout shows "S: stop at the observation checkpoint / finish" until S is called; the perf card shows a Turn loss block (90 and 45 degree rows at 25-45 mph, from the car's performance table) on lines with a turn. [P2]
 UI-027 The quiz result screen has no live digit handler: pressing a digit after the last card raises no error. [P3]
+UI-028 Cockpit polish: the perf card box grows to fit its content (no overflow clipping of the "Book is on line N: press N" hint at 1280x720, 1366x768, 1024x700); the ledger "Pace aid" reads "holding for restart" (no number) while the car waits at a restart line (waitReason hold); the Home Start-here path marks a drill step done only on a Silver or Gold star (same rule as unlockStars). [P3]
 
 ## BACKLOG
 # [P3] future specs from the design reviews; not required for v1 and ignored by spec-check.

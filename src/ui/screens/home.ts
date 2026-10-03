@@ -4,7 +4,7 @@ import { allDrills, isUnlocked } from '../../core/drills/index.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
 import { drillMinutes, formatMinutes } from '../viewmodels/estimate.js';
-import { startPathState, unlockBest } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, unlockBest } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
 const TRACKS: { name: string; blurb: string; ids: string[] }[] = [
@@ -19,11 +19,10 @@ export function renderHome(root: HTMLElement): void {
   const drills = safeDrills();
   const prog = app.progress.load();
   const best = unlockBest(drills, prog);          // Silver/Gold stars only (DRILL-004)
-  const anyTier: Record<string, number> = {}; for (const [id, p] of Object.entries(prog.drills)) anyTier[id] = p.stars;
   page.append(el('h1', {}, 'Rally Trainer'), el('p', { class: 'muted' }, 'Great Race style time-speed-distance navigation: one stopwatch, one clock, a route book and a driver who does what you call. Learn in School, drill in the Cockpit, read the arithmetic in the Debrief.'));
   if (app.homeNote) { page.append(el('div', { class: 'banner', id: 'home-note' }, app.homeNote)); app.homeNote = ''; }
   const resume = resumePanel(drills); if (resume) page.append(resume);
-  page.append(startHerePanel(anyTier));
+  page.append(startHerePanel(drills, prog));
   const runs = app.progress.recentRuns(5);
   if (runs.length) page.append(el('p', { class: 'muted', id: 'lastruns' }, `Last runs: ${runs.map(runLabel).join('  ·  ')}`));
   if (drills.length) {
@@ -58,8 +57,8 @@ function runLabel(r: { id: string; score: number; stars: number; raw?: number; u
 
 function safeDrills(): Drill[] { try { return allDrills(); } catch { return []; } }
 
-function startHerePanel(best: Record<string, number>): HTMLElement {
-  const steps = startPathState(best, id => app.progress.lessonDone(id));
+function startHerePanel(drills: Drill[], prog: ReturnType<typeof app.progress.load>): HTMLElement {
+  const steps = startPathFromProgress(drills, prog, id => app.progress.lessonDone(id));
   const ol = el('ol', {});
   for (const s of steps) {
     const li = el('li', { class: `${s.done ? 'done' : ''} ${s.current ? 'current' : ''}`, 'data-step': s.step.id }, `${s.done ? '✓ ' : ''}${s.step.label}`);

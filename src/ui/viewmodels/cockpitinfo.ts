@@ -22,6 +22,12 @@ export function instrumentPolicy(aids: AidsConfig | null | undefined): Instrumen
   return { rung, digitalReadouts: rung >= 2, computedCard: rung >= 2 };
 }
 
+/** Ledger-box pace aid text (N11): while the car waits at a restart line (D16 hold) the early/late number is meaningless, so show no number. */
+export function paceAidText(earlyLate: number, waitReason: string | null | undefined): string {
+  if (waitReason === 'hold') return 'holding for restart';
+  return `${earlyLate > 0 ? '+' : ''}${earlyLate.toFixed(1)} s`;
+}
+
 const r1 = (x: number): number => Math.round(x * 10) / 10;
 
 /** Assigned speed before and after a book line. */

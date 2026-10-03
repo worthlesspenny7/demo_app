@@ -7,7 +7,7 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 ## Phases
 - [x] Phase I  - Research -> docs/research/00..07 (web budget exhausted; many items UNVERIFIED, see docs/spec/OPEN-QUESTIONS.md)
 - [x] Phase II - Design -> docs/spec/REQUIREMENTS.md, DESIGN.md, SPECS.md (critic review pending)
-- [x] Phase III-a core engine + tests (src/core, tests/) - 216 unit tests, 22 Playwright e2e, 176/176 specs covered
+- [x] Phase III-a core engine + tests (src/core, tests/) - 218 unit tests, 26 Playwright e2e, 177/177 specs covered
 - [x] Phase III-b agent harness + bots (src/agent): protocol (hello/act/advance/observe/result, scheduled actions), CLI `npm run sim`, bots oracle/rookie/noPause/lateCall/goCount/random, scripts/rally-session.sh for live LLM sessions
 - [x] Phase III-c browser UI (src/ui): Vite app, cockpit/school/debrief/reference/quiz/math/settings; Playwright smoke green
 - [x] Generator + 24-card trap library (src/core/generator); drills D11/D12/D13 use it
@@ -16,10 +16,11 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [x] Phase III-e validation: realism 47/70, playability 32.5/55, education and UI passes all 'yes with fixes'; top fixes applied; summary in docs/playtest/VALIDATION.md
 - [x] Re-validation (education): tip accuracy 97%, naive 0-1 vs oracle 3 stars; its remaining fixes applied (RUB-001/002, DRILL-018/019/020) - docs/playtest/REVALIDATION-education.md
 - [x] Re-validation (UI): verdict yes, playability 39.5/55 (was 32.5), 34/51 prior issues fixed, 0 regressions -> docs/playtest/REVALIDATION-ui.md
-- [x] UI fix sprint 2 (all 12 items from that report + engine SIM-032/DRV-019/DRILL-005 cliff fix); left open: N5 perf card clipping <= 1366x768, N11 pace-aid text during restart hold, Start-here path counting Bronze stars
+- [x] UI fix sprint 2 (all 12 items from that report + engine SIM-032/DRV-019/DRILL-005 cliff fix)
+- [x] Polish sprint 3: N5 perf card no longer clips, N11 'holding for restart' pace text, Start-here path counts Silver/Gold stars only (UI-028)
 
 ## Current step
-Ready for Josh. Optional polish if time remains before Sunday: N5/N11 cosmetics, Start-here path on Silver stars, a third playability pass on the new build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
+Ready for Josh. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
 Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)

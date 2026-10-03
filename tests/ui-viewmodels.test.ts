@@ -23,7 +23,7 @@ import { runToEnd, startAtOfficialTime, stepUntil } from './helpers.js';
 import '../src/core/drills/index.js';
 import { drillById, allDrills } from '../src/core/drills/registry.js';
 import { OracleBot, runBot } from '../src/agent/bots.js';
-import { instrumentPolicy, stopCardFor, cardDwell, focusLine, perfCardFor, waitMore, restartLabel } from '../src/ui/viewmodels/cockpitinfo.js';
+import { instrumentPolicy, paceAidText, stopCardFor, cardDwell, focusLine, perfCardFor, waitMore, restartLabel } from '../src/ui/viewmodels/cockpitinfo.js';
 import { nextDrill, startPathState, CURRICULUM } from '../src/ui/viewmodels/curriculum.js';
 import { snapshotRun, restoreSim, saveStored, loadStored, LIVE_KEY } from '../src/ui/viewmodels/resume.js';
 import { recordCampaignStage, loadCampaign, campaignSummary } from '../src/ui/viewmodels/campaign.js';
@@ -737,7 +737,7 @@ describe('UI-021 quizzes: distinct cards, distinct options, no printed answers',
 import { formatElapsed } from '../src/core/units.js';
 import { Stopwatch, RallyClock } from '../src/core/stopwatch.js';
 import { fmtMMSS } from '../src/ui/viewmodels/book.js';
-import { unlockStars, unlockBest } from '../src/ui/viewmodels/curriculum.js';
+import { unlockStars, unlockBest, startPathFromProgress } from '../src/ui/viewmodels/curriculum.js';
 import { scenarioMinutes, drillMinutes, formatMinutes } from '../src/ui/viewmodels/estimate.js';
 import { gateFor } from '../src/ui/viewmodels/campaign-gate.js';
 import { finishPrompt, turnLossBlock } from '../src/ui/viewmodels/cockpitinfo.js';
@@ -802,6 +802,28 @@ describe('DRILL-004 unlocks count Silver or Gold stars only', () => {
     expect(isUnlocked(drillById('D18')!, unlockBest(ds, { drills: bronze }))).toBe(false);
     const silver = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10'].map(id => [id, { stars: 2, tierStars: [0, 2, 0] }]));
     expect(isUnlocked(drillById('D18')!, unlockBest(ds, { drills: silver }))).toBe(true);
+  });
+});
+
+describe('UI-028 Start-here path and pace aid polish', () => {
+  it('UI-028 Start-here marks a drill step done only on a Silver or Gold star (same rule as unlockStars); lessons use lessonDone', () => {
+    const ds = allDrills();
+    const bronze = { drills: { D01: { stars: 3, tierStars: [3, 0, 0] } } };
+    const afterBronze = startPathFromProgress(ds, bronze, id => id === 'ghost-car');
+    expect(afterBronze.find(x => x.step.id === 'D01')!.done).toBe(false);
+    expect(afterBronze.find(x => x.current)!.step.id).toBe('D01');
+    const silver = { drills: { D01: { stars: 2, tierStars: [0, 2, 0] }, D03: { stars: 3, tierStars: [0, 0, 3] } } };
+    const afterSilver = startPathFromProgress(ds, silver, id => id === 'ghost-car');
+    expect(afterSilver.find(x => x.step.id === 'D01')!.done).toBe(true);
+    expect(afterSilver.find(x => x.step.id === 'D03')!.done).toBe(true);
+    expect(afterSilver.find(x => x.current)!.step.id).toBe('D04');
+    expect(afterSilver.find(x => x.step.id === 'ghost-car')!.done).toBe(true);
+  });
+  it('UI-028 pace aid shows no number while the car waits at a restart line (hold), the signed number otherwise', () => {
+    expect(paceAidText(-227.8, 'hold')).toBe('holding for restart');
+    expect(paceAidText(-227.8, 'stop')).toBe('-227.8 s');
+    expect(paceAidText(3.25, null)).toBe('+3.3 s');
+    expect(paceAidText(0, undefined)).toBe('0.0 s');
   });
 });
 

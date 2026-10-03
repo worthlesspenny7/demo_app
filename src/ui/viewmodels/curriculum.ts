@@ -57,3 +57,11 @@ export function unlockBest(drills: Pick<Drill, 'id' | 'tiers'>[], prog: { drills
   for (const [id, p] of Object.entries(prog.drills)) out[id] = unlockStars(drills.find(d => d.id === id), p);
   return out;
 }
+
+/**
+ * Start-here path state from stored progress, using the same Silver/Gold rule as unlockStars (a Bronze star does not mark a
+ * drill step done). Lesson steps use `lessonDone`.
+ */
+export function startPathFromProgress(drills: Pick<Drill, 'id' | 'tiers'>[], prog: { drills: Record<string, { stars: number; tierStars?: number[] }> }, lessonDone: (id: string) => boolean): StartPathState[] {
+  return startPathState(unlockBest(drills, prog), lessonDone);
+}

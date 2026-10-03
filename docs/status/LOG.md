@@ -31,3 +31,10 @@ Tests: 216 unit (was 204), 22 e2e (was 14, new e2e/ui-fixes2.spec.ts), spec:chec
 - REVALIDATION-ui: yes, ready for Sunday; 39.5/55. Engine side: SIM-032 goDwell/trafficWait per stop,
   DRV-019 honest check-off, DRILL-005 D18/D11 Bronze at rung 2 (cliff). UI side: sprint 2 (see section above).
 - Full verification: typecheck clean, 216 unit, 22 e2e, build clean, 176/176 specs.
+
+## Polish sprint 3 (N5, N11, Start-here Bronze)
+- N5: the perf card box (`#perfcard`) and the ledger box (`#ledgerbox`, its Pace aid row was clipped too) no longer have a max-height or `overflow:auto` in the lapboard, so they grow to fit; the "Book is on line N: press N" hint is fully inside the viewport at 1280x720, 1366x768 and 1024x700 (e2e asserts hint rect inside the viewport and the card box not overflow-hidden, scrollHeight <= clientHeight; screenshots docs/playtest/screenshots/polish3-perfcard-*.png). The drawer is taller at those sizes, so the road/instrument row is a little shorter.
+- N11: `paceAidText` (cockpitinfo.ts) returns "holding for restart" while `sim.waitReason === 'hold'` (no number); otherwise the signed seconds as before. Engine untouched.
+- Start-here: Home uses `startPathFromProgress` (curriculum.ts), which feeds `unlockBest` (Silver/Gold rule of `unlockStars`) into `startPathState`, so a Bronze star no longer marks a drill step done.
+- New spec UI-028 (SPECS.md, before "## BACKLOG"); tests: tests/ui-viewmodels.test.ts (2 UI-028), e2e/ui-polish3.spec.ts (4 UI-028).
+- Verification: tsc clean, 218 unit (was 216), 26 e2e (was 22), build clean, spec:check 177/177. Not committed.
