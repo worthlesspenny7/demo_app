@@ -58,6 +58,6 @@ Full extractions: docs/research/08-rookie-handbook-body.md, 08b-rookie-handbook-
 | Q20 | ANSWERED | 15 to 55 in steps of 5; 50/55 on highways, 20 common in 2014 | STAGE-007 |
 | Q21 | PARTIAL | Timewise 825 is the official unit, stock allowed, digital displays prohibited (REG II.H); Timewise factor/clicks in HB App. C | CHART-005 |
 | Q23 | NOT IN DOCS | Dad has no preferences yet; HB p.15 tips become the protocol lesson | LESSON-002 |
-| Q24 | PARTIAL | HB: digital stopwatch with lap/split + TOD "a necessity"; analog dash clock; count "3, 2, 1, GO"; bezel never mentioned. Josh chose analog for both; digital kept | UI-033 |
+| Q24 | PARTIAL | HB: digital stopwatch with lap/split + TOD "a necessity"; analog dash clock; count "3, 2, 1, GO"; bezel never mentioned. Josh defers to the documents: digital stopwatch with lap/split + TOD by default, analog clock; analog stopwatch kept as an option | UI-033, WATCH-008/009, LESSON-006, DRILL-026 |
 | Q25 | NOT IN DOCS | Checkpoint density not stated; 2014 sheet shows a declared checkpoint-free zone | STAGE-004 |
 | Q26 | ANSWERED | Written text is Column D (example rally); real race sheets carry only remarks there | GRIID-001, GRIID-009 |

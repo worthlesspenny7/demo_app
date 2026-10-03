@@ -48,3 +48,6 @@ Tests: 216 unit (was 204), 22 e2e (was 14, new e2e/ui-fixes2.spec.ts), spec:chec
   front tires even with the sign, at the stop sign or apex at intersections; pauses only where printed; speeds 15-55;
   three handbook performance charts (accel/decel, stop & go, turns) with a 1936 Packard example.
 - Spec V2 written (49 new ids). Agents launched: core engine V2; lessons/reference. UI and drills follow.
+- Josh (later): "Don't take anything I say over the documentation provided." Reversed the analog-stopwatch default:
+  digital lap/split + TOD stopwatch is the handbook's "necessity" (HB p.5); analog dash clock. Added WATCH-008/009,
+  LESSON-006 "Which timer, when", DRILL-026; core and lessons agents told.

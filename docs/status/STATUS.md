@@ -26,7 +26,7 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [ ] Lessons + reference pages (agent running): Four S's, team protocol (Dad's card), notations, transits/restarts, regs tables
 - [ ] After core: UI (book in GRIID layout, charts, TA screen, restart/transit cards, scorecard) and drills (D16 ASP + exact transit, D08b TA point, D06 charts, D15 notations, D18/D11 skeleton, campaign division/ASP)
 - [ ] Re-validate realism against the new sources; STATUS/LOG; push
-- Josh's choices: analog clock and stopwatch default (digital kept); Dad has no protocol yet, teach best practices; YouTube transcripts (.vtt) may arrive
+- Josh's standing instruction: the organizers' documents win over his own preferences. Hence: digital stopwatch with lap/split + TOD by default (HB p.5 'a necessity'), analog dash clock; teach which device for which purpose (LESSON-006, WATCH-008/009, DRILL-026). Dad has no protocol yet: teach best practices. YouTube transcripts (.vtt) may arrive
 
 ## Current step
 Phase IV in progress (see above). Previous state: ready for Josh. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
