@@ -7,6 +7,9 @@
 import type { Scenario, Instruction, AidsConfig } from '../../core/course.js';
 import { stopLoss, rampLead, accelLoss, turnLoss, buildPerfTable } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
+import { formatInterval } from '../../core/griid.js';
+import { exactTransitBegin } from '../../core/ghost.js';
+import { chartStopLoss, stopChartReading, tenPercentRule } from './charts.js';
 import { turnCap } from './counterfactual.js';
 import { aidsRung } from './debrief.js';
 
@@ -42,7 +45,11 @@ export function lineSpeeds(sc: Scenario, line: number): { vIn: number | null; vO
   return { vIn: null, vOut: null };
 }
 
-export interface StopCard { line: number; pause: number; vIn: number; vOut: number; loss: number; dwell: number; cap: number | undefined }
+export interface StopCard {
+  line: number; pause: number; vIn: number; vOut: number; loss: number; dwell: number; cap: number | undefined;
+  /** UI-030: the pause time read straight from chart (b) (a 15 s stop) and the sit time for this printed pause; null for a stop at a turn (the turn-capped model number is used). */
+  chart: { chart: number; sit: number } | null;
+}
 
 /** Stop loss for a line, turn-capped exactly as the Debrief does. Null when the line has no usable exit speed. */
 export function stopCardFor(sc: Scenario, line: number): StopCard | null {
@@ -52,9 +59,11 @@ export function stopCardFor(sc: Scenario, line: number): StopCard | null {
   const vi = vIn && vIn > 0 ? vIn : vOut;
   const cap = turnCap(ins.turn, sc);
   let loss: number;
-  try { loss = r1(stopLoss(vi, vOut, sc.car, cap)); } catch { return null; }
+  try { loss = chartStopLoss(sc.car, vi, vOut, cap); } catch { return null; }
   const pause = ins.pause ?? 0;
-  return { line, pause, vIn: vi, vOut, loss, dwell: r1(Math.max(0, pause - loss)), cap };
+  let chart: StopCard['chart'] = null;
+  if (cap === undefined) { try { const rd = stopChartReading(sc.car, vi, vOut, pause || 15); chart = { chart: rd.chart, sit: rd.sit }; } catch { chart = null; } }
+  return { line, pause, vIn: vi, vOut, loss, dwell: r1(Math.max(0, pause - loss)), cap, chart };
 }
 
 /** "card x s" for the book strip: pause minus turn-capped loss. */
@@ -103,7 +112,7 @@ export interface TurnLossBlock {
   speeds: number[];
   rows: { angle: 90 | 45; losses: number[] }[];
   /** This line's own turn: angle band, entry/exit speeds and loss, when the line has a 90 or 45 degree turn. */
-  here: { turn: string; angle: 90 | 45; vIn: number; vOut: number; loss: number } | null;
+  here: { turn: string; angle: 90 | 45; vIn: number; vOut: number; loss: number; /** CHART-003: "this turn: N s" and the 10 % rule to recover it */ rule: { mph: number; seconds: number; text: string } } | null;
 }
 const TURN_SPEEDS = [25, 30, 35, 40, 45];
 const turnTables = new WeakMap<object, TurnLossBlock['rows']>();
@@ -122,7 +131,7 @@ export function turnLossBlock(sc: Scenario, line: number): TurnLossBlock {
     const angle: 90 | 45 | null = dir === 'L' || dir === 'R' || dir === 'JL' || dir === 'JR' ? 90 : dir === 'BL' || dir === 'BR' ? 45 : null;
     const { vIn, vOut } = lineSpeeds(sc, line);
     const vi = vIn && vIn > 0 ? vIn : vOut; const vo = vOut && vOut > 0 ? vOut : vi;
-    if (angle && vi && vo) { try { here = { turn: dir, angle, vIn: vi, vOut: vo, loss: r1(turnLoss(angle, vi, vo, sc.car)) }; } catch { here = null; } }
+    if (angle && vi && vo) { try { { const loss = r1(turnLoss(angle, vi, vo, sc.car)); here = { turn: dir, angle, vIn: vi, vOut: vo, loss, rule: tenPercentRule(vo, loss) }; } } catch { here = null; } }
   }
   return { speeds: TURN_SPEEDS, rows, here };
 }
@@ -163,4 +172,43 @@ export function finishPrompt(ahead: { kind: string; approxDistanceFt: number; la
   const f = ahead.find(a => a.kind === 'finish' || (a.kind === 'checkpoint' && /observation/i.test(a.label ?? '')));
   if (!f) return null;
   return `S: stop at the observation checkpoint / finish (${f.approxDistanceFt} ft)`;
+}
+
+// ---------- UI-032: restart, exact-transit and promoted-stop cards ----------
+
+/** The slice of the simulator the hold cards read (so a view-model test can pass a Simulator or a stub). */
+export interface HoldSource {
+  transitIn: Record<number, number>;
+  transitOutFor(endIns: Instruction): number | null;
+  holdGoTod(node: { id: string; s: number }): number | null;
+}
+export interface HoldCard { kind: 'restart' | 'transit' | 'promoted'; line: number; title: string; text: string; /** TOD to say go, when known */ goTod: number | null }
+
+/**
+ * The card for a time-of-day restart, an exact transit or a promoted stop on `line`, or null.
+ * Restart: "base 08:55:00 + ASP 17 min = your time 09:12:00, leave at that second, do not pull up before your minute".
+ * Exact transit: "IN 10:14:07 + 20m00s = OUT 10:34:07". Promoted stop: "leave by 12:10:00 (45m00s prior to end of transit)".
+ */
+export function holdCardFor(sc: Pick<Scenario, 'book' | 'course' | 'asp'>, src: HoldSource | null, line: number, asp = sc.asp): HoldCard | null {
+  const ins = sc.book[line - 1]; if (!ins) return null;
+  if (ins.restartTime !== undefined && (ins.section === 'restart' || ins.section === 'start' || ins.baseTime !== undefined)) {
+    const base = ins.baseTime ?? ins.restartTime - asp * 60;
+    return { kind: 'restart', line, title: `Restart, line ${line}`, goTod: ins.restartTime, text: `base ${formatClock(base)} + ASP ${asp} min = your time ${formatClock(ins.restartTime)}, leave at that second, do not pull up before your minute` };
+  }
+  if (ins.transit?.exact) {
+    const begin = ins.transit.end ? exactTransitBegin(sc.book, sc.book.indexOf(ins)) : ins;
+    if (begin?.transit?.exact) {
+      const sec = begin.transit.seconds; const inT = src?.transitIn[begin.n];
+      const out = ins.transit.end ? (src?.transitOutFor(ins) ?? (inT !== undefined ? inT + sec : null)) : (inT !== undefined ? inT + sec : null);
+      const text = inT !== undefined && out !== null ? `IN ${formatClock(inT)} + ${formatInterval(sec)} = OUT ${formatClock(out)}` : `IN (read the clock at the sign) + ${formatInterval(sec)} = OUT`;
+      return { kind: 'transit', line, title: ins.transit.end ? `End of exact transit, line ${line}` : `Exact transit, line ${line}`, goTod: out, text };
+    }
+  }
+  if (ins.promotedStop) {
+    const node = sc.course.nodes.find(n => n.id === ins.nodeId);
+    const go = node && src ? src.holdGoTod(node) : null;
+    const prior = formatInterval(ins.promotedStop.leaveBeforeEndSeconds);
+    return { kind: 'promoted', line, title: `${ins.promotedStop.kind === 'meal' ? 'Meal' : ins.promotedStop.kind === 'pit' ? 'Pit' : ins.promotedStop.kind === 'refuel' ? 'Refuel' : 'Rest'} stop, line ${line}`, goTod: go, text: go !== null ? `leave by ${formatClock(go)} (${prior} prior to end of transit)` : `leave ${prior} prior to end of transit` };
+  }
+  return null;
 }

@@ -8,7 +8,13 @@ import { stopwatchViewModel } from '../viewmodels/stopwatch.js';
 import { clockViewModel } from '../viewmodels/clock.js';
 import { speedoViewModel } from '../viewmodels/speedo.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
-import { bookRows } from '../viewmodels/book.js';
+import { bookRows, signBox, landmarkLabel, ROWS_PER_PAGE } from '../viewmodels/book.js';
+import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, esc } from '../render/griid.js';
+import { chartGrids, type ChartGrid } from '../viewmodels/charts.js';
+import { holdCardFor, type HoldCard } from '../viewmodels/cockpitinfo.js';
+import { digitalWatchViewModel, SplitTracker } from '../viewmodels/digitalwatch.js';
+import { taFormVm, taNoteText, taRounding } from '../viewmodels/ta.js';
+import { formatInterval } from '../../core/griid.js';
 import { effectiveScale, simAdvance, nextScale, SCALE_STEPS } from '../viewmodels/timescale.js';
 import { KeyMapper, KEY_HELP, type KeyCommand } from '../viewmodels/keys.js';
 import { audioCues, AudioPlayer } from '../viewmodels/audio.js';
@@ -103,21 +109,66 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   helpBox.onclick = e => { if (e.target === helpBox) setHelp(false); };
   let showHelp = app.settings.showHelp; helpBox.style.display = showHelp ? '' : 'none';
   function setHelp(on: boolean): void { showHelp = on; helpBox.style.display = on ? '' : 'none'; }
+  // UI-030: the three handbook charts (IN x OUT grids) with the current pair highlighted
+  const chartsPanel = el('div', { class: 'help charts-panel', id: 'charts-panel', role: 'dialog', 'aria-label': 'Performance charts' });
+  const chartsClose = el('button', { id: 'charts-close' }, 'Close (C or Esc)'); chartsClose.onclick = () => setCharts(false);
+  const chartsBody = el('div', { id: 'charts-body' });
+  chartsPanel.append(el('h3', {}, `Your car's charts: ${scenario.car.name}`), chartsBody, chartsClose);
+  const chartsBox = el('div', { class: 'help-backdrop', id: 'charts-overlay' }, chartsPanel); chartsBox.style.display = 'none';
+  chartsBox.onclick = e => { if (e.target === chartsBox) setCharts(false); };
+  let showCharts = false; let chartsKey = '';
+  function setCharts(on: boolean): void { showCharts = on; chartsBox.style.display = on ? '' : 'none'; chartsKey = ''; if (on) renderCharts(obs); }
+  function chartHtml(g: ChartGrid): string {
+    const head = `<tr><th>IN \\ OUT</th>${g.speeds.map(v => `<th class="${g.highlight?.out === v ? 'cur' : ''}">${v}</th>`).join('')}</tr>`;
+    const body = g.rows.map(r => `<tr><th class="${g.highlight?.in === r.in ? 'cur' : ''}">${r.in}</th>${r.cells.map(c => `<td class="${c.hi ? 'cur' : ''}" data-in="${r.in}" data-out="${c.out}">${c.text}</td>`).join('')}</tr>`).join('');
+    return `<div class="chart" id="chart-${g.id}"><h4>(${g.letter}) ${esc(g.title.toUpperCase())}</h4><p class="muted">${esc(g.note)}</p><div class="charttable-wrap"><table class="charttable"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+  }
+  function renderCharts(o: Observation): void {
+    if (!showCharts) return;
+    const line = o.stoppedAtLine ?? focusLine(o, rung, bookLen).line;
+    const key = `${line}|${policy.computedCard}`; if (key === chartsKey) return; chartsKey = key;
+    const sp = lineSpeeds(scenario, line);
+    const grids = chartGrids(scenario.car, policy.computedCard ? sp : null);
+    chartsBody.innerHTML = `<p class="muted">${policy.computedCard ? `Line ${line}: ${sp.vIn ?? 0} in / ${sp.vOut ?? '?'} out is highlighted.` : 'Legal mode: find your own pair.'}</p>${grids.map(chartHtml).join('')}`;
+  }
+  // UI-031: the Time Allowance point form (TA-005)
+  let taCollapsed = false; let taBuiltFor: string | null = null; let taSig = '';
+  const taPanel = el('div', { class: 'ta-panel', id: 'ta-panel' }); taPanel.style.display = 'none';
+  const taField = (id: string): HTMLInputElement | null => taPanel.querySelector(`#${id}`) as HTMLInputElement | null;
   const cpCardBox = el('div', { class: 'cpcard', id: 'cpcard' }); cpCardBox.style.display = 'none'; roadWrap.append(cpCardBox);
   const preread = el('div', { class: 'preread', id: 'preread' });
 
-  const clockCanvas = el('canvas', { id: 'clock' }); const swCanvas = el('canvas', { id: 'stopwatch' }); const spCanvas = el('canvas', { id: 'speedo' });
+  // UI-033: the stopwatch follows Settings.watch (digital lap/split by default), the dash clock follows Settings.clock (analog by default)
+  const digitalSw = watch === 'digital'; const digitalClock = app.settings.clock === 'digital';
+  const clockCanvas = el('canvas', { id: digitalClock ? 'clock-dial' : 'clock' }); const swCanvas = el('canvas', { id: digitalSw ? 'stopwatch-dial' : 'stopwatch' }); const spCanvas = el('canvas', { id: 'speedo' });
+  const clockDigital = el('div', { class: 'dclock lcd', id: 'clock', title: 'Click (or K) to note a clock read' }, '00:00:00');
+  clockDigital.onclick = () => { act({ type: 'clock.read' }); flash('Clock read noted'); };
   const clockCap = el('div', { class: 'caption' }); const swCap = el('div', { class: 'caption' }); const spCap = el('div', { class: 'caption' }); const laps = el('div', { class: 'laps', id: 'laps' });
+  // WATCH-008: digital lap/split watch: big 1/100 s display, CHRONO / TOD chip, lap table of interval-over-cumulative boxes, split-frozen indicator
+  const noFocus = (b: HTMLElement): void => { b.onmousedown = e => e.preventDefault(); };
+  const dwMode = el('button', { id: 'dw-mode', class: 'modechip', title: 'M: chrono / time of day' }, 'CHRONO'); noFocus(dwMode);
+  const dwInd = el('span', { class: 'dw-ind', id: 'dw-ind' });
+  const lcdEl = el('div', { class: 'dw-lcd lcd', id: 'lcd' }, '0:00.00');
+  const dwBtn = (id: string, label: string, title: string, cmd: KeyCommand): HTMLButtonElement => { const b = el('button', { id, title }, label) as HTMLButtonElement; noFocus(b); b.onclick = () => handle(cmd); return b; };
+  const dwStart = dwBtn('dw-start', 'Start', 'Space: start / stop', { type: 'watch.toggle' }); const dwLap = dwBtn('dw-lap', 'Lap', 'L: lap (split)', { type: 'watch.lap' });
+  const dwRecall = dwBtn('dw-recall', 'Recall', 'R: release the split, then cycle the last 10 laps', { type: 'watch.recall' }); const dwReset = dwBtn('dw-reset', 'Reset', 'only while stopped (Shift+R forces)', { type: 'watch.reset' });
+  dwMode.onclick = () => handle({ type: 'watch.mode' });
+  const dwLaps = el('div', { class: 'dw-laps', id: 'laps' });
+  const dwatch = el('div', { class: 'dwatch', id: 'stopwatch' }, el('div', { class: 'dw-top' }, dwMode, dwInd), lcdEl, el('div', { class: 'dw-btns' }, dwStart, dwLap, dwRecall, dwReset), dwLaps);
+  const splitTracker = new SplitTracker();
   const instruments = el('div', { class: 'instruments' },
-    el('div', { class: 'instrument' }, clockCanvas, clockCap),
-    el('div', { class: 'instrument' }, swCanvas, swCap, laps),
+    el('div', { class: 'instrument' }, digitalClock ? clockDigital : clockCanvas, clockCap),
+    el('div', { class: 'instrument' }, ...(digitalSw ? [dwatch, swCap] : [swCanvas, swCap, laps])),
     el('div', { class: 'instrument' }, spCanvas, spCap));
-  const left = el('div', { class: 'left' }, roadWrap, instruments, preread);
+  if (!digitalClock) clockCanvas.onclick = () => { act({ type: 'clock.read' }); flash('Clock read noted'); };
+  const left = el('div', { class: 'left' }, roadWrap, instruments, preread, taPanel);   // the TA form floats over the road and the clock; its header collapses it
   const hintScale = el('span', { class: 'chip', id: 'hint-scale' }, '1x');
   const hintBar = el('div', { class: 'hintbar', id: 'hintbar', title: 'objective and the keys that matter' },
     el('span', { class: 'hint-text' }, el('b', {}, drill ? `${drill.id}: ` : ''), hintBarText(objective, hint)),
     el('span', { class: 'hint-scale', id: 'hint-scalekeys', title: 'time scale keys; ? lists every key' }, el('kbd', {}, '?'), ' keys  ·  ', scaleHintText(lockedTo1x), ' ', hintScale));
-  const bookHead = el('div', { class: 'book-head' }, el('b', {}, 'GRIID'), el('span', { class: 'muted' }, `${scenario.name} · ${scenario.book.length} lines · N / Shift+N move, click to set`));
+  const printHref = `#/book/${src.kind === 'drill' ? `drill/${src.drillId}/${src.tier}/${src.seed}` : `builtin/${src.name}/${src.seed}`}`;
+  const bookHead = el('div', { class: 'book-head' }, el('b', {}, 'GRIID'), el('span', { class: 'muted' }, `${scenario.name} · ${scenario.book.length} lines · N / Shift+N move, click to set`),
+    el('a', { id: 'book-print', href: printHref, target: '_blank', rel: 'noopener', title: 'the whole book, six rows a page, printable', style: 'margin-left:auto' }, 'Print book'));
   const rows = el('div', { class: 'rows', id: 'book' });
   const book = el('div', { class: 'book' }, bookHead, rows);
   // drawer
@@ -131,7 +182,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     e.stopPropagation();
   };
   const notesList = el('div', { class: 'mono', style: 'font-size:12px' }); notesBox.append(noteInput, notesList);
-  const cardTitle = el('h4', {}, 'Perf card'); const cardBox = el('div', { class: 'box', id: 'perfcard' }, cardTitle); const cardBody = el('div', {}); cardBox.append(cardBody);
+  const cardTitle = el('h4', {}, 'Perf card'); const chartsBtn = el('button', { id: 'charts-btn', class: 'mini', title: 'C: the three handbook charts' }, 'Charts'); chartsBtn.onclick = () => setCharts(!showCharts);
+  const cardBox = el('div', { class: 'box', id: 'perfcard' }, el('div', { class: 'cardhead' }, cardTitle, chartsBtn)); const cardBody = el('div', {}); cardBox.append(cardBody);
   const ledgerBox = el('div', { class: 'box', id: 'ledgerbox' }, el('h4', {}, 'Ledger (E) and time allowance (T)')); const ledgerBody = el('div', {}); ledgerBox.append(ledgerBody);
   const logBox = el('div', { class: 'box log' }, el('h4', {}, 'Driver')); const logBody = el('div', { id: 'driverlog' }); logBox.append(logBody);
   const lapboard = el('div', { class: `lapboard${hasCal ? ' with-cal' : ''}` }, ledgerBox, cardBox, notesBox, logBox);
@@ -139,7 +191,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const drawer = el('div', { class: 'drawer' },
     el('div', { class: 'bar' }, el('span', { class: 'muted' }, 'Callout:'), callout, promptWrap, el('span', { class: 'muted', style: 'margin-left:auto' }, `${scenario.car.name} · ${scenario.driver.name} (${scenario.driver.skill}) · ${scenario.speedo.kind} speedo · aids rung ${rung}${rung <= 1 ? ' (legal: no digital readouts)' : ''}`)),
     lapboard);
-  cockpit.append(hintBar, left, book, drawer, helpBox);
+  cockpit.append(hintBar, left, book, drawer, helpBox, chartsBox);
   root.replaceChildren(cockpit);
 
   // ---------- state ----------
@@ -191,6 +243,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
     if (showHelp && e.key === 'Escape') { e.preventDefault(); setHelp(false); return; }
+    if (showCharts && e.key === 'Escape') { e.preventDefault(); setCharts(false); return; }
     if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); setHelp(!showHelp); return; }
     const cmd = keys.keydown(e);
     if (!cmd) { if (e.key === ' ') e.preventDefault(); return; }
@@ -202,8 +255,19 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     switch (cmd.type) {
       case 'watch.toggle': act({ type: 'watch.toggle' }); break;
       case 'watch.lap': act({ type: 'watch.lap' }); break;
-      case 'watch.reset': { const before = sim.observe({ peek: true }).stopwatch.reading; act({ type: 'watch.reset' }); if (sim.observe({ peek: true }).stopwatch.running && before > 0) flash('Analog crown: stop the watch before resetting'); else { swCanvas.classList.add('flash'); setTimeout(() => swCanvas.classList.remove('flash'), 600); } break; }
-      case 'bezel': act({ type: 'watch.bezel', seconds: (obs.stopwatch.bezel ?? 0) + cmd.delta }); break;
+      case 'watch.reset': {
+        // WATCH-008: reset only while stopped; Shift+R forces it
+        const before = sim.observe({ peek: true }).stopwatch.reading; const force = cmd.force === true;
+        act(force ? { type: 'watch.reset', force: true } : { type: 'watch.reset' });
+        if (!force && sim.observe({ peek: true }).stopwatch.running && before > 0) flash('Stop the watch before resetting (Shift+R forces the reset)');
+        else { const f = digitalSw ? dwatch : swCanvas; f.classList.add('flash'); setTimeout(() => f.classList.remove('flash'), 600); }
+        break;
+      }
+      case 'watch.recall': if (digitalSw) act({ type: 'watch.recall' }); else flash('Recall is a digital-watch key'); break;
+      case 'watch.mode': if (digitalSw) act({ type: 'watch.mode' }); else flash('The analog stopwatch has no time-of-day mode: read the dash clock'); break;
+      case 'clock.read': act({ type: 'clock.read' }); flash('Clock read noted'); break;
+      case 'charts': setCharts(!showCharts); break;
+      case 'bezel': act({ type: 'watch.bezel', seconds: (obs.stopwatch.bezel ?? 0) + cmd.delta }); break;   // the digital watch keeps the index too: the road view's countdown aid uses it
       case 'call.turn': act({ type: 'call.turn', dir: cmd.dir }); break;
       case 'call.go': if (sim.phase === 'preread') { if (blockedBySave()) break; act({ type: 'start' }); } else act({ type: 'call.go' }); break;
       case 'call.stop': act({ type: 'call.stop' }); stopCalledTod = sim.tod; break;
@@ -221,7 +285,11 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       case 'line.end': act({ type: 'line.set', n: bookLen }); break;
       case 'scale': if (!lockedTo1x) requested = nextScale(requested, cmd.delta); break;
       case 'pause': paused = !paused; break;
-      case 'ta': promptFor('Time allowance (seconds)', v => act({ type: 'ta.declare', seconds: v })); break;
+      case 'ta': {
+        if (obs.ta.hasTaPoints) { if (obs.ta.windowOpen) { taCollapsed = false; taField('ta-request')?.focus(); } else flash('No Time Allowance window: requests are taken for 15 minutes after a TA point (the yellow box)'); }
+        else promptFor('Time allowance (seconds)', v => act({ type: 'ta.declare', seconds: v }));
+        break;
+      }
       case 'ledger': promptFor('Ledger: seconds late (+) / early (-)', v => act({ type: 'ledger.set', seconds: v })); break;
       case 'buffer': break;
     }
@@ -253,18 +321,18 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const key = `${o.currentLine}|${o.stoppedAtLine ?? ''}|${o.driver.lastExecutedLine ?? ''}|${o.phase}|${ann.serialize().length}|${Object.keys(o.annotations ?? {}).length}`;
     if (key === lastBookKey) return; lastBookKey = key; lastExecuted = o.driver.lastExecutedLine ?? lastExecuted;
     const frag = document.createDocumentFragment();
-    for (const r of bookRows(scenario.book, o.currentLine)) {
+    const pages = Math.max(1, Math.ceil(bookLen / ROWS_PER_PAGE));
+    for (const r of bookRows(scenario.book, o.currentLine, { timeZone: scenario.timeZone, style: scenario.bookStyle })) {
+      if (r.n > 1 && (r.n - 1) % ROWS_PER_PAGE === 0) frag.append(el('div', { class: 'page-break' }, el('span', {}, scenario.name), el('span', {}, `Page ${(r.n - 1) / ROWS_PER_PAGE + 1} of ${pages}`)));
       const ins = scenario.book[r.n - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined;
       const hls = ann.highlights(r.n);
       const stopped = o.stoppedAtLine === r.n;
-      const row = el('div', { class: `row ${r.state}${stopped ? ' stopped' : ''}${lastExecuted !== null && r.n <= lastExecuted ? ' executed' : ''} ${hls.map(h => `hl-${h}`).join(' ')}`, 'data-n': String(r.n) });
+      const row = el('div', { class: `row ${r.state}${stopped ? ' stopped' : ''}${lastExecuted !== null && r.n <= lastExecuted ? ' executed' : ''}${r.omitted ? ' omitted' : ''} ${hls.map(h => `hl-${h}`).join(' ')}`, 'data-n': String(r.n) });
       const svg = node?.exits ? cameoSvg(node.exits, node.control, ins?.turn ?? null, 64) : node?.sign || node?.control && node.control !== 'none' ? cameoSvg([{ angle: 0, kind: 'road', isRoute: true }], node.control, 'S', 64) : '';
-      // the section tag and the text both start with START / FINISH: print the tag only when the text does not
-      const showColB = r.colB && !r.text.toUpperCase().startsWith(r.colB.toUpperCase());
-      const rl = restartLabel(ins);
-      row.append(el('div', { class: 'n' }, String(r.n)), el('div', { class: 'cameo', html: svg }),
-        el('div', { class: 'text' }, showColB ? el('span', { class: 'colb' }, r.colB) : null, stopped ? el('span', { class: 'stoptag' }, 'STOPPED HERE ') : null, r.text, rl ? el('span', { class: 'cold accent' }, rl) : null, r.colD ? el('span', { class: 'cold' }, r.colD) : null, o.aids.cumulativePerfectAtNextLine !== undefined && r.isCurrent ? el('span', { class: 'cold accent' }, `perfect cumulative ${formatElapsed(o.aids.cumulativePerfectAtNextLine, 0)}`) : null, r.perfectCumulative !== undefined ? el('span', { class: 'cold' }, `Col C perfect: ${formatElapsed(r.perfectCumulative, 0)}`) : null),
-        el('div', { class: 'colc' }, r.colC));
+      const dCell = el('div', { class: 'gd' });
+      dCell.innerHTML = `${stopped ? '<span class="stoptag">STOPPED HERE </span>' : ''}${columnDHtml(r)}${r.omitted ? ' <em>(omitted)</em>' : ''}${o.aids.cumulativePerfectAtNextLine !== undefined && r.isCurrent ? `<span class="cold accent">perfect cumulative ${esc(formatElapsed(o.aids.cumulativePerfectAtNextLine, 0))}</span>` : ''}`;
+      row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg, sign: signBox(node), landmark: landmarkLabel(node) }) }),
+        el('div', { class: 'gb', html: columnBHtml(r) }), el('div', { class: 'gc', html: columnCHtml(r), title: r.colC }), dCell);
       // annotation strip: highlighters + GO-time for pause lines (UI-013)
       const strip = el('div', { class: 'ann' });
       for (const h of HIGHLIGHTS) { const b = el('button', { class: `hl-btn ${h}`, title: `highlight ${h}` }); b.onclick = ev => { ev.stopPropagation(); ann.toggleHighlight(r.n, h as Highlight); lastBookKey = ''; renderBook(sim.observe({ peek: true })); }; strip.append(b); }
@@ -272,7 +340,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
         const go = el('input', { class: 'go-time', placeholder: 'GO at', value: ann.goTime(r.n) || (o.annotations?.[r.n] ?? '') }) as HTMLInputElement;
         go.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter' || ev.key === 'Escape') go.blur(); };
         go.onchange = () => { ann.setGoTime(r.n, go.value); try { sim.act({ type: 'line.annotate', n: r.n, text: go.value } as Action); } catch { /* older engine */ } };
-        strip.append(el('span', { class: 'muted' }, 'P' + r.pause), go);
+        strip.append(el('span', { class: 'muted' }, `0 MPH / ${formatInterval(r.pause)}`), go);
         // the answer sheet (same turn-capped loss as the Debrief) only where the aids ladder allows it
         if (policy.computedCard) { const d = cardDwell(scenario, r.n); if (d !== null) strip.append(el('span', { class: 'muted', title: 'card dwell = pause - stop/start loss (turn-capped)' }, `card ${d.toFixed(1)} s`)); }
       }
@@ -280,6 +348,81 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     }
     rows.replaceChildren(frag);
     const cur = (rows.querySelector('.row.stopped') ?? rows.querySelector('.row.current')) as HTMLElement | null; if (cur) cur.scrollIntoView({ block: 'center' });
+  }
+
+  // ---------- UI-031 Time Allowance point form ----------
+  function buildTaPanel(vm: ReturnType<typeof taFormVm>): void {
+    const first = vm.legs.find(l => l.measured > 0) ?? vm.legs[0];
+    taPanel.innerHTML = `<div class="ta-head"><b>${esc(vm.title)}</b><span class="mono" id="ta-count"></span><button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
+      <div class="ta-body" id="ta-body">
+        <p class="muted ta-help">Requests are taken for 15 minutes after the TA point, in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
+        <table class="ta-legs" id="ta-legs"></table>
+        <div class="ta-form">
+          <label>Leg <select id="ta-leg">${vm.legs.map(l => `<option value="${l.legIndex}">${l.legIndex}</option>`).join('')}</select></label>
+          <label>Delay (s) <input id="ta-delay" type="number" min="0" step="1" value="${first ? Math.round(first.measured) : ''}"></label>
+          <label>Made up (s) <input id="ta-madeup" type="number" min="0" step="1" value="${first ? Math.round(first.recoverable) : ''}"></label>
+          <label>Request (s) <input id="ta-request" type="number" min="0" step="1" value="${first ? first.suggested : ''}"></label>
+          <span id="ta-round" class="ta-round"></span>
+          <label>From instruction <input id="ta-from" type="number" min="1" step="1" value="${first?.fromLine ?? ''}"></label>
+          <label>to <input id="ta-to" type="number" min="1" step="1" value="${first?.toLine ?? ''}"></label>
+          <label class="wide">Cause <input id="ta-cause" type="text" placeholder="a farm tractor, a train, an accident scene"></label>
+          <label class="wide">Witness <input id="ta-witness" type="text" placeholder="name or car number"></label>
+          <div class="ta-pattern mono" id="ta-pattern"></div>
+          <button id="ta-submit" class="primary">File request</button>
+        </div>
+        <div id="ta-filed" class="ta-filed"></div>
+        <div id="ta-ack"></div>
+      </div>`;
+    const legSel = taField('ta-leg') as unknown as HTMLSelectElement;
+    if (first) legSel.value = String(first.legIndex);
+    const num = (id: string): number => Number(taField(id)?.value ?? '');
+    const measuredOf = (leg: number): number => taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).legs.find(l => l.legIndex === leg)?.measured ?? 0;
+    const refresh = (): void => {
+      const leg = Number(legSel.value); const req = num('ta-request');
+      const rd = taRounding(req, measuredOf(leg));
+      const r = taPanel.querySelector('#ta-round'); if (r) { r.textContent = rd.text; r.classList.toggle('adj', rd.changed); }
+      const pat = taPanel.querySelector('#ta-pattern'); if (pat) pat.textContent = taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: rd.adjusted, cause: taField('ta-cause')?.value, witness: taField('ta-witness')?.value });
+    };
+    const fillFor = (leg: number): void => {
+      const l = taFormVm(sim.observe({ peek: true }).ta, x => sim.taAdvice(x)).legs.find(x => x.legIndex === leg); if (!l) return;
+      legSel.value = String(leg);
+      (taField('ta-delay') as HTMLInputElement).value = String(Math.round(l.measured)); (taField('ta-madeup') as HTMLInputElement).value = String(Math.round(l.recoverable)); (taField('ta-request') as HTMLInputElement).value = String(l.suggested);
+      (taField('ta-from') as HTMLInputElement).value = l.fromLine === null ? '' : String(l.fromLine); (taField('ta-to') as HTMLInputElement).value = l.toLine === null ? '' : String(l.toLine);
+      refresh();
+    };
+    for (const id of ['ta-delay', 'ta-madeup', 'ta-request', 'ta-from', 'ta-to', 'ta-cause', 'ta-witness']) {
+      const f = taField(id)!; f.addEventListener('input', refresh);
+      f.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') f.blur(); if (e.key === 'Enter') (taPanel.querySelector('#ta-submit') as HTMLButtonElement).click(); });
+    }
+    legSel.addEventListener('change', () => fillFor(Number(legSel.value))); legSel.addEventListener('keydown', e => e.stopPropagation());
+    (taPanel.querySelector('#ta-legs') as HTMLElement).onclick = e => { const b = (e.target as HTMLElement).closest('button[data-leg]') as HTMLElement | null; if (b) fillFor(Number(b.dataset.leg)); };
+    (taPanel.querySelector('#ta-toggle') as HTMLElement).onclick = () => { taCollapsed = !taCollapsed; };
+    (taPanel.querySelector('#ta-submit') as HTMLButtonElement).onclick = () => {
+      const leg = Number(legSel.value), seconds = num('ta-request'), fromLine = Math.round(num('ta-from')), toLine = Math.round(num('ta-to'));
+      if (!(seconds > 0) || !(fromLine >= 1) || !(toLine >= fromLine)) { flash('Fill in the request (seconds) and the instruction numbers it happened between'); return; }
+      act({ type: 'ta.request', legIndex: leg, seconds, fromLine, toLine, note: taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: seconds, cause: taField('ta-cause')?.value, witness: taField('ta-witness')?.value }) });
+      renderNow();
+    };
+    refresh();
+  }
+  function renderTa(o: Observation): void {
+    const vm = taFormVm(o.ta, leg => sim.taAdvice(leg));
+    if (!vm.visible) { taPanel.style.display = 'none'; taBuiltFor = null; return; }
+    taPanel.style.display = ''; taPanel.classList.toggle('collapsed', taCollapsed);
+    const built = `${o.ta.windowEndsTod}|${vm.legs.map(l => l.legIndex).join(',')}`;
+    if (taBuiltFor !== built) { taBuiltFor = built; taSig = ''; buildTaPanel(vm); }
+    const count = taPanel.querySelector('#ta-count'); if (count) count.textContent = `window ${vm.countdown} left`;
+    const sig = JSON.stringify([vm.legs.map(l => [l.measured, l.recoverable, l.suggested, l.fromLine, l.toLine, l.filed?.adjusted ?? null]), vm.requests.length, vm.ackAvailable, vm.acked]);
+    if (sig === taSig) return; taSig = sig;
+    const legsEl = taPanel.querySelector('#ta-legs'); if (legsEl) legsEl.innerHTML = `<thead><tr><th>Leg</th><th>Measured delay</th><th>Recoverable</th><th>Suggested</th><th>Lines</th><th></th></tr></thead><tbody>${vm.legs.map(l => `<tr data-leg="${l.legIndex}"><td>${l.legIndex}</td><td class="mono">${formatInterval(l.measured)}</td><td class="mono">${formatInterval(l.recoverable)}</td><td class="mono"><b>${formatInterval(l.suggested)}</b></td><td>${l.fromLine !== null ? `${l.fromLine}-${l.toLine}` : '-'}</td><td><button class="mini" data-leg="${l.legIndex}">Use</button></td></tr>`).join('')}</tbody>`;
+    const filed = taPanel.querySelector('#ta-filed'); if (filed) filed.innerHTML = vm.requests.length ? `<b>Filed</b>${vm.requests.map(r => `<div class="${r.status === 'refused' ? 'danger' : ''}">Leg ${r.legIndex}: ${formatInterval(r.requested)}${r.adjustment ? ` (${esc(r.adjustment)})` : ''} ${r.status === 'refused' ? `refused: ${esc(r.reason ?? '')}` : 'filed'}</div>`).join('')}` : '';
+    const ack = taPanel.querySelector('#ta-ack') as HTMLElement | null;
+    if (ack) {
+      if (vm.endOfStage) {
+        ack.innerHTML = vm.acked ? '<div class="ok">Scorecard acknowledged.</div>' : '<p class="muted">End of the stage: check the scoring crew\'s scorecard and acknowledge it before the window closes.</p><button id="ta-ack-btn" class="primary">Acknowledge scorecard</button>';
+        const b = ack.querySelector('#ta-ack-btn') as HTMLButtonElement | null; if (b) b.onclick = () => { act({ type: 'scorecard.ack' }); renderNow(); };
+      } else ack.innerHTML = '';
+    }
   }
 
   // ---------- render ----------
@@ -316,14 +459,28 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const instH = instruments.clientHeight || 240; const instW = instruments.clientWidth || 600;
     const swSize = Math.round(clamp(Math.min(instH - 96, instW * 0.36), 110, 400)); const clSize = Math.round(clamp(Math.min(swSize * 0.8, (instW - swSize) / 2 - 18, instH - 56), 80, 300)); const spSize = Math.round(clamp(Math.min(swSize * 0.7, (instW - swSize) / 2 - 18, instH - 56), 70, 260));
     const sw = o.stopwatch;
-    const swVm = stopwatchViewModel(sw.reading, sw.kind, { dialSeconds: sw.dialSeconds === 30 ? 30 : 60, registerMinutes: 30, bezel: sw.bezel, running: sw.running, laps: sw.laps });
-    const sctx = prepare(swCanvas, swSize, swSize); if (sctx) drawStopwatch(sctx, swVm, swSize, theme);
-    const lcd = sw.kind === 'digital';
-    swCap.innerHTML = `${lcd || policy.digitalReadouts ? `<b class="${lcd ? 'lcd' : ''}" id="lcd">${escapeHtml(swVm.digital)}</b> ` : ''}${sw.running ? '<span class="ok">running</span>' : 'stopped'} · bezel ${escapeHtml(sw.bezel.toFixed(1))} s${policy.digitalReadouts ? ` (${escapeHtml(sw.bezelRemaining.toFixed(1))} to go)` : ''}`;
-    laps.replaceChildren(...swVm.lapRows.flatMap((r, i) => [el('span', { class: i === 0 ? 'cur' : '' }, `L${r.n}`), el('span', { class: i === 0 ? 'cur' : '' }, r.text), el('span', {}, `+${r.split}`)]));
+    if (digitalSw) {
+      // WATCH-008: the digital lap/split watch
+      splitTracker.update(!!sw.frozen, sw.laps.length, o.tod);
+      const dvm = digitalWatchViewModel(sw, { holdSeconds: o.rules.splitHoldSeconds, tod: o.tod, tracker: splitTracker });
+      const dwW = Math.round(clamp(Math.min(instW * 0.42, (instH - 40) * 1.7), 250, 400)); dwatch.style.width = `${dwW}px`; dwatch.style.maxHeight = `${Math.max(120, instH - 4)}px`;
+      lcdEl.style.fontSize = `${Math.round(clamp(dwW / 6.4, 28, 60))}px`;
+      lcdEl.textContent = dvm.display; lcdEl.className = `dw-lcd lcd${dvm.frozen ? ' frozen' : ''}${dvm.mode === 'tod' ? ' tod' : ''}`;
+      dwMode.textContent = dvm.modeLabel; dwMode.className = `modechip ${dvm.mode}`; dwInd.textContent = dvm.indicator; dwInd.className = `dw-ind${dvm.frozen ? ' frozen' : ''}`;
+      dwStart.textContent = sw.running ? 'Stop' : 'Start'; dwReset.disabled = !dvm.canReset;
+      const lapKey = `${dvm.laps.map(l => `${l.n}${l.recalled ? '*' : ''}`).join(',')}`;
+      if (lapKey !== dwLaps.dataset.key) { dwLaps.dataset.key = lapKey; dwLaps.innerHTML = dvm.laps.length ? dvm.laps.map(l => `<div class="dw-lap${l.recalled ? ' recalled' : ''}" data-lap="${l.n}"><span class="ln">L${l.n}</span><span class="cbox"><span>${l.interval}</span><span>${l.cumulative}</span></span></div>`).join('') : '<span class="muted">no laps yet: L takes a split</span>'; }
+      swCap.innerHTML = `${sw.running ? '<span class="ok">running</span>' : 'stopped'} · ${dvm.modeLabel}${sw.laps.length ? ` · ${sw.laps.length} lap${sw.laps.length === 1 ? '' : 's'}` : ''}`;
+    } else {
+      const swVm = stopwatchViewModel(sw.reading, sw.kind, { dialSeconds: sw.dialSeconds === 30 ? 30 : 60, registerMinutes: 30, bezel: sw.bezel, running: sw.running, laps: sw.laps });
+      const sctx = prepare(swCanvas, swSize, swSize); if (sctx) drawStopwatch(sctx, swVm, swSize, theme);
+      swCap.innerHTML = `${policy.digitalReadouts ? `<b id="lcd">${escapeHtml(swVm.digital)}</b> ` : ''}${sw.running ? '<span class="ok">running</span>' : 'stopped'} · bezel ${escapeHtml(sw.bezel.toFixed(1))} s${policy.digitalReadouts ? ` (${escapeHtml(sw.bezelRemaining.toFixed(1))} to go)` : ''}`;
+      laps.replaceChildren(...swVm.lapRows.flatMap((r, i) => [el('span', { class: i === 0 ? 'cur' : '' }, `L${r.n}`), el('span', { class: i === 0 ? 'cur' : '' }, r.text), el('span', {}, `+${r.split}`)]));
+    }
     const cvm = clockViewModel(o.tod, o.bezel);
-    const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme);
-    clockCap.innerHTML = policy.digitalReadouts ? `<b>${escapeHtml(cvm.digital)}</b> · start ${escapeHtml(formatClock(o.startTime))}` : `official start ${escapeHtml(formatClock(o.startTime))}`;
+    if (digitalClock) { clockDigital.textContent = cvm.digital; clockDigital.style.fontSize = `${Math.round(clamp(clSize / 3.2, 22, 56))}px`; }
+    else { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme); }
+    clockCap.innerHTML = policy.digitalReadouts || digitalClock ? `<b>${digitalClock ? '' : escapeHtml(cvm.digital)}</b> ${digitalClock ? '' : '· '}start ${escapeHtml(formatClock(o.startTime))}` : `official start ${escapeHtml(formatClock(o.startTime))}`;
     const svm = speedoViewModel(o.speedo.reading, 100);
     const pctx = prepare(spCanvas, spSize, spSize); if (pctx) drawSpeedo(pctx, svm, spSize, theme, o.driver.targetIndicated);
     spCap.innerHTML = `${policy.digitalReadouts ? `<b>${escapeHtml(svm.text)}</b> mph · ` : ''}${o.driver.targetIndicated !== null ? `holding ${escapeHtml(String(o.driver.targetIndicated))}` : 'no speed called'}`;
@@ -349,8 +506,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     callout.textContent = keys.buffer ? `${keys.buffer}_ (Enter calls it)` : o.driver.pendingTurn ? `turn ${o.driver.pendingTurn} pending` : o.driver.targetIndicated !== null ? `holding ${o.driver.targetIndicated}` : '-';
     if (finishAsk) callout.textContent = `${finishAsk}`;
     if (keys.modifiers.length) callout.textContent += `  [${keys.modifiers.join('')}+arrow]`;
-    ledgerBody.innerHTML = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div><div class="muted">Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.</div>${o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${escapeHtml(paceAidText(o.aids.earlyLate, sim.waitReason))}</b></div>` : ''}`;
+    ledgerBody.innerHTML = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div><div class="muted">${o.ta.hasTaPoints ? (o.ta.windowOpen ? 'TA window open: file the request in the form on the road view (T).' : 'Held by a train, an accident scene or emergency speed? At the yellow TA box press T for the form (15 minutes).') : 'Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.'}</div>${o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${escapeHtml(paceAidText(o.aids.earlyLate, sim.waitReason))}</b></div>` : ''}`;
     renderPerfCard(o, dwellSoFar);
+    renderTa(o); renderCharts(o);
     notesList.innerHTML = o.notes.slice(-4).map(n => `<div>· ${escapeHtml(n)}</div>`).join('');
     logBody.innerHTML = driverLog.slice(-6).map(m => `<div class="${m.kind === 'question' ? 'q' : ''}"><span class="muted mono">${policy.digitalReadouts ? escapeHtml(formatClock(m.tod)) : ''}</span> ${escapeHtml(m.text)}</div>`).join('') || '<div class="muted">Dad has not said anything yet.</div>';
     renderBook(o);
@@ -411,11 +569,14 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     cardTitle.textContent = o.stoppedAtLine ? `Stopped: line ${line}` : policy.computedCard ? 'Perf card for the next line' : 'Your notes for this line';
     if (!card) { cardBody.innerHTML = ''; return; }
     const parts: string[] = [`<div><b>Line ${line}</b>: ${escapeHtml(card.text)}</div>`];
+    const hold: HoldCard | null = policy.computedCard ? holdCardFor(scenario, sim, line, o.asp) : null;
+    if (hold) parts.push(`<div class="holdcard ${hold.kind}" id="holdcard"><b>${escapeHtml(hold.title)}</b><div class="mono">${escapeHtml(hold.text)}</div></div>`);
     if (card.restart) {
-      parts.push(`<div class="accent"><b>${escapeHtml(card.restart.label)}</b>: not a stop. Call go so the car leaves at the out-time${card.restart.accel !== null ? ` minus the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);
+      parts.push(`<div class="accent">Not a stop: call go so the car leaves at the out-time${card.restart.accel !== null ? ` minus the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);
     } else if (card.mode === 'answers') {
       if (card.stop) {
         const s = card.stop; const more = waitMore(s, dwellSoFar);
+        if (s.chart) parts.push(`<div class="chartline" id="chartline">Chart (b) Stop &amp; Go: ${s.vIn} in / ${s.vOut} out = sit <b class="mono">${s.chart.chart.toFixed(1)}</b> s for a 15 s stop${s.pause !== 15 ? `; this pause is ${s.pause} s: sit <b class="mono">${s.chart.sit.toFixed(1)}</b> s` : ''}</div>`);
         parts.push(`<div>Stop ${s.vIn} in / ${s.vOut} out${s.cap !== undefined ? ` (turn capped at ${s.cap} mph)` : ''}: loss <b class="mono">${s.loss.toFixed(1)}</b> s → dwell <b class="mono">${s.dwell.toFixed(1)}</b> s after "Stopped" <span class="muted">(set the bezel with ] )</span></div>`);
         if (o.stoppedAtLine === line && more !== null) parts.push(`<div class="stopnow">dwell so far <b class="mono">${Math.max(0, dwellSoFar).toFixed(1)}</b> s · ${more > 0.05 ? `wait <b class="mono">${more.toFixed(1)}</b> more s` : '<b class="ok">go now (G)</b>'}</div>`);
       } else if (card.stopNoPause) parts.push(`<div>STOP without pause: loss ${card.stopNoPause.loss.toFixed(1)} s is yours to recover.</div>`);
@@ -423,7 +584,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       else if (card.speedChange) parts.push(`<div>Speed ${card.speedChange.from} → ${card.speedChange.to}: call it <b class="mono">${card.speedChange.lead.toFixed(1)}</b> s before the landmark (${card.speedChange.ft} ft)</div>`);
       if (card.turnLoss) {
         const t = card.turnLoss;
-        parts.push(`<div class="turnloss"><b>Turn loss</b> <span class="muted">(s lost slowing and re-accelerating, no stop)</span>${t.here ? `<div>This turn ${t.here.turn} ${t.here.vIn}${t.here.vIn !== t.here.vOut ? ` &rarr; ${t.here.vOut}` : ''} mph: <b class="mono">${t.here.loss.toFixed(1)}</b> s</div>` : ''}${t.rows.map(r => `<div class="mono">${r.angle}&deg;: ${t.speeds.map((v, i) => `${v} <b>${r.losses[i]!.toFixed(1)}</b>`).join(' · ')}</div>`).join('')}</div>`);
+        parts.push(`<div class="turnloss"><b>Turn loss</b> <span class="muted">(s lost slowing and re-accelerating, no stop)</span>${t.here ? `<div class="thisturn">This turn ${t.here.turn} ${t.here.vIn}${t.here.vIn !== t.here.vOut ? ` &rarr; ${t.here.vOut}` : ''} mph: <b class="mono">this turn: ${t.here.loss.toFixed(1)} s</b></div><div class="muted">${escapeHtml(t.here.rule.text)}</div>` : ''}${t.rows.map(r => `<div class="mono">${r.angle}&deg;: ${t.speeds.map((v, i) => `${v} <b>${r.losses[i]!.toFixed(1)}</b>`).join(' · ')}</div>`).join('')}</div>`);
       }
       if (card.start) parts.push(`<div>Standing start to ${card.start.speed}: leave ~<b class="mono">${card.start.early.toFixed(1)}</b> s early</div>`);
     } else {
@@ -438,7 +599,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   function currentScale(o: Observation): number {
     const nearest = o.ahead.length ? Math.min(...o.ahead.map(f => f.approxDistanceFt)) : null;
     const hazard = o.ahead.some(f => f.kind === 'slow' || f.kind === 'construction' || f.gateDown || f.signalColor === 'red');
-    return effectiveScale({ requested, paused, phase: o.phase, carStopped: o.carStopped, waitingForGo: o.driver.waitingForGo, nearestFeatureFt: nearest, hazardActive: hazard, countdownSeconds: o.aids.countdown ?? null, bezelRemaining: o.stopwatch.running ? o.stopwatch.bezelRemaining : null, lockedTo1x });
+    return effectiveScale({ requested, paused, phase: o.phase, carStopped: o.carStopped, waitingForGo: o.driver.waitingForGo, nearestFeatureFt: nearest, hazardActive: hazard, countdownSeconds: o.aids.countdown ?? null, bezelRemaining: o.stopwatch.running && o.stopwatch.kind === 'analog' ? o.stopwatch.bezelRemaining : null, lockedTo1x });
   }
 
   // ---------- loop ----------

@@ -13,6 +13,7 @@ import { headlineTip as engineHeadlineTip } from '../../core/drills/rubrics.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { stopsFromEvents, speedsByNode, turnCap } from './counterfactual.js';
 import { restartLabel, lineSpeeds } from './cockpitinfo.js';
+import { chartStopLoss } from './charts.js';
 
 export const BUCKETS: Bucket[] = ['cruise', 'stop', 'speedChange', 'timedChange', 'hazard', 'offCourse', 'turn', 'start', 'ta'];
 export const BUCKET_LABEL: Record<Bucket, string> = {
@@ -186,7 +187,7 @@ export function workedStops(events: SimEvent[] | null | undefined, scenario?: Sc
     let carLoss: number | null = null;
     if (scenario && vOut !== null && vOut > 0) {
       const vi = vIn !== null && vIn > 0 ? vIn : vOut;
-      try { carLoss = r1(stopLoss(vi, vOut, scenario.car, turnCap(turn, scenario))); } catch { carLoss = null; }
+      try { carLoss = chartStopLoss(scenario.car, vi, vOut, turnCap(turn, scenario)); } catch { carLoss = null; }
     }
     const idealDwell = carLoss === null ? null : r1(Math.max(0, pause - carLoss));
     const end = st.releaseTod ?? st.goTod ?? st.waitTod;
@@ -463,7 +464,7 @@ function headlineTip(totals: Record<Bucket, number>, rows: CpRow[], result: Stag
   const n = Math.round(mag);
   const tips: Record<Bucket, string> = {
     cruise: late ? `You are running ${n} s slow at cruise: your indicated speed reads high. Correct the card (call about 0.5 mph more) or check the calibration factor.` : `You are running ${n} s fast at cruise: the speedometer reads low. Call half a mph less, or fix the card.`,
-    stop: late ? `Stops cost ${n} s net: you are dwelling longer than pause minus car loss. Compute the dwell before the stop (P15 at 35 in / 35 out is about 15 - 7.5 = 7.5 s) and call "go" on the count.` : `You are leaving stops ${n} s early: the pause is credited to the ghost in full; dwell = pause - car loss, not zero.`,
+    stop: late ? `Stops cost ${n} s net: you are dwelling longer than pause minus car loss. Compute the dwell before the stop (a \"0 MPH / 0m15s\" stop at 35 in / 35 out is about 15 - 7.5 = 7.5 s) and call "go" on the count.` : `You are leaving stops ${n} s early: the pause is credited to the ghost in full; dwell = pause - car loss, not zero.`,
     speedChange: late ? `Speed changes cost ${n} s: start the change half a ramp early so the ramp straddles the landmark (ramp lead).` : `You are gaining ${n} s on speed changes: you call the new speed too early. Lead by half the ramp, not a full one.`,
     timedChange: late ? `Timed changes cost ${n} s: lap the watch at the start of the segment and call the new speed half a ramp before the count expires.` : `Timed changes run ${n} s early: the count starts when the ghost leaves the landmark, not when you call it.`,
     hazard: `Hazards cost ${n} s. Start the watch when you are held by a light or a train and declare the time allowance (T) before the checkpoint.`,

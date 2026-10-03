@@ -2,7 +2,7 @@
 import type { TurnDir } from '../../core/course.js';
 
 export type KeyCommand =
-  | { type: 'watch.toggle' } | { type: 'watch.lap' } | { type: 'watch.reset' }
+  | { type: 'watch.toggle' } | { type: 'watch.lap' } | { type: 'watch.reset'; force?: boolean } | { type: 'watch.recall' } | { type: 'watch.mode' } | { type: 'charts' } | { type: 'clock.read' }
   | { type: 'bezel'; delta: number }
   | { type: 'call.turn'; dir: TurnDir }
   | { type: 'call.go' } | { type: 'call.stop' } | { type: 'call.uturn' } | { type: 'call.pass' }
@@ -58,7 +58,10 @@ export class KeyMapper {
     if (key === 'End') return { type: 'line.end' };
     switch (low) {
       case 'l': return { type: 'watch.lap' };
-      case 'r': return shift ? { type: 'watch.reset' } : null;        // a slip must not destroy a run
+      case 'r': return shift ? { type: 'watch.reset', force: true } : { type: 'watch.recall' };   // WATCH-008: R recalls; only Shift+R resets (and forces it while running)
+      case 'm': return { type: 'watch.mode' };
+      case 'c': return { type: 'charts' };
+      case 'k': return { type: 'clock.read' };
       case 'g': return { type: 'call.go' };
       case 's': return { type: 'call.stop' };
       case 'u': return { type: 'call.uturn' };
@@ -74,11 +77,12 @@ export class KeyMapper {
 }
 
 export const KEY_HELP: { keys: string; does: string }[] = [
-  { keys: 'Space', does: 'stopwatch start / stop' }, { keys: 'L or Enter', does: 'lap' }, { keys: 'Shift+R', does: 'reset (only when stopped)' },
+  { keys: 'Space', does: 'stopwatch start / stop' }, { keys: 'L or Enter', does: 'lap (digital: split + lap table)' }, { keys: 'R', does: 'recall: release a frozen split, then cycle the last 10 laps' }, { keys: 'M', does: 'digital watch mode: CHRONO / TOD' },
+  { keys: 'Reset button', does: 'reset the watch (only while stopped)' }, { keys: 'Shift+R', does: 'force the reset even while running' }, { keys: 'C', does: 'the three performance charts' }, { keys: 'K or click the clock', does: 'note a clock read (time of day comes from the clock)' },
   { keys: '[ / ]', does: 'stopwatch bezel -1 / +1 s (Shift: 0.2 s)' },
   { keys: 'Left / Right / Up', does: 'call turn left / right / straight' }, { keys: 'B + arrow', does: 'bear' }, { keys: 'A + arrow', does: 'acute' }, { keys: 'J + arrow', does: 'jog' },
   { keys: 'G', does: 'go' }, { keys: 'S', does: 'stop / hold at the next landmark' }, { keys: 'U', does: 'u-turn' }, { keys: 'P', does: 'pass the slow vehicle' },
-  { keys: 'T', does: 'time allowance' }, { keys: 'N / Shift+N', does: 'next / previous line' }, { keys: 'Home / End', does: 'first / last line' },
+  { keys: 'T', does: 'Time Allowance form (at a TA point)' }, { keys: 'N / Shift+N', does: 'next / previous line' }, { keys: 'Home / End', does: 'first / last line' },
   { keys: 'digits, Enter', does: 'call that speed' }, { keys: '+ / -', does: 'nudge speed by 1 mph' },
   { keys: 'D', does: 'depart (start the leg)' }, { keys: 'E', does: 'set the ledger (early/late)' },
   { keys: ', / .', does: 'time scale down / up' }, { keys: 'Esc', does: 'pause' },

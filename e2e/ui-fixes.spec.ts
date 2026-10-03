@@ -24,7 +24,7 @@ test('C3/C4 HUD buttons work above the pre-read; the lapboard note blurs on Ente
   await expect(page.locator('#preread')).toBeVisible();
   await expect(page.locator('#preread')).toContainText(/Objective/);
   await expect(page.locator('#preread')).toContainText(/front bumper/);   // D01-specific text
-  await expect(page.locator('#hintbar')).toContainText(/Lap the watch/);
+  await expect(page.locator('#hintbar')).toContainText(/Lap the watch|press lap/i);   // D01 objective wording follows the drill author
   await page.locator('#pause').click({ timeout: 3000 });   // would time out when the overlay covers the HUD
   await expect(page.locator('#pause')).toHaveText('Resume'); await page.locator('#pause').click();
   await expect(page.locator('button[data-scale="4"]')).toBeDisabled();   // D01 is locked to 1x (N8)
@@ -43,7 +43,7 @@ test('C1/W1 at a STOP the book and perf card show the stopped line, with the tur
   const line = await page.evaluate(() => window.__rally!.observe().stoppedAtLine);
   expect(line).not.toBeNull();
   await expect(page.locator('#perfcard')).toContainText(`Stopped: line ${line}`);
-  await expect(page.locator('#perfcard')).toContainText(/turn capped at 12 mph/);
+  await expect(page.locator('#perfcard')).toContainText(/turn capped at (12|15) mph/);   // the apex speed of the drill's car (Ford 12, Packard 15)
   await expect(page.locator('#perfcard')).toContainText(/more s|go now/);
   await expect(page.locator(`#book .row.stopped[data-n="${line}"]`)).toBeVisible();
   // the strip, the card and the Debrief agree: card dwell == pause - turn-capped loss
@@ -183,7 +183,26 @@ test('C9 a live run warns before unload; at rung >= 1 the book follows the drive
   await page.keyboard.press(' ');      // user activation so Chromium shows the beforeunload dialog
   const dialogs: string[] = [];
   page.on('dialog', d => { dialogs.push(d.type()); void d.accept(); });
-  await page.evaluate(() => { const r = window.__rally!; for (let i = 0; i < 400 && r.observe().driver.lastExecutedLine === null; i++) r.advance(1); r.advance(0.5); });
+  // GRIID-006: the driver's check-off fires when the line's speed change completes, so call the book speed (type it, Enter) as each line comes up
+  for (let i = 0; i < 600; i++) {
+    const step = await page.evaluate(() => {
+      const r = window.__rally!; const w = window as unknown as { __called?: Set<number> }; w.__called ??= new Set<number>();
+      const book = r.observe().book;
+      r.advance(1);
+      const o = r.observe();
+      if (o.driver.waitingForGo) r.act({ type: 'call.go' });
+      let speed: number | null = null;
+      for (const f of o.ahead) {
+        const ins = f.nodeId ? book.find(b => b.nodeId === f.nodeId) : undefined; if (!ins) continue;
+        if (ins.turn && !w.__called.has(ins.n)) { r.act({ type: 'call.turn', dir: ins.turn }); w.__called.add(ins.n); }
+        if (ins.speed !== undefined && f.approxDistanceFt <= 100 && !w.__called.has(ins.n + 10000)) { w.__called.add(ins.n + 10000); speed = ins.speed; }
+      }
+      return { speed, le: o.driver.lastExecutedLine };
+    });
+    if (step.speed !== null) { await page.keyboard.type(String(step.speed)); await page.keyboard.press('Enter'); }
+    if (step.le !== null) break;
+  }
+  await page.evaluate(() => window.__rally!.advance(0.5));
   const o = await page.evaluate(() => { const o = window.__rally!.observe(); return { le: o.driver.lastExecutedLine, cur: o.currentLine }; });
   expect(o.le).not.toBeNull();
   expect(o.cur).toBe(o.le! + 1);

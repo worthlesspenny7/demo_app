@@ -8,6 +8,7 @@ import { renderReference } from './screens/reference.js';
 import { renderSettings } from './screens/settings.js';
 import { renderQuiz } from './screens/quiz.js';
 import { renderCampaign } from './screens/campaign.js';
+import { renderBookPage } from './screens/book.js';
 import { campaignGate } from './viewmodels/campaign-gate.js';
 
 const root = document.getElementById('app') ?? document.body.appendChild(el('div', { id: 'app', class: 'app' }));
@@ -35,6 +36,7 @@ function route(): void {
       case 'school': renderSchool(view, parts[1]); break;
       case 'cockpit': { const src = parseSource(parts.slice(1)); if (!src) { renderHome(view); break; } cleanup = renderCockpit(view, src); view.focus(); break; }
       case 'debrief': renderDebrief(view); break;
+      case 'book': renderBookPage(view, parts.slice(1)); break;
       case 'reference': renderReference(view); break;
       case 'settings': renderSettings(view); break;
       case 'campaign': {

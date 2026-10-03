@@ -87,8 +87,8 @@ export function renderReference(root: HTMLElement): void {
   // GI definitions
   const gi = el('div', { class: 'panel' }, el('h3', {}, 'General Instructions: definitions'));
   const defs: [string, string][] = [
-    ['Pause N', 'Add N seconds to the perfect time at this point. The ghost spends N seconds standing still; you spend N minus your stop/start loss.'],
-    ['Timed segment "30 for 0:36 then 40"', 'Hold 30 for 36 s counted from the ghost\'s departure from the landmark (arrival plus any pause), then 40. Call the change half a ramp early.'],
+    ['Pause: "0 MPH / 0m15s / 45 MPH"', 'Column C stacks the speed you stop to (0 MPH), the pause (0m15s) and the speed you leave at (45 MPH). Add the pause to the perfect time at this point. Add N seconds to the perfect time at this point. The ghost spends N seconds standing still; you spend N minus your stop/start loss.'],
+    ['Timed segment: "30 MPH / 0m36s / 45 MPH"', 'Column C stacks the speed to hold, how long (0m36s) and the speed to change to. Hold 30 for 36 s counted from the ghost\'s departure from the landmark (arrival plus any pause), then 40. Call the change half a ramp early.'],
     ['Speed change at a landmark', 'REG VII.E.2: at a sign or landmark when the front tires come even with it; at an intersection, at the referenced sign if there is one, otherwise at the centre of the intersection or the apex of the turn. Handbook: split the speed change at the sign, crossing it at the midpoint speed. Be mid-ramp as the bumper passes it.'],
     ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or travel 5 MPH or slower within sight of a Timing Checkpoint: 30 s (REG V.E.3.a).'],
     ['Observation checkpoint', 'A manned stop (typically the finish, where you also submit any Time Allowance Requests). Missing one costs 3 minutes, or DNF/FNS for the final one (REG V.E.2.c-d).'],

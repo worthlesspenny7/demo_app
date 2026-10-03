@@ -7,7 +7,7 @@ import { bookRows, columnC } from '../src/ui/viewmodels/book.js';
 import { debriefViewModel, BUCKETS, workedTimed, workedCruise, ledgerAccuracy, biasNoise, cpCards, aidsRung } from '../src/ui/viewmodels/debrief.js';
 import { replay, counterfactuals, stopsFromEvents } from '../src/ui/viewmodels/counterfactual.js';
 import { effectiveScale, simAdvance, nextScale } from '../src/ui/viewmodels/timescale.js';
-import { KeyMapper } from '../src/ui/viewmodels/keys.js';
+import { KeyMapper, KEY_HELP } from '../src/ui/viewmodels/keys.js';
 import { audioCues } from '../src/ui/viewmodels/audio.js';
 import { createAnnotations } from '../src/ui/viewmodels/annotations.js';
 import { cockpitLayout, MIN_STOPWATCH_DIAL } from '../src/ui/viewmodels/layout.js';
@@ -125,17 +125,17 @@ describe('UI-005 bookRows', () => {
     const rows = bookRows(book, 3);
     expect(rows.filter(r => r.isCurrent).length).toBe(1);
     expect(rows[2]!.isCurrent).toBe(true);
-    expect(rows.map(r => r.colC)).toEqual(['35', 'P15', '30 for 0:36 then 40', '35 P15', '']);
+    expect(rows.map(r => r.colC)).toEqual(['CDT 8:00:00 / 35 MPH', '0 MPH / 0m15s', '30 MPH / 0m36s / 40 MPH', '0 MPH / 0m15s / 35 MPH', '']);   // GRIID-002 stacked lines, never "P15" or "30 for 0:36 then 40"
     expect(rows.map(r => r.state)).toEqual(['past', 'prev', 'current', 'next', 'next']);
-    expect(rows[0]!.colB).toBe('START');
-    expect(rows[3]!.colD).toBe('Comes quick');
+    expect(rows[4]!.b).toEqual(['finish']);
+    expect(rows[3]!.colD).toBe('Left at STOP. Pause 15. Speed 35 Comes quick');
   });
   it('UI-005 clamps out-of-range current lines and tolerates empty books', () => {
     expect(bookRows(book, 99).filter(r => r.isCurrent).map(r => r.n)).toEqual([5]);
     expect(bookRows(book, -3).filter(r => r.isCurrent).map(r => r.n)).toEqual([1]);
     expect(bookRows(book, Number.NaN).filter(r => r.isCurrent).length).toBe(1);
     expect(bookRows(undefined, 1)).toEqual([]);
-    expect(columnC({ pause: 20, timed: { holdSpeed: 25, seconds: 90, thenSpeed: 45 } })).toBe('P20 25 for 1:30 then 45');
+    expect(columnC({ pause: 20, timed: { holdSpeed: 25, seconds: 90, thenSpeed: 45 } })).toBe('0 MPH / 0m20s / 25 MPH / 1m30s / 45 MPH');
     expect(columnC(null)).toBe('');
   });
 });
@@ -291,8 +291,11 @@ describe('UI-011 keyboard mapping', () => {
     expect(k.keydown({ key: ' ' })).toEqual({ type: 'watch.toggle' });
     expect(k.keydown({ key: 'l' })).toEqual({ type: 'watch.lap' });
     expect(k.keydown({ key: 'Enter' })).toEqual({ type: 'watch.lap' });
-    expect(k.keydown({ key: 'r' })).toBeNull();                                   // plain R is a landmine: ignored
-    expect(k.keydown({ key: 'R', shiftKey: true })).toEqual({ type: 'watch.reset' });
+    expect(k.keydown({ key: 'r' })).toEqual({ type: 'watch.recall' });            // WATCH-008: R recalls (never resets)
+    expect(k.keydown({ key: 'm' })).toEqual({ type: 'watch.mode' });
+    expect(k.keydown({ key: 'k' })).toEqual({ type: 'clock.read' });
+    expect(k.keydown({ key: 'c' })).toEqual({ type: 'charts' });
+    expect(k.keydown({ key: 'R', shiftKey: true })).toEqual({ type: 'watch.reset', force: true });   // only Shift+R resets from the keyboard, and it forces
     expect(k.keydown({ key: '[' })).toEqual({ type: 'bezel', delta: -1 });
     expect(k.keydown({ key: ']' })).toEqual({ type: 'bezel', delta: 1 });
     expect(k.keydown({ key: '}', shiftKey: true })).toEqual({ type: 'bezel', delta: 0.2 });
@@ -558,9 +561,9 @@ describe('UI-014 one turn-capped stop loss for the book strip, the perf card and
   it('UI-014 the turn cap lowers the dwell: a 90-degree turning stop loses more than the straight stop at the same speeds', () => {
     const { sc } = oracleRun('D03', 1, 0);
     const line = sc.book.find(i => i.pause && i.turn === 'L')!;
-    const straight = stopLoss(40, 40, sc.car);
     expect(stopCardFor(sc, line.n)!.loss).toBeGreaterThan(0);
-    expect(stopLoss(40, 40, sc.car, sc.car.turnSpeedMph.turn)).toBeGreaterThan(straight);
+    // model-driven cars (the Ford): the turn zone cap lengthens the re-acceleration (table-driven cars read their printed chart and need no cap)
+    expect(stopLoss(40, 40, FORD_1939, FORD_1939.turnSpeedMph.turn)).toBeGreaterThan(stopLoss(40, 40, FORD_1939));
   });
   it('UI-015 the Debrief stop rows come from the engine attribution (line, pause, dwell) and agree with the event log', () => {
     const { sc, r } = oracleRun('D03', 2, 0);
@@ -586,7 +589,7 @@ describe('UI-016 stopped line, line focus and the legal-mode policy', () => {
     const o = sim.observe({ peek: true });
     expect(o.stoppedAtLine).toBe(2);
     const card = perfCardFor(sc, 2, instrumentPolicy(sc.aids))!;
-    expect(card.mode).toBe('answers'); expect(card.stop!.cap).toBe(12);
+    expect(card.mode).toBe('answers'); expect(card.stop!.cap).toBe(sc.car.turnSpeedMph.turn);
     expect(waitMore(card.stop!, 3)).toBeCloseTo(card.stop!.dwell - 3, 6);
   });
   it('UI-017 legal mode: rung <= 1 hides digital readouts and the computed card; rung >= 2 keeps them; the card then has only own annotations', () => {
@@ -1029,5 +1032,257 @@ describe('LESSON-006 Which timer, when', () => {
     expect(tab.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['Start or restart', 'Exact transit', 'TA window (15 min)', 'Calibration run', 'Timed speed change', 'Pause', '10 % make-up count']));
     const t = lessonText(l);
     hasAll(t, ['1m49.3s', '7m21.3s', '16m02.0s', '25m17.8s', 'box cumulative', 'your lap', 'Late 4.3 s']);
+  });
+});
+
+// ---------- UI V2: GRIID book, charts, TA point, restart cards, scorecard, digital watch ----------
+import { generateStage, PROFILES } from '../src/core/generator/generate.js';
+import { columnCLines, columnBSymbols, columnD, odometerBox, type ColumnBSymbol } from '../src/core/griid.js';
+import { bookPages, griidRow, calibrationBoxRange, pageOfLine, signBox, ROWS_PER_PAGE } from '../src/ui/viewmodels/book.js';
+import { griidIcon, odometerHtml, SYMBOL_LABEL } from '../src/ui/render/griid-icons.js';
+import { columnAHtml, columnBHtml, columnCHtml, griidRowHtml } from '../src/ui/render/griid.js';
+import { bookSheetsHtml } from '../src/ui/screens/book.js';
+import { chartGrids, stopChartReading, chartStopLoss, tenPercentRule } from '../src/ui/viewmodels/charts.js';
+import { holdCardFor } from '../src/ui/viewmodels/cockpitinfo.js';
+import { taFormVm, taRounding, taNoteText, windowClock } from '../src/ui/viewmodels/ta.js';
+import { scorecardViewModel, taRequestRows } from '../src/ui/viewmodels/scorecard.js';
+import { digitalWatchViewModel, SplitTracker, chronoText, todText } from '../src/ui/viewmodels/digitalwatch.js';
+import { PACKARD_1936, FORD_1939 } from '../src/core/course.js';
+import { buildPerfTable } from '../src/core/perf-table.js';
+import { builtinScenario } from '../src/agent/scenarios.js';
+import { hms, formatClock } from '../src/core/units.js';
+
+const ALL_SYMBOLS: ColumnBSymbol[] = ['warmup', 'calibration', 'transit-begin', 'transit-end', 'freezone-begin', 'freezone-end', 'end-timed', 'pit', 'meal', 'refuel', 'rest', 'ta', 'finish'];
+
+/** The oracle drives a generated stage to the first open TA window (seed 6 has a qualifying delay on leg 3). */
+function stageAtTaWindow(seed: number): Simulator {
+  const sim = new Simulator(generateStage(seed), { watch: 'digital' }); const bot = new OracleBot(sim);
+  for (let n = 0; n < 2_000_000 && sim.phase !== 'finished' && !sim.taState().windowOpen; n++) { bot.onTick(); sim.step(0.1); }
+  return sim;
+}
+
+describe('UI-029 the book as the five-column GRIID row', () => {
+  const stage = generateStage(1);
+  it('UI-029 every row carries number, Column B ids with the odometer box, stacked Column C lines and Column D, straight from the core GRIID helpers', () => {
+    const rows = bookRows(stage.book, 12, { timeZone: stage.timeZone, style: stage.bookStyle });
+    expect(rows.length).toBe(stage.book.length);
+    for (const r of rows) {
+      const ins = stage.book[r.n - 1]!;
+      expect(r.b).toEqual(columnBSymbols(ins)); expect(r.c).toEqual(columnCLines(ins, stage.timeZone)); expect(r.odometer).toBe(odometerBox(ins)); expect(r.d).toBe(columnD(ins, stage.bookStyle));
+      expect(r.colC).toBe(r.c.join(' / '));
+      for (const l of r.c) expect(l).not.toMatch(/^P\d|for \d+:\d\d then/);   // the old "P15" / "30 for 0:36 then 40" notation is gone
+    }
+    expect(rows.filter(r => r.isCurrent).map(r => r.n)).toEqual([12]);
+    expect(rows[10]!.state).toBe('prev'); expect(rows[12]!.state).toBe('next'); expect(rows[20]!.state).toBe('far');   // UI-009 emphasis kept
+    const pause = rows.find(r => r.pause)!; expect(pause.c.slice(0, 3)).toEqual(['0 MPH', '0m15s', expect.stringMatching(/^\d+ MPH$/)]);
+    const hourglass = rows.find(r => r.b.includes('transit-begin') && r.odometer)!; expect(hourglass.odometer).toMatch(/^\d{4}$/);
+    const asterisk = rows.find(r => r.asterisk)!; expect(asterisk.c).toContain('* 0m00.0s');
+  });
+  it('UI-029 the calibration box is the interval over the cumulative time; a 5m32.0s / 7m21.3s pair is boxed', () => {
+    const cal = stage.book.find(i => i.section === 'calibration' && !i.calibrationStart)!;
+    const r = griidRow(cal); expect(r.cBox).not.toBeNull();
+    expect(r.c.slice(r.cBox![0], r.cBox![1] + 1)).toEqual([expect.stringMatching(/^\d+m\d\d\.\ds$/), expect.stringMatching(/^\d+m\d\d\.\ds$/)]);
+    const ins: Instruction = { n: 7, nodeId: 'x', text: 'cal', section: 'calibration', perfectInterval: 332, perfectCumulative: 441.3 };
+    expect(calibrationBoxRange(ins, columnCLines(ins))).toEqual([0, 1]);
+    const html = columnCHtml(griidRow(ins)); expect(html).toContain('class="cbox"'); expect(html).toContain('5m32.0s'); expect(html).toContain('7m21.3s');
+    expect(columnCHtml(griidRow(stage.book.find(i => i.calibrationStart)!))).toContain('class="asterisk"');
+  });
+  it('UI-029 every Column B symbol id has a small inline SVG icon with its label, and the odometer box has four digit boxes with a black tenths box', () => {
+    for (const sym of ALL_SYMBOLS) { const svg = griidIcon(sym); expect(svg).toContain(`data-sym="${sym}"`); expect(svg.startsWith('<svg')).toBe(true); expect(svg).toContain(SYMBOL_LABEL[sym]); expect(svg.length).toBeGreaterThan(150); }
+    expect(new Set(ALL_SYMBOLS.map(s => griidIcon(s))).size).toBe(ALL_SYMBOLS.length);                       // all distinct
+    expect(griidIcon('transit-begin')).not.toBe(griidIcon('transit-end'));                                   // full vs empty hourglass
+    expect(griidIcon('freezone-begin')).toContain('#d6453d'); expect(griidIcon('freezone-end')).not.toContain('#d6453d');   // crossed camera vs camera
+    expect(griidIcon('ta')).toContain('#f5d90a');                                                             // yellow box
+    const odo = odometerHtml('0045'); expect(odo).toContain('data-odo="0045"'); expect((odo.match(/<i/g) ?? []).length).toBe(4); expect(odo).toContain('class="tenths">5');
+    const b = columnBHtml({ b: ['warmup', 'transit-begin'], odometer: '0080' }); expect(b).toContain('data-sym="warmup"'); expect(b).toContain('data-odo="0080"'); expect((b.match(/data-odo/g) ?? []).length).toBe(1);
+  });
+  it('UI-029 Column D is the sentence in the example style and the remark alone in the race style (GRIID-009)', () => {
+    const ins: Instruction = { n: 3, nodeId: 'n', text: 'Turn right at a crossroad at a Traffic Light.', remark: 'Comes quick' };
+    expect(griidRow(ins, { style: 'example' }).d).toBe('Turn right at a crossroad at a Traffic Light. Comes quick');
+    expect(griidRow(ins, { style: 'race' }).d).toBe('Comes quick');
+    expect(griidRow({ ...ins, remark: undefined }, { style: 'race' }).d).toBe('');
+    expect(columnAHtml({ svg: '<svg/>', sign: signBox({ id: 'n', s: 0, kind: 'sign', control: 'none', sightDistance: 300, sign: { text: 'LEAVING ELDORA CITY LIMIT', shape: 'rect', side: 'R' } }), landmark: 'bridge' })).toMatch(/sign-box side-R[^>]*>LEAVING ELDORA CITY LIMIT.*landmark">bridge/);
+  });
+  it('UI-029 page breaks every 6 rows with "Page n of m" and the stage title; the printable view prints the same pages', () => {
+    const pages = bookPages(stage.book, 'D18 Full day', { timeZone: stage.timeZone, style: stage.bookStyle });
+    expect(ROWS_PER_PAGE).toBe(6); expect(pages.length).toBe(Math.ceil(stage.book.length / 6));
+    expect(pages[0]!.footer).toBe(`Page 1 of ${pages.length}`); expect(pages[1]!.footer).toBe(`Page 2 of ${pages.length}`); expect(pages[0]!.title).toBe('D18 Full day');
+    expect(pages.slice(0, -1).every(p => p.rows.length === 6)).toBe(true); expect(pages.flatMap(p => p.rows).map(r => r.n)).toEqual(stage.book.map(i => i.n));
+    expect(pageOfLine(1)).toBe(1); expect(pageOfLine(6)).toBe(1); expect(pageOfLine(7)).toBe(2);
+    const html = bookSheetsHtml(stage, 'D18 Full day'); expect((html.match(/class="book-sheet"/g) ?? []).length).toBe(pages.length);
+    expect(html).toContain(`Page 1 of ${pages.length}`); expect(html).toContain('D18 Full day'); expect(html).toContain('data-sym="transit-begin"'); expect(html).toContain('class="cbox"');
+    expect(griidRowHtml(pages[0]!.rows[0]!, { svg: '' })).toMatch(/class="gn">1<.*class="gb".*class="gc".*class="gd"/);
+  });
+  it('UI-029 lettered lines print their letter and omitted lines are marked (GRIID-005)', () => {
+    const r = griidRow({ n: 4, nodeId: 'n', text: 'x', printed: '3a', omitted: true });
+    expect(r.printed).toBe('3a'); expect(r.omitted).toBe(true); expect(griidRowHtml({ ...r, isCurrent: false, state: 'far', offset: 3 }, { svg: '' })).toContain('(omitted)');
+  });
+});
+
+describe('UI-030 the three handbook charts as IN x OUT grids with the current pair highlighted', () => {
+  it('UI-030 chartGrids returns accel (including 0), stop & go and turns, IN rows x OUT columns, and the pair is highlighted in each (CHART-001)', () => {
+    const g = chartGrids(FORD_1939, { vIn: 35, vOut: 40 });
+    expect(g.map(x => x.id)).toEqual(['accel', 'stopGo', 'turns']); expect(g.map(x => x.letter)).toEqual(['a', 'b', 'c']);
+    expect(g[0]!.speeds[0]).toBe(0); expect(g[0]!.rows[0]!.in).toBe(0); expect(g[0]!.rows.every(r => r.cells.length === g[0]!.speeds.length)).toBe(true);
+    expect(g[1]!.speeds[0]).toBe(15); expect(g[2]!.speeds).toContain(55);
+    for (const x of g) { expect(x.highlight).toEqual({ in: 35, out: 40 }); expect(x.rows.flatMap(r => r.cells).filter(c => c.hi).length).toBe(1); }
+    const t = buildPerfTable(FORD_1939); const cell = g[1]!.rows.find(r => r.in === 35)!.cells.find(c => c.out === 40)!; expect(cell.value).toBe(t.stopGo.rows[35]![40]); expect(cell.text).toBe(cell.value.toFixed(1));
+    expect(chartGrids(FORD_1939, { vIn: null, vOut: 35 })[0]!.highlight).toEqual({ in: 0, out: 35 });          // a start from rest highlights the 0 row of chart (a)
+    expect(chartGrids(FORD_1939, null).every(x => x.highlight === null)).toBe(true);
+  });
+  it('UI-030 the Packard example in chart (b) at 30 in / 40 out prints 8.6, and the stop card reads that pause time directly', () => {
+    const g = chartGrids(PACKARD_1936, { vIn: 30, vOut: 40 })[1]!; expect(g.rows.find(r => r.in === 30)!.cells.find(c => c.out === 40)!.text).toBe('8.6');
+    const rd = stopChartReading(PACKARD_1936, 30, 40, 15); expect(rd.chart).toBe(8.6); expect(rd.sit).toBe(8.6);
+    expect(stopChartReading(PACKARD_1936, 30, 40, 20).sit).toBeCloseTo(13.6, 6);                                  // a longer printed pause adds the extra seconds
+    expect(chartStopLoss(PACKARD_1936, 30, 40)).toBeCloseTo(15 - 8.6, 6);
+  });
+  it('UI-030 StopCard.chart carries the chart (b) reading for a straight stop, none for a stop at a turn; dwell = pause - loss from the same chart', () => {
+    const sc = generateStage(1); const straight = sc.book.find(i => i.pause && (!i.turn || i.turn === 'S'))!; const turning = sc.book.find(i => i.pause && i.turn && i.turn !== 'S')!;
+    const a = stopCardFor(sc, straight.n)!; expect(a.chart).not.toBeNull(); expect(a.chart!.sit).toBeCloseTo(a.dwell, 1); expect(a.cap).toBeUndefined();
+    const b = stopCardFor(sc, turning.n)!; expect(b.chart).toBeNull(); expect(b.cap).toBe(sc.car.turnSpeedMph.turn);
+  });
+  it('UI-030 the 10 % rule line: drive 10 % over for ten times the seconds lost (CHART-003: "this turn: N s")', () => {
+    expect(tenPercentRule(35, 4).text).toBe('10 % rule: 38.5 mph for 40 s makes up 4.0 s'); expect(tenPercentRule(40, 4.4).mph).toBe(44); expect(tenPercentRule(40, 4.4).seconds).toBe(44);
+    const sc = generateStage(1); const turn = sc.book.find(i => (i.turn === 'R' || i.turn === 'L') && i.speed !== undefined)!;
+    const here = turnLossBlock(sc, turn.n).here; expect(here).not.toBeNull(); expect(here!.rule.seconds).toBe(Math.round(here!.loss * 10)); expect(here!.rule.text).toContain('10 % rule');
+  });
+});
+
+describe('UI-031 TA point screen', () => {
+  it('UI-031 at an open TA window the form lists the eligible legs with measured delay, recoverable and suggested from sim.taAdvice, and the window counts down from 15 minutes', () => {
+    const sim = stageAtTaWindow(6); const ta = sim.observe({ peek: true }).ta;
+    expect(ta.windowOpen).toBe(true);
+    const vm = taFormVm(ta, l => sim.taAdvice(l));
+    expect(vm.visible).toBe(true); expect(vm.endOfStage).toBe(false); expect(vm.countdown).toBe('15:00'); expect(vm.legs.map(l => l.legIndex)).toEqual(ta.eligibleLegs);
+    const leg3 = vm.legs.find(l => l.legIndex === 3)!; const adv = sim.taAdvice(3);
+    expect(leg3.measured).toBe(adv.measuredDelay); expect(leg3.recoverable).toBe(adv.recoverable); expect(leg3.suggested).toBe(adv.suggested); expect(leg3.suggested).toBe(50); expect([leg3.fromLine, leg3.toLine]).toEqual([80, 80]);
+    expect(leg3.text).toMatch(/Leg 3: delay 1m29s, could be made up 0m29s, suggested request 0m50s \(lines 80-80\)/);
+    expect(vm.ackAvailable).toBe(false); expect(vm.example).toBe('Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.');
+    sim.step(125); const later = taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)); expect(later.countdown).toBe('12:55');
+    sim.step(900); expect(taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).visible).toBe(false);
+    expect(taFormVm(null, () => adv).visible).toBe(false);
+  });
+  it('UI-031 the request rounds live to 10 s against the team with the adjustment text, the same as the engine, and the note follows the handbook example (TA-005)', () => {
+    expect(taRounding(47, 89).text).toBe('0m47s adjusted to 0m50s'); expect(taRounding(47, 89).adjusted).toBe(50);       // measured is above the midpoint: up
+    expect(taRounding(43, 20)).toMatchObject({ adjusted: 40, changed: true }); expect(taRounding(50, 89)).toMatchObject({ adjusted: 50, changed: false });
+    expect(taRounding(0, 5).adjusted).toBe(0);
+    const sim = stageAtTaWindow(6); sim.act({ type: 'ta.request', legIndex: 3, seconds: 47, fromLine: 80, toLine: 80 });
+    expect(sim.taRequests[0]!.adjusted).toBe(taRounding(47, sim.taAdvice(3).measuredDelay).adjusted); expect(sim.taRequests[0]!.adjustment).toBe(taRounding(47, sim.taAdvice(3).measuredDelay).text);
+    expect(taNoteText({ delay: 45, madeUp: 25, request: 20, cause: 'a farm tractor' })).toBe('Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.');
+    expect(taNoteText({ delay: 45, madeUp: 25, request: 20, witness: 'car 12' })).toBe('Delayed 0m45s. Made up 0m25s. Request 0m20s. Witness: car 12.');
+    expect(windowClock(900)).toBe('15:00'); expect(windowClock(59.2)).toBe('1:00'); expect(windowClock(null)).toBe('--:--');
+  });
+  it('UI-031 the end-of-stage TA point offers the scorecard acknowledgement and the debrief shows each request with status, adjusted amount and reason', () => {
+    const sim = new Simulator(generateStage(6), { watch: 'digital' }); const bot = new OracleBot(sim);
+    let filed = false;
+    for (let n = 0; n < 3_000_000 && sim.phase !== 'finished'; n++) {
+      bot.onTick(); sim.step(0.1);
+      const ta = sim.taState();
+      if (ta.windowOpen && !ta.endOfStage && !filed && ta.eligibleLegs.includes(3)) { filed = true; sim.act({ type: 'ta.request', legIndex: 3, seconds: 47, fromLine: 80, toLine: 80, note: 'Delayed by a train.' }); sim.act({ type: 'ta.request', legIndex: 2, seconds: 30, fromLine: 40, toLine: 41 }); }
+      if (ta.windowOpen && ta.endOfStage && !ta.scorecardAcked) { expect(taFormVm(ta, l => sim.taAdvice(l)).ackAvailable).toBe(true); sim.act({ type: 'scorecard.ack' }); expect(taFormVm(sim.taState(), l => sim.taAdvice(l)).ackAvailable).toBe(false); expect(taFormVm(sim.taState(), l => sim.taAdvice(l)).acked).toBe(true); }
+    }
+    const result = sim.result(); const rows = taRequestRows(result);
+    expect(rows.length).toBeGreaterThanOrEqual(2); expect(rows.length).toBe(result.ta.requests.length); expect(result.ta.scorecardAcked).toBe(true);   // the oracle may file its own at the end-of-stage point
+    const r3 = rows.find(r => r.legIndex === 3)!; expect(r3.status).toBe('filed'); expect(r3.adjusted).toBe(50); expect(r3.adjustment).toBe('0m47s adjusted to 0m50s'); expect(r3.reason).toBe(result.score.legs[2]!.taReason); expect(r3.text).toContain('requested 0m47s'); expect(r3.text).toContain('credit');
+    const r2 = rows.find(r => r.legIndex === 2)!; expect(r2.reason).toMatch(/Allowed|measured|never/);
+    const sc = scorecardViewModel(result, sim.sc); expect(sc.taRequests.length).toBe(rows.length); expect(sc.scorecardAcked).toBe(true); expect(sc.taCreditTotal).toBe(rows.reduce((a, r) => a + r.credit, 0));
+  });
+});
+
+describe('UI-032 restart, exact-transit and promoted-stop cards', () => {
+  const sc = generateStage(1, { ...PROFILES.fullStage!, asp: 17 });
+  it('UI-032 restart card: base + ASP = your time, leave at that second, do not pull up before your minute', () => {
+    const rs = sc.book.find(i => i.section === 'restart')!;
+    const card = holdCardFor(sc, null, rs.n, sc.asp)!;
+    expect(card.kind).toBe('restart'); expect(card.goTod).toBe(rs.restartTime);
+    expect(card.text).toBe(`base ${formatClock(rs.baseTime!)} + ASP 17 min = your time ${formatClock(rs.baseTime! + 17 * 60)}, leave at that second, do not pull up before your minute`);
+    expect(sc.asp).toBe(17); expect(rs.restartTime).toBe(rs.baseTime! + 17 * 60);
+  });
+  it('UI-032 exact-transit card: IN + 20m00s = OUT, from sim.transitIn / transitOutFor; before the sign it says to read the clock', () => {
+    const ex = new ScenarioBuilder({ startTime: hms(8, 0, 0) }).start(30).advanceMiles(0.5).transit({ exact: true, seconds: 1200, miles: 12 }).advanceMiles(0.5).endTransit({ speed: 30 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+    const begin = ex.book.find(i => i.transit?.exact && !i.transit.end)!; const end = ex.book.find(i => i.transit?.end)!;
+    const src = { transitIn: { [begin.n]: hms(9, 14, 7) }, transitOutFor: () => hms(9, 14, 7) + 1200, holdGoTod: () => null };
+    const a = holdCardFor(ex, src, begin.n)!; expect(a.kind).toBe('transit'); expect(a.text).toBe('IN 09:14:07 + 20m00s = OUT 09:34:07'); expect(a.goTod).toBe(hms(9, 34, 7));
+    const b = holdCardFor(ex, src, end.n)!; expect(b.text).toBe('IN 09:14:07 + 20m00s = OUT 09:34:07'); expect(b.title).toMatch(/End of exact transit/);
+    expect(holdCardFor(ex, { transitIn: {}, transitOutFor: () => null, holdGoTod: () => null }, begin.n)!.text).toBe('IN (read the clock at the sign) + 20m00s = OUT');
+  });
+  it('UI-032 promoted-stop card: leave by HH:MM:SS (45m00s prior to end of transit); the live sim supplies the time through holdGoTod', () => {
+    const meal = sc.book.find(i => i.promotedStop?.kind === 'meal')!;
+    const src = { transitIn: {}, transitOutFor: () => null, holdGoTod: () => hms(11, 6, 40) };
+    expect(holdCardFor(sc, src, meal.n)!.text).toBe('leave by 11:06:40 (45m00s prior to end of transit)');
+    expect(holdCardFor(sc, null, meal.n)!.text).toBe('leave 45m00s prior to end of transit');
+    expect(holdCardFor(sc, null, 2)).toBeNull();
+    const sim = new Simulator(sc); expect(typeof sim.holdGoTod).toBe('function'); expect(holdCardFor(sc, sim, meal.n)!.kind).toBe('promoted');
+  });
+});
+
+describe('UI-034 debrief scorecard mirroring the official one', () => {
+  function straightRun(lateSeconds: number, stop = false) {
+    const sc = builtinScenario('straight', 1); const sim = new Simulator(sc, { watch: 'digital' });
+    sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.step(3 + lateSeconds); sim.act({ type: 'start' }); sim.act({ type: 'call.speed', mph: 30 });
+    for (let i = 0; i < 4000 && sim.phase !== 'finished'; i++) { if (sim.waitingForGo) sim.act({ type: 'call.go' }); if (stop && sim.car.s > 5400 && i % 1 === 0) sim.act({ type: 'call.stop' }); sim.step(0.5); }
+    return { sc, result: sim.result() };
+  }
+  it('UI-034 a 3-minute-late leg is flagged "capped at 2m00s (late)" with its penalty 120, plus the observation penalty, raw, age factor and stage score to 0.01 s', () => {
+    const { sc, result } = straightRun(183);
+    const vm = scorecardViewModel(result, sc);
+    expect(vm.legs.length).toBe(1); const l = vm.legs[0]!;
+    expect(l.flag).toBe('late-cap'); expect(l.flagText).toBe('capped at 2m00s (late)'); expect(l.penalty).toBe(120); expect(l.errorText).toBe(`+${l.error}`); expect(l.perfect).toBe('08:02:00');
+    expect(vm.caps).toEqual({ late: 120, early: 300, missed: 180 }); expect(vm.capsText).toBe('Late legs are capped at 2m00s, early legs at 5m00s; a missed checkpoint scores 3m00s.');
+    expect(vm.items).toEqual([{ kind: 'observation', label: 'Observation Checkpoint crossed without the stop', seconds: 180 }]);
+    expect(vm.raw).toBe(300); expect(vm.ageFactor).toBe(0.845); expect(vm.ageText).toBe('0.845 (1939)'); expect(vm.score).toBe(253.5); expect(vm.scoreText).toBe('253.50'); expect(vm.dnf).toBe(false); expect(vm.banner).toBe('');
+  });
+  it('UI-034 an early leg beyond 5 minutes is capped at 5m00s (early); a missed final checkpoint shows "missed checkpoint: 3m00s" and the DNF / FNS banner', () => {
+    const sc = builtinScenario('straight', 1); const sim = new Simulator(sc, { watch: 'digital' });
+    sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.act({ type: 'start' }); sim.act({ type: 'call.speed', mph: 30 }); sim.step(20); sim.act({ type: 'abort' });
+    const vm = scorecardViewModel(sim.result(), sc);
+    expect(vm.legs[0]!.flag).toBe('missed'); expect(vm.legs[0]!.flagText).toContain('missed checkpoint: 3m00s'); expect(vm.legs[0]!.actual).toBe('missed'); expect(vm.legs[0]!.penalty).toBe(180);
+    expect(vm.dnf).toBe(true); expect(vm.banner).toMatch(/^DNF \/ FNS: The final Timing Checkpoint was missed/); expect(vm.banner).toContain('excluded from championship awards');
+  });
+  it('UI-034 shows sight-zone, early-departure and observation items, TA credits per leg, and an ace marker', () => {
+    const base = straightRun(0, true).result; const leg = base.score.legs[0]!;
+    const fake = { ...base, score: { ...base.score, legs: [{ ...leg, extras: { ...leg.extras, sightZone: 30 }, taCredit: 50, taReason: 'Allowed 0m50s of 0m50s requested', ace: false, capped: false }], earlyDepartures: [{ minutesEarly: 6.5, penalty: 60, referral: false }, { minutesEarly: 7, penalty: 300, referral: false }, { minutesEarly: 8, penalty: 120, referral: true }], observationPenalty: 180 } } as typeof base;
+    const vm = scorecardViewModel(fake, builtinScenario('straight', 1));
+    expect(vm.items.map(i => i.kind)).toEqual(['sightZone', 'earlyDeparture', 'earlyDeparture', 'earlyDeparture', 'observation']);
+    expect(vm.items[0]!.seconds).toBe(30); expect(vm.items[3]!.label).toContain('referred'); expect(vm.legs[0]!.taCredit).toBe(50);
+  });
+  it('UI-034 and WATCH-009 the instrument-discipline block lists result().instrumentDiscipline findings, or says it is clean', () => {
+    const { sc, result } = straightRun(0, true);
+    const clean = scorecardViewModel({ ...result, instrumentDiscipline: [] }, sc).discipline; expect(clean.clean).toBe(true); expect(clean.summary).toMatch(/^Clean/);
+    const findings = [{ kind: 'clockForTimeOfDay' as const, line: 12, text: 'Restart time (line 12) was taken with the stopwatch in chrono mode and no clock read in the last minute' }, { kind: 'calibrationWithoutLap' as const, line: 7, text: 'Calibration point at line 7 was passed without a lap on the stopwatch' }];
+    const d = scorecardViewModel({ ...result, instrumentDiscipline: findings }, sc).discipline; expect(d.clean).toBe(false); expect(d.findings).toEqual(findings); expect(d.summary).toContain('2 instrument findings');
+  });
+});
+
+describe('WATCH-008 digital stopwatch view-model and UI-033 instrument keys', () => {
+  it('WATCH-008 the display is 1/100 s in chrono and the rally time of day in TOD; the mode chip follows the engine mode', () => {
+    expect(chronoText(441.3)).toBe('7:21.30'); expect(chronoText(0.005)).toBe('0:00.01'); expect(chronoText(59.999)).toBe('1:00.00'); expect(todText(hms(10, 14, 7.35))).toBe('10:14:07.35'); expect(todText(hms(10, 14, 7.999))).toBe('10:14:08.00');
+    const sc = new ScenarioBuilder({ startTime: hms(8, 0, 0) }).start(30).advanceMiles(1).checkpoint().advanceFt(300).finish().build(); const sim = new Simulator(sc, { watch: 'digital' });
+    sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.act({ type: 'start' }); sim.act({ type: 'watch.start' }); sim.step(12.3);
+    const a = digitalWatchViewModel(sim.observe({ peek: true }).stopwatch); expect(a.mode).toBe('chrono'); expect(a.modeLabel).toBe('CHRONO'); expect(a.display).toBe('0:12.30'); expect(a.running).toBe(true); expect(a.canReset).toBe(false);
+    sim.act({ type: 'watch.mode' }); const b = digitalWatchViewModel(sim.observe({ peek: true }).stopwatch); expect(b.modeLabel).toBe('TOD'); expect(b.display).toMatch(/^08:00:\d\d\.\d\d$/);
+  });
+  it('WATCH-008 a lap freezes the split (indicator and countdown to the auto-release), the lap table shows interval over cumulative, recall cycles, reset only when stopped', () => {
+    const sc = new ScenarioBuilder({ startTime: hms(8, 0, 0) }).start(30).advanceMiles(6).checkpoint().advanceFt(300).finish().build(); const sim = new Simulator(sc, { watch: 'digital' }); const tr = new SplitTracker();
+    const vmOf = () => { const o = sim.observe({ peek: true }); tr.update(!!o.stopwatch.frozen, o.stopwatch.laps.length, o.tod); return digitalWatchViewModel(o.stopwatch, { holdSeconds: o.rules.splitHoldSeconds, tod: o.tod, tracker: tr }); };
+    sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.act({ type: 'start' }); sim.act({ type: 'watch.start' }); sim.step(332); sim.act({ type: 'watch.lap' }); sim.step(109.3); sim.act({ type: 'watch.lap' });
+    let v = vmOf(); expect(v.frozen).toBe(true); expect(v.display).toBe('7:21.30'); expect(v.holdLeft).toBeCloseTo(5, 0); expect(v.indicator).toMatch(/^SPLIT frozen, releases in [45]\.\d s$/);
+    expect(v.laps.map(l => [l.n, l.interval, l.cumulative])).toEqual([[2, '1m49.3s', '7m21.3s'], [1, '5m32.0s', '5m32.0s']]);   // newest first, the shape of the book's calibration box
+    sim.step(2); v = vmOf(); expect(v.holdLeft).toBeCloseTo(3, 0); sim.step(4); v = vmOf(); expect(v.frozen).toBe(false); expect(v.indicator).toBe(''); expect(v.display).toBe(chronoText(sim.observe({ peek: true }).stopwatch.reading));
+    sim.act({ type: 'watch.lap' }); sim.act({ type: 'watch.recall' }); v = vmOf(); expect(v.frozen).toBe(false);   // the first R releases the freeze
+    sim.act({ type: 'watch.recall' }); v = vmOf(); expect(v.indicator).toBe('RECALL L3'); sim.act({ type: 'watch.recall' }); v = vmOf(); expect(v.indicator).toBe('RECALL L2'); expect(v.laps.find(l => l.recalled)!.n).toBe(2);   // then R cycles back through the laps
+    expect(v.canReset).toBe(false); sim.act({ type: 'watch.reset' }); expect(sim.observe({ peek: true }).stopwatch.laps.length).toBe(3);   // refused while running
+    sim.act({ type: 'watch.reset', force: true }); expect(vmOf().laps).toEqual([]);
+    sim.act({ type: 'watch.stop' }); expect(vmOf().canReset).toBe(true);
+  });
+  it('WATCH-008 with the hold set to 0 the split stays frozen until recall (no countdown)', () => {
+    const sc = new ScenarioBuilder({ startTime: hms(8, 0, 0), rules: { splitHoldSeconds: 0 } }).start(30).advanceMiles(1).checkpoint().advanceFt(300).finish().build(); const sim = new Simulator(sc, { watch: 'digital' }); const tr = new SplitTracker();
+    sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.act({ type: 'start' }); sim.act({ type: 'watch.start' }); sim.step(30); sim.act({ type: 'watch.lap' }); sim.step(60);
+    const o = sim.observe({ peek: true }); tr.update(!!o.stopwatch.frozen, o.stopwatch.laps.length, o.tod); const v = digitalWatchViewModel(o.stopwatch, { holdSeconds: 0, tod: o.tod, tracker: tr });
+    expect(v.frozen).toBe(true); expect(v.holdLeft).toBeNull(); expect(v.indicator).toBe('SPLIT frozen (R to release)');
+  });
+  it('UI-033 the key help lists Space / L / R / M, the reset rules and the clock-read key', () => {
+    const t = KEY_HELP.map(k => `${k.keys}: ${k.does}`).join('\n');
+    for (const s of ['Space', 'L or Enter', 'R: recall', 'M: digital watch mode', 'Reset button', 'Shift+R: force the reset even while running', 'C: the three performance charts', 'K or click the clock', 'T: Time Allowance form']) expect(t).toContain(s);
   });
 });

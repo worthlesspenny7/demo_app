@@ -4,7 +4,8 @@ import { DRIVER_DAD_ROOKIE, DRIVER_DAD_SPORTSMAN, DRIVER_EXPERT } from '../core/
 import type { Simulator, StageResult } from '../core/sim.js';
 import type { Drill } from '../core/drills/types.js';
 import { createProgressStore, type ProgressStore } from './viewmodels/progress.js';
-import { builtinScenario } from '../agent/scenarios.js';
+import { builtinScenario as agentBuiltin } from '../agent/scenarios.js';
+import { generateStage } from '../core/generator/generate.js';
 import { allDrills } from '../core/drills/index.js';
 import { scenarioMinutes } from './viewmodels/estimate.js';
 import { loadStored, replayFinished, LAST_KEY, type StoredSource } from './viewmodels/resume.js';
@@ -55,13 +56,18 @@ export function withDriver(sc: Scenario, skill: Settings['driverSkill']): Scenar
 export function builtinScenarios(): { name: string; seed: number; title: string; blurb: string; minutes: number }[] {
   return withComputedMinutes([
     ...[1, 2, 3, 4, 5].map(seed => ({ name: 'varied', seed, title: `Varied leg #${seed}`, blurb: 'Two stops, a speed sign, a timed segment, a T, a driveway trap, two hidden checkpoints. Great Race legal aids, sportsman driver, occasional cross traffic.', minutes: 9 })),
-    { name: 'onestop', seed: 1, title: 'One stop', blurb: 'Half a mile, one STOP with Pause 15, half a mile, checkpoint. The purest pause-arithmetic exercise.', minutes: 3 },
+    { name: 'onestop', seed: 1, title: 'One stop', blurb: 'Half a mile, one STOP with a 0m15s pause, half a mile, checkpoint. The purest pause-arithmetic exercise.', minutes: 3 },
+    { name: 'stage', seed: 1, title: 'A full day stage', blurb: 'A generated day in the Great Race format: tire warm-up, speedometer calibration run, ASP restarts, transits, a free zone, TA points and the finish. Long: use the 8x time scale between hazards.', minutes: 240 },
     { name: 'straight', seed: 1, title: 'One mile straight', blurb: 'Start on time, hold 30, cross the checkpoint. Learn the standing-start loss.', minutes: 3 },
   ]);
 }
+/** Built-in scenarios plus the generated full day stage (`stage`): tire warm-up, calibration, restarts with ASP, transits, TA points, finish. */
+export function builtinScenario(name: string, seed = 1): Scenario { return name === 'stage' ? generateStage(seed) : agentBuiltin(name, seed); }
+
+const minutesCache = new Map<string, number>();
 /** Replace the hand-typed guesses with the 1x ghost time of each built-in scenario (falls back to the guess). */
 function withComputedMinutes<T extends { name: string; seed: number; minutes: number }>(list: T[]): T[] {
-  return list.map(b => { try { return { ...b, minutes: scenarioMinutes(builtinScenario(b.name, b.seed)) }; } catch { return b; } });
+  return list.map(b => { const key = `${b.name}:${b.seed}`; try { let m = minutesCache.get(key); if (m === undefined) { m = scenarioMinutes(builtinScenario(b.name, b.seed)); minutesCache.set(key, m); } return { ...b, minutes: m }; } catch { return b; } });
 }
 
 export function buildScenario(src: RunSource, drills: Drill[]): { scenario: Scenario; drill: Drill | null } | null {

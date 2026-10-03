@@ -42,7 +42,7 @@ export function signGlyph(control: string | undefined, cx: number, cy: number, r
   switch (control) {
     case 'STOP': {
       const pts = Array.from({ length: 8 }, (_, i) => { const a = (Math.PI / 8) + (i * Math.PI) / 4; return `${(cx + r * Math.cos(a)).toFixed(1)},${(cy + r * Math.sin(a)).toFixed(1)}`; }).join(' ');
-      return `<polygon class="cameo-sign cameo-stop" points="${pts}" fill="#c8312b" stroke="#fff" stroke-width="1.2"/><text x="${cx}" y="${cy + r * 0.38}" font-size="${(r * 0.95).toFixed(1)}" text-anchor="middle" fill="#fff" font-weight="700" font-family="sans-serif">STOP</text>`;
+      return `<polygon class="cameo-sign cameo-stop" points="${pts}" fill="#c8312b" stroke="#fff" stroke-width="1.2"/><text x="${cx}" y="${cy + r * 0.22}" font-size="${(r * 0.62).toFixed(1)}" text-anchor="middle" fill="#fff" font-weight="700" font-family="sans-serif">STOP</text>`;
     }
     case 'YIELD': {
       const pts = `${cx - r},${cy - r * 0.8} ${cx + r},${cy - r * 0.8} ${cx},${cy + r}`;
@@ -96,7 +96,8 @@ export function cameoSvg(exits: CameoExit[] | undefined | null, control?: string
     parts.push(`<line class="cameo-route cameo-bold cameo-exit" x1="${cx}" y1="${cy}" x2="${cx}" y2="${(cy - L).toFixed(1)}" stroke="currentColor" stroke-width="4" stroke-linecap="round" marker-end="url(#cameo-arrow)"/>`);
   }
   parts.push(`<circle class="cameo-dot" cx="${entry.x}" cy="${entry.y}" r="${(size * 0.07).toFixed(1)}" fill="currentColor"/>`);
-  const glyph = signGlyph(control, size * 0.82, size * 0.2, size * 0.13);
+  // GRIID-001: the intersection control is drawn at the junction, beside the approach road
+  const glyph = signGlyph(control, cx + size * 0.25, cy + size * 0.22, size * 0.115);
   if (glyph) parts.push(glyph);
   parts.push('</svg>');
   return parts.join('');

@@ -9,6 +9,8 @@ import { allDrills } from '../../core/drills/index.js';
 import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
 import { fmtMMSS } from '../viewmodels/book.js';
 import { nextDrill, unlockBest } from '../viewmodels/curriculum.js';
+import { scorecardViewModel } from '../viewmodels/scorecard.js';
+import { scorecardPanel } from './scorecard.js';
 
 const BUCKET_COLOR: Record<Bucket, string> = { cruise: '#4fd1c5', stop: '#f0b35b', speedChange: '#9b8cff', timedChange: '#ff8fab', hazard: '#ef5a5a', offCourse: '#c0392b', turn: '#e67e22', start: '#7f8c8d', ta: '#4cc38a' };
 
@@ -27,11 +29,9 @@ export function renderDebrief(root: HTMLElement): void {
   const headline = el('div', { class: 'panel' }, el('h3', {}, run.drill ? `${run.drill.id} ${run.drill.title}` : run.scenario.name), el('div', { class: 'headline' }, vm.headline),
     el('p', { class: 'muted' }, `Raw ${vm.score.raw} s × age factor ${vm.score.ageFactor} = ${vm.score.score} · benchmark: ${escapeHtml(String((result.score as { benchmark?: string }).benchmark ?? '-'))} · ${vm.score.aces} ace${vm.score.aces === 1 ? '' : 's'} · driving ${formatMin(vm.drivingSeconds)}${vm.offCourseCount ? ` · off course ${vm.offCourseCount}x` : ''}${vm.observationMissed ? ' · observation checkpoint missed' : ''}`),
     el('div', { html: rubricHtml }));
-  const table = el('table', { id: 'cp-table' }, el('thead', {}, el('tr', {}, el('th', {}, 'Leg'), el('th', {}, 'Perfect'), el('th', {}, 'Actual'), el('th', { class: 'num' }, 'Error'), el('th', { class: 'num' }, 'Penalty'), el('th', {}, ''))));
-  const tb = el('tbody', {});
-  for (const r of vm.rows) tb.append(el('tr', { class: r.ace ? 'ace' : '' }, el('td', {}, `${r.legIndex} (${r.cpId})`), el('td', { class: 'mono' }, r.perfect), el('td', { class: 'mono' }, r.actual), el('td', { class: 'num' }, r.errorText), el('td', { class: 'num' }, String(r.penalty)), el('td', {}, r.ace ? 'ACE' : r.missed ? 'missed' : r.sightZone ? 'sight-zone penalty' : r.taCredit ? `TA credit ${r.taCredit}` : '')));
-  table.append(tb);
-  head.append(headline, el('div', { class: 'panel' }, el('h3', {}, 'Checkpoints'), table, el('div', { class: 'tip', id: 'tip', style: 'margin-top:10px' }, el('b', {}, vm.tip.startsWith('Clean run') ? 'Verdict: ' : 'Fix this next: '), vm.tip), ...vm.tips.slice(1).map(t => el('div', { class: 'tip', style: 'margin-top:6px' }, el('b', {}, 'Also: '), t))));
+  const sc = scorecardViewModel(result, run.scenario);
+  head.append(headline, el('div', {}, scorecardPanel(sc), el('div', { class: 'tip', id: 'tip', style: 'margin-top:10px' }, el('b', {}, vm.tip.startsWith('Clean run') ? 'Verdict: ' : 'Fix this next: '), vm.tip), ...vm.tips.slice(1).map(t => el('div', { class: 'tip', style: 'margin-top:6px' }, el('b', {}, 'Also: '), t)),
+    el('p', { style: 'margin-top:8px' }, el('a', { id: 'book-link', href: `#/book/last`, target: '_blank', rel: 'noopener' }, 'Printable book for this stage'))));
   page.append(head);
   // actions
   const actions = el('div', { style: 'display:flex;gap:8px;margin:14px 0' });

@@ -8,7 +8,8 @@
 import { Simulator, type StageResult, type SimEvent, type SimOptions } from '../../core/sim.js';
 import type { Scenario, TurnDir } from '../../core/course.js';
 import { nodeById } from '../../core/course.js';
-import { stopLoss, rampLead } from '../../core/perf-table.js';
+import { rampLead } from '../../core/perf-table.js';
+import { chartStopLoss } from './charts.js';
 import { formatSigned } from '../../core/units.js';
 
 const DT = 0.1;
@@ -214,7 +215,7 @@ export function counterfactuals(actual: StageResult | null | undefined, scenario
     if (vIn === null || vOut === null || vIn <= 0 || vOut <= 0) return null;
     const sp = ctx.nodeId ? speeds.get(ctx.nodeId) : undefined;
     const cap = turnCap(sp?.turn, scenario);
-    try { return Math.max(0, ctx.pause - stopLoss(vIn, vOut, scenario.car, cap)); } catch { return null; }
+    try { return Math.max(0, ctx.pause - chartStopLoss(scenario.car, vIn, vOut, cap)); } catch { return null; }
   };
   const push = (id: CounterfactualRow['id'], label: string, applicable: boolean, o: ReplayOptions): void => {
     const res = applicable ? replay(scenario, events, { watch: opts.watch, ...o }) : null;

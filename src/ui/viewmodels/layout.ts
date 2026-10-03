@@ -12,7 +12,7 @@ export const MIN_STOPWATCH_DIAL = 240;
 
 export function cockpitLayout(width: number, height: number, opts: { drawerOpen?: boolean } = {}): CockpitLayout {
   const W = Math.max(640, Number.isFinite(width) ? width : 1280), H = Math.max(480, Number.isFinite(height) ? height : 720);
-  const bookW = Math.round(Math.min(420, Math.max(300, W * 0.28)));
+  const bookW = Math.round(Math.min(480, Math.max(360, W * 0.32)));   // UI-029: five columns need the room
   const drawerH = opts.drawerOpen ? Math.round(Math.min(220, H * 0.26)) : 44;
   const leftW = W - bookW;
   const paneH = H - drawerH;
