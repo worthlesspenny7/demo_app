@@ -1,7 +1,8 @@
 // Fails if any spec id in docs/spec/SPECS.md does not appear in a test name under tests/.
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-const specs = readFileSync('docs/spec/SPECS.md', 'utf8');
+// Everything after the "## BACKLOG" heading is future work ([P3]) and is not checked.
+const specs = readFileSync('docs/spec/SPECS.md', 'utf8').split(/^## BACKLOG\b.*$/m)[0]!;
 const ids = [...specs.matchAll(/^([A-Z]+-\d{3})\s/gm)].map(m => m[1]!);
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap(f => {
