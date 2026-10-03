@@ -120,3 +120,38 @@
 5. Practice recovery scenarios (late/early, missed turn, slow traffic).
 6. Full-day stamina runs with fatigue, multiple checkpoints, lunch restart.
 7. Team practice: callouts and confirmation protocol with the real driver.
+
+## 7. User-suggested source: MBCA PeachTube "TSD Road Rally School" (2021, YouTube)
+- Suggested by Josh on 2026-10-03 as a strong resource. NOT YET READ: youtube.com
+  is blocked by this session's network egress policy and the web-search budget
+  was exhausted. TODO for a future session with network access (or paste the
+  transcript into docs/research/08-mbca-rally-school-transcript.md): watch it
+  and reconcile with this file and docs/spec/REQUIREMENTS.md.
+- What club-level TSD rally schools (SCCA regions, MBCA/PCA/BMW CCA sections)
+  typically cover, from model knowledge (UNVERIFIED for this specific video):
+  1. Rally is not a race: scoring is on precision, not speed; everyone drives
+     legal speeds; the winner is the team closest to perfect time.
+  2. Reading the general instructions (GIs) before the route instructions;
+     definitions (T, Y, STOP, SIGNAL, "onto", "at", "after", main road rule).
+  3. Odometer calibration: an official odometer check leg; computing your
+     correction factor (official miles / your miles) and applying it.
+  4. CAST and time computation: minutes per mile table, how to compute the
+     time due at each mileage, "being on time" vs "being at the right place".
+  5. Checkpoint procedure: do not slow down; in-time vs out-time; how time is
+     restarted after a checkpoint; scoring units (hundredths of a minute or
+     seconds; early counts the same as late).
+  6. Pauses and gains, free zones / transit zones, DIYC (do-it-yourself
+     checkpoints) and passage controls.
+  7. Classes: Equipped (rally computers), Limited/Stock (odometer + stopwatch),
+     SOP/Novice ("seat of pants").
+  8. Teamwork: navigator reads ahead and calls, driver holds speed and looks
+     for landmarks; agree on vocabulary; never both look down at once.
+  9. Common novice errors: wrong start time, forgetting a pause, misreading a
+     mileage, arguing, overdriving to catch up, missing the first instruction
+     because you were still setting up.
+- Relevance to the Great Race: the MBCA/SCCA style is odometer + mileage based.
+  The Great Race is speedometer + landmark + time based with the odometer
+  covered. The simulator must support both styles, but the Great Race style is
+  the default, and the odometer-based style is a secondary mode for practising
+  general TSD skills (and because many local practice rallies Josh can enter
+  before the Great Race will be SCCA-style).
