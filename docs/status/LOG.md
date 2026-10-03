@@ -1,3 +1,4 @@
 # Chronological work log
 
 - 2026-10-03 Session 1 start. Wiped old demo app. Created docs skeleton. Began Phase I research (parallel agents).
+- 2026-10-03 Environment constraints discovered: (a) WebFetch blocked by egress policy for nearly all hosts, only WebSearch works; (b) WebSearch budget is 200 calls/session and was exhausted by the 7 research agents ~04:15; (c) git push returns 403 (Claude GitHub App not installed for worthlesspenny7/demo_app). Work continues locally; push retried at milestones.
