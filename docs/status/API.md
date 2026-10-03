@@ -15,3 +15,5 @@ Scenarios: `ScenarioBuilder` in src/core/builder.ts (start/stop/speedAtSign/time
 Ghost: `buildGhost(scenario)`, `ghostTimeAt(table, s)` (truth; debrief only).
 Perf table: `stopLoss(vIn,vOut,car)`, `accelLoss(vOut,car)`, `rampLead(v1,v2,car)`, `dwellFor(pause,vIn,vOut,car)`, `buildPerfTable(car)`.
 Drills: `src/core/drills/types.ts` (Drill, Rubric, DrillTier), registry in `src/core/drills/registry.ts`.
+Generator: `generateLeg(seed, profile)` / `generateStage(seed, profile)` in src/core/generator/generate.ts (`PROFILES` presets: pauseDrill, timedDrill, landmarkDrill, calibration, recovery, fullLeg, combo, fullStage; `GenProfile` knobs legs/cpCount, lineDensity, trapDensity, signals, trains, slowTraffic, calibration, lunchRestart, noPauseTraps, mix). Output passes `validateScenario` and `checkRouteExits`; `scenario.tags` carries truth flags (`trap:<id>:<n>`, `trap:missingPause:<n>`, `cp:cpN:afterManeuver:<kind>`, `train:<n>:hit|miss`).
+Traps: `TRAPS`, `trapById`, `trapToNodeSpec(card, {speed})`, `trapDistractorBefore(card, rng)`, `trapCameo(card)` (SVG string), `mainRoadExit`, `exitForCallout`, `turnBand` in src/core/generator/traps.ts.

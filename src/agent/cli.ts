@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { Session, type Request } from './protocol.js';
+// Protocol mode keeps serving after `result`; send {"type":"quit"} (or close stdin) to end.
 import { makeBot, runBot, type BotName } from './bots.js';
 import { builtinScenario } from './scenarios.js';
 import type { Scenario } from '../core/course.js';
@@ -50,8 +51,9 @@ async function main(): Promise<void> {
       if (!line.trim()) continue;
       let req: Request;
       try { req = JSON.parse(line) as Request; } catch { process.stdout.write(JSON.stringify({ type: 'error', message: 'bad json' }) + '\n'); continue; }
+      if (!req || typeof req !== 'object') { process.stdout.write(JSON.stringify({ type: 'error', message: 'request must be a JSON object' }) + '\n'); continue; }
       process.stdout.write(JSON.stringify(session.handle(req)) + '\n');
-      if (req.type === 'result') break;
+      if ((req as { type: string }).type === 'quit') break;
     }
     return;
   }

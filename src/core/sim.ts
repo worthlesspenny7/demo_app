@@ -20,7 +20,7 @@ export type Action =
   | { type: 'call.turn'; dir: TurnDir }
   | { type: 'call.stop' } | { type: 'call.go' } | { type: 'call.uturn' } | { type: 'call.pass' } | { type: 'call.pullover' }
   | { type: 'line.set'; n: number } | { type: 'line.annotate'; n: number; text: string } | { type: 'note'; text: string } | { type: 'abort' }
-  | { type: 'ta.declare'; seconds: number }
+  | { type: 'ta.declare'; seconds: number; legIndex?: number }
   | { type: 'speedo.setFactor'; k: number } | { type: 'card.set'; card: Record<string, number> }
   | { type: 'start' } | { type: 'skipPreread'; secondsBefore?: number };
 
@@ -84,11 +84,35 @@ export interface StageResult {
   prereadCoverage: number;
   engineVersion: string;
 }
-export const ENGINE_VERSION = '1.0.0';
+export const ENGINE_VERSION = '1.1.0';
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
 const TICK = 0.1;
+const TURN_DIRS = new Set(['L', 'R', 'S', 'BL', 'BR', 'AL', 'AR', 'JL', 'JR']);
+const ACTION_TYPES = new Set(['watch.start', 'watch.stop', 'watch.toggle', 'watch.lap', 'watch.recall', 'watch.reset', 'watch.bezel', 'bezel.set', 'ledger.set', 'call.speed', 'call.turn', 'call.stop', 'call.go', 'call.uturn', 'call.pass', 'call.pullover', 'line.set', 'line.annotate', 'note', 'abort', 'ta.declare', 'speedo.setFactor', 'card.set', 'start', 'skipPreread']);
+export const ACTION_LIST = [...ACTION_TYPES];
+const num = (x: unknown, lo: number, hi: number): x is number => typeof x === 'number' && Number.isFinite(x) && x >= lo && x <= hi;
+/** Returns an error message for a malformed action, or null when valid (BUG 7/8/12 of PT-01). */
+export function validateAction(a: unknown): string | null {
+  if (!a || typeof a !== 'object' || typeof (a as { type?: unknown }).type !== 'string') return 'action must be an object with a string type';
+  const x = a as Record<string, unknown>; const t = x.type as string;
+  if (!ACTION_TYPES.has(t)) return `unknown action type ${t}`;
+  switch (t) {
+    case 'call.speed': return num(x.mph, 0, 80) ? null : 'call.speed.mph must be a finite number 0..80';
+    case 'call.turn': return typeof x.dir === 'string' && TURN_DIRS.has(x.dir) ? null : 'call.turn.dir must be one of L R S BL BR AL AR JL JR';
+    case 'watch.bezel': case 'bezel.set': return num(x.seconds, -86400, 86400) ? null : `${t}.seconds must be a finite number`;
+    case 'ledger.set': return num(x.seconds, -3600, 3600) ? null : 'ledger.set.seconds must be a finite number within +-3600';
+    case 'ta.declare': return num(x.seconds, 0, 3600) && (x.legIndex === undefined || num(x.legIndex, 1, 1000)) ? null : 'ta.declare.seconds must be 0..3600';
+    case 'line.set': return num(x.n, 1, 10000) ? null : 'line.set.n must be a line number';
+    case 'line.annotate': return num(x.n, 1, 10000) && typeof x.text === 'string' && x.text.length <= 500 ? null : 'line.annotate needs n and text (<= 500 chars)';
+    case 'note': return typeof x.text === 'string' && x.text.length <= 2000 ? null : 'note.text must be a string';
+    case 'speedo.setFactor': return num(x.k, 0.5, 2) ? null : 'speedo.setFactor.k must be a finite number 0.5..2';
+    case 'card.set': return x.card && typeof x.card === 'object' && Object.values(x.card as Record<string, unknown>).every(v => num(v, 0, 80)) ? null : 'card.set.card must map speeds to finite mph values';
+    case 'skipPreread': return x.secondsBefore === undefined || num(x.secondsBefore, 0, 86400) ? null : 'skipPreread.secondsBefore must be a finite number';
+    default: return null;
+  }
+}
 const TURN_ZONE_FT = 60;
 
 export interface SimOptions { watch?: WatchKind; dialSeconds?: 30 | 60; useCard?: boolean; mainRoadRule?: 'pavement-first' | 'straight-as-possible'; navigatorLatency?: number }
@@ -178,6 +202,7 @@ export class Simulator {
 
   // ---------- public API ----------
   act(a: Action): void {
+    const bad = validateAction(a); if (bad) throw new Error(bad);
     const now = this.tod;
     this.actions.push({ tick: this.tick, action: a });
     if (a.type.startsWith('watch.') || a.type.startsWith('line.') || a.type === 'note' || a.type === 'bezel.set') this.log(a.type, { ...(a as unknown as Record<string, unknown>) });
@@ -186,7 +211,7 @@ export class Simulator {
       case 'watch.stop': this.watch.stop(now); break;
       case 'watch.toggle': this.watch.toggle(now); break;
       case 'watch.lap': this.watch.lap(now); break;
-      case 'watch.reset': this.watch.reset(now); break;
+      case 'watch.reset': if (!this.watch.reset(now)) this.say('Analog watch: stop it before resetting', 'info'); break;
       case 'watch.recall': this.watch.recall(); break;
       case 'abort': if (this.phase !== 'finished') { this.phase = 'finished'; this.log('abort'); } break;
       case 'line.annotate': this.annotations[a.n] = a.text; break;
@@ -195,9 +220,9 @@ export class Simulator {
       case 'bezel.set': this.clock.setBezel(a.seconds); break;
       case 'line.set': this.currentLine = Math.max(1, Math.min(this.sc.book.length, Math.round(a.n))); break;
       case 'note': this.notes.push(a.text); break;
-      case 'ta.declare': this.taDeclared[this.legIndex] = Math.max(0, a.seconds); this.log('ta.declare', { legIndex: this.legIndex, seconds: a.seconds }); break;
+      case 'ta.declare': { const leg = a.legIndex ?? (this.lastQualifyingLeg !== null && this.lastQualifyingLeg === this.legIndex - 1 && this.tod - this.lastCpTod < 180 ? this.lastQualifyingLeg : this.legIndex); this.taDeclared[leg] = Math.max(0, a.seconds); this.log('ta.declare', { legIndex: leg, seconds: a.seconds }); break; }
       case 'speedo.setFactor': this.speedo.setFactor(a.k); this.log('speedo.setFactor', { k: a.k }); break;
-      case 'card.set': this.card = { ...a.card }; break;
+      case 'card.set': this.card = { ...a.card }; this.useCard = true; break;
       case 'skipPreread': if (this.phase === 'preread') { const target = this.sc.startTime - Math.max(0, a.secondsBefore ?? 0); if (target > this.tod) { const ticks = Math.round((target - this.tod) / TICK); this.tick += ticks; this.tod = this.tod0 + this.tick * TICK; } } break;
       case 'start': this.depart(); break;
       case 'call.speed': {
@@ -217,10 +242,11 @@ export class Simulator {
         this.log('call.go');
         if (this.phase === 'preread') { this.depart(); break; }
         if (this.waitingForGo && (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish')) {
-          if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); }
+          if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); this.log('traffic', { wait: this.trafficClearTod - this.tod, ledgerEligible: true }); }
           else { this.say('Going', 'readback'); this.release(this.waitReason); }
         }
         else if (this.waitingForGo) this.say(`Can't go yet (${this.waitReason})`, 'info');
+        else if (this.car.v === 0 && this.phase === 'running') { this.goRequestedEarly = true; this.say('Go, got it', 'readback'); }
         else this.say('Already rolling', 'info');
         break;
       case 'call.uturn':
@@ -248,12 +274,12 @@ export class Simulator {
     this.nextNodeIdx = this.sc.course.nodes.findIndex(n => n.s > 0);
     if (this.nextNodeIdx < 0) this.nextNodeIdx = this.sc.course.nodes.length;
     this.car.mode = 'cruise';
-    this.startRamp = true;
+    this.startRamp = true; this.announceAtSpeed = true;
     if (this.sc.car.a0 >= 1e4 && this.targetIndicated !== null) this.car.v = mphToFps(this.speedo.inverse(this.targetIndicated)); // instant (ghost) car leaves at speed
   }
 
-  observe(): Observation {
-    const msgs = this.pendingMsgs; this.pendingMsgs = [];
+  observe(opts: { peek?: boolean } = {}): Observation {
+    const msgs = opts.peek ? [...this.pendingMsgs] : this.pendingMsgs; if (!opts.peek) this.pendingMsgs = [];
     const ahead = this.visibleFeatures();
     const aids: Observation['aids'] = {};
     if (this.sc.aids.paceBar && this.phase === 'running') aids.earlyLate = Math.round(this.pace() * 10) / 10;
@@ -268,7 +294,7 @@ export class Simulator {
       book: this.sc.book, currentLine: this.currentLine, ahead,
       driver: { messages: msgs, state: this.driverState(), targetIndicated: this.targetIndicated, pendingTurn: this.pendingTurn, waitingForGo: this.waitingForGo, lastExecutedLine: this.sc.aids.checkOff ? this.lastExecutedLine : null },
       annotations: { ...this.annotations },
-      carStopped: this.car.v === 0, offCourseHint: this.off !== null && this.off.branchDist > this.sc.excursionFt! * 0.5,
+      carStopped: this.car.v === 0, offCourseHint: this.sc.aids.offCourseAlert && this.off !== null && this.off.branchDist > this.sc.excursionFt! * 0.5,
       aids, notes: [...this.notes], legIndex: this.sc.aids.rung >= 2 ? this.legIndex : null, startTime: this.sc.startTime, rules: this.sc.rules,
     };
   }
@@ -293,7 +319,7 @@ export class Simulator {
     if (this.phase === 'finished') return;
     this.tick++;
     const todNext = this.tod0 + this.tick * TICK;
-    if (this.phase === 'preread') { this.tod = todNext; return; }
+    if (this.phase === 'preread') { this.tod = todNext; if (this.tod > this.sc.startTime + 30 * 60) { this.say('We are 30 minutes late, I am leaving', 'info'); this.depart(); } return; }
     this.drivingSeconds += dt;
     if (this.forceResetAt !== null && this.drivingSeconds >= this.forceResetAt) { this.forceResetAt = null; this.watch.stop(this.tod); this.watch.reset(this.tod); this.log('watchLost'); this.say('Your watch! It fell and reset', 'info'); }
     const sBefore = this.car.s;
@@ -315,7 +341,7 @@ export class Simulator {
 
   result(): StageResult {
     const legs = this.scoreLegs();
-    const attribution = [...this.attribution, this.currentAttribution()];
+    const attribution = [...this.attribution, this.currentAttribution()].filter(a => a.legIndex <= Math.max(1, this.ghost.legs.length));
     for (const l of legs) { const a = attribution.find(x => x.legIndex === l.index); if (a && l.taCredit) a.buckets.ta = -l.taCredit; }
     const pauseLines = this.sc.book.filter(i => i.pause);
     const startTick = this.actions.find(a => a.action.type === 'start')?.tick ?? Infinity;
@@ -362,6 +388,7 @@ export class Simulator {
     return this.car.mode;
   }
   private startRamp = false;
+  private turnRecovering = false;
   private announceAtSpeed = false;
   private currentBucket(): Bucket {
     if (this.off) return 'offCourse';
@@ -369,7 +396,7 @@ export class Simulator {
     if (this.waitingForGo && (this.waitReason === 'signal' || this.waitReason === 'train')) return 'hazard';
     if (this.curStop) return 'stop';
     if (this.activeSlowHazard()) return 'hazard';
-    if (this.car.s < this.turnZoneEndS) return 'turn';
+    if (this.car.s < this.turnZoneEndS || this.turnRecovering) return 'turn';
     if (this.rampKind) return this.rampKind;
     return 'cruise';
   }
@@ -397,6 +424,7 @@ export class Simulator {
   private activeSlowHazard(): SlowHazard | ConstructionHazard | null {
     if (this.off) return null;
     for (const h of this.sc.hazards) {
+      if (h.kind === 'slow' && this.passRequested && this.car.s >= h.s + h.lengthFt) this.passRequested = false;
       if ((h.kind === 'slow' || h.kind === 'construction') && this.car.s >= h.s && this.car.s < h.s + h.lengthFt) {
         if (h.kind === 'slow' && this.passRequested && h.passWindowAfterFt !== undefined && this.car.s >= h.s + h.passWindowAfterFt) continue;
         return h;
@@ -433,7 +461,8 @@ export class Simulator {
         if (dist <= brakeDist + this.car.v * 0.3 || this.car.s >= nn.s - 5) { this.turnCap = cap; this.turnZoneEndS = nn.s + TURN_ZONE_FT; }
       }
     }
-    if (this.car.s < this.turnZoneEndS) targetTrue = Math.min(targetTrue, this.turnCap);
+    if (this.car.s < this.turnZoneEndS) { targetTrue = Math.min(targetTrue, this.turnCap); this.turnRecovering = true; }
+    else if (this.turnRecovering && (this.car.v >= targetTrue - mphToFps(0.5) || this.waitingForGo || this.curStop)) this.turnRecovering = false;
     if (this.pullover) targetTrue = 0;
 
     // determine whether we must stop at the next node
@@ -467,6 +496,11 @@ export class Simulator {
     }
     if (this.pullover) stopAt = null;
     this.car.step(dt, targetTrue, stopAt);
+    if (stopAt !== null && node && this.car.v === 0 && Math.abs(this.car.s - stopAt) <= 2 && !this.waitingForGo) {
+      this.beginWait(node);
+      if (this.goRequestedEarly) { this.goRequestedEarly = false; if (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish') { if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); } else { this.say('Going', 'readback'); this.release(this.waitReason); } } }
+      this.car.step(0, 0, stopAt); return;
+    }
     if (this.pullover && this.car.v === 0) { if (!this.waitingForGo) { this.waitingForGo = true; this.waitReason = 'finish'; this.waitStartTod = this.tod; this.log('pulledOver'); } }
     if (this.startRamp && this.targetIndicated !== null && this.car.v >= mphToFps(this.speedo.inverse(this.targetIndicated)) - 0.3) this.startRamp = false;
     // ramp bookkeeping
@@ -477,6 +511,7 @@ export class Simulator {
   private waitNodeId: string | null = null;
   private trafficClearTod = 0;
   private goPending = false;
+  private goRequestedEarly = false;
 
   private mustStopAt(node: Node): boolean {
     if (this.releasedNodeId === node.id) return false;
@@ -505,7 +540,7 @@ export class Simulator {
     if (node.control === 'SIGNAL' && this.signalRedAt(node)) { this.waitReason = 'signal'; this.say('Red light', 'info'); if (this.sc.rules.taForSignals) this.addQualifying(signalRedRemaining(this.sc.hazards.find(h => h.kind === 'signal' && Math.abs(h.s - node.s) < 1) as Extract<Hazard, { kind: 'signal' }>, this.tod)); }
     else if (node.control === 'RR' && this.trainAt(node)) { this.waitReason = 'train'; this.say('Train!', 'info'); this.addQualifying(trainRemaining(this.sc.hazards.find(h => h.kind === 'train' && Math.abs(h.s - node.s) < 1) as Extract<Hazard, { kind: 'train' }>, this.tod)); }
     else if (this.isRestartNode(node)) { this.waitReason = 'hold'; this.say('Lunch stop. Say go at our restart time', 'info'); }
-    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0 && this.rnd.chance(p)) { this.trafficClearTod = this.tod + this.rnd.next() * 20; this.log('traffic', { wait: this.trafficClearTod - this.tod, ledgerEligible: true }); } }
+    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0 && this.rnd.chance(p)) { this.trafficClearTod = this.tod + this.rnd.next() * 20; } }
     else if (this.holdRequested) { this.waitReason = node.kind === 'finish' ? 'finish' : 'hold'; this.say('Stopped here', 'info'); }
     else if (node.kind === 'intersection' && !this.pendingTurn) { this.waitReason = 'ask'; this.say('Left or right?', 'question'); }
     else { this.waitReason = 'hold'; }
@@ -513,16 +548,18 @@ export class Simulator {
     if (this.curStop) this.curStop.dwellStart = this.tod;
     this.log('wait', { nodeId: node.id, reason: this.waitReason });
   }
-  private addQualifying(sec: number): void { this.taQualifying[this.legIndex] = (this.taQualifying[this.legIndex] ?? 0) + sec; }
+  private lastQualifyingLeg: number | null = null; private lastCpTod = -Infinity;
+  private addQualifying(sec: number): void { this.taQualifying[this.legIndex] = (this.taQualifying[this.legIndex] ?? 0) + sec; this.lastQualifyingLeg = this.legIndex; }
 
   /** Handle node crossings and checkpoints along the route. */
   private routeStep(sBefore: number): void {
     const s = this.car.s;
     // stop bookkeeping: entering braking zone for a stop node
     const node = this.nextNode();
-    if (node && !this.curStop && node.control === 'STOP' && this.car.mode === 'stopping' && !this.releasedNodeId) {
+    if (node && !this.curStop && this.car.mode === 'stopping' && this.mustStopAt(node) && !this.releasedNodeId) {
       const ins = this.sc.book.find(i => i.nodeId === node.id);
       this.curStop = { nodeId: node.id, line: ins?.n ?? null, pause: ins?.pause ?? 0, startTod: this.tod, dwellStart: null, dwell: 0, vIn: Math.round(this.car.mph()), vOut: ins?.timed ? ins.timed.holdSpeed : ins?.speed ?? Math.round(this.car.mph()), turn: ins?.turn ?? null };
+      this.stopBucketAtStopStart = this.buckets.stop;
       this.log('stop.begin', { nodeId: node.id });
     }
     // checkpoints
@@ -577,6 +614,7 @@ export class Simulator {
     rec.rawTod = crossTod; rec.actualTod = roundToSecond(crossTod);
     this.log('checkpoint', { cpId: cp.id, kind: cp.kind, actualTod: rec.actualTod, pace: this.pace() });
     if (cp.kind === 'timing') {
+      this.lastCpTod = this.tod;
       this.attribution.push(this.currentAttribution());
       this.buckets = this.emptyBuckets(); this.cruiseDt = 0; this.cruiseDs = 0; this.cruiseGhostDs = 0; this.legStops = [];
       this.legIndex++;
@@ -591,6 +629,7 @@ export class Simulator {
 
   private crossNode(n: Node): void {
     this.log('node', { nodeId: n.id, kind: n.kind, control: n.control });
+    if (n.kind !== 'start') this.log('passed', { what: n.sign ? n.sign.text : n.label ?? (n.control !== 'none' ? n.control : n.kind) });
     const ins = this.sc.book.find(i => i.nodeId === n.id);
     if (ins) {
       this.executed.add(ins.n); this.lastExecutedLine = ins.n;
@@ -600,14 +639,13 @@ export class Simulator {
       if (ins.restartTime !== undefined && ins.section === 'restart') {
         const early = ins.restartTime - this.tod; // tod here = departure from the restart line
         this.restartMinutesEarly = Math.max(this.restartMinutesEarly, early / 60);
-        this.attribution.push(this.currentAttribution()); this.buckets = this.emptyBuckets(); this.legStops = [];
+        this.buckets = this.emptyBuckets(); this.legStops = []; this.cruiseDt = 0; this.cruiseDs = 0; this.cruiseGhostDs = 0; // transit into the restart is unscored
         this.legAnchorActual = ins.restartTime; this.legAnchorGhost = ins.restartTime;
         this.log('restart', { early });
       }
       if (ins.timed) { this.timedChange = { atS: n.s + mphToFps(ins.timed.holdSpeed) * ins.timed.seconds, atTod: this.tod + ins.timed.seconds }; }
       else if (ins.speed !== undefined && this.timedChange && this.tod > this.timedChange.atTod - 60) { /* speed change after a timed segment */ }
     }
-    if (this.curStop && this.curStop.nodeId === n.id) this.stopBucketAtStopStart = this.buckets.stop - 0; // bucket already includes braking + pause credit
     if (n.kind === 'intersection' && n.exits && n.exits.length) {
       const chosen = this.chooseExit(n);
       const angle = Math.abs(chosen.angle);

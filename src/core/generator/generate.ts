@@ -143,10 +143,14 @@ class Generator {
     const forceNoPause = !!p.noPauseTraps;
     for (let leg = 1; leg <= this.legs; leg++) {
       const n = perLeg[leg - 1]!;
-      const items = this.planLeg(n, { firstIsStop: leg - 1 === lunchAfter, forceMissingPause: forceNoPause && leg === this.legs && this.missingPauses === 0, calmTail: leg === this.legs });
+      const items = this.planLeg(n, { firstIsStop: leg - 1 === lunchAfter, forceMissingPause: forceNoPause && leg === 1, calmTail: leg === this.legs });
       const cp = this.chooseCheckpoint(items, leg === this.legs);
       this.emitLeg(items, cp);
-      if (leg === lunchAfter) this.emitLunch();
+      const lastAt = items[items.length - 1]!.at;
+      let v = this.legStartSpeed; for (const it of items) { if (it.at > cp.at) break; if (it.ins) v = it.speedAfter; }
+      this.carrySpeed = v;
+      this.carry = items.filter(it => it.at > cp.at).map(it => ({ ...it, at: it.at - lastAt, slow: it.slow ? { ...it.slow, at: it.slow.at - lastAt } : undefined }));
+      if (leg === lunchAfter) { this.emitLunch(); this.carry = []; } // the restart re-anchors the clock: no debt carries over
     }
     this.b.advanceFt(milesToFt(0.3 + 0.3 * this.r.next()));
     this.b.finish();
@@ -206,14 +210,18 @@ class Generator {
     const items: Item[] = [];
     const town = this.townMask(nLines);
     this.legStartSpeed = this.speed;
-    let pos = 0, minNextGap = 500, lastInsAt = 0;
+    let pos = 0, minNextGap = 500, lastInsAt = 0, noTimedWithin = 0, runningDebt = 0;
+    this.lastCalmFromAt = -1;
     this.trapsUsedThisLeg.clear();
-    let missingPauseLine = o.forceMissingPause ? this.r.int(Math.floor(nLines / 2), nLines - 1) : -1;
+    const missingPauseLine = o.forceMissingPause ? this.r.int(Math.max(1, Math.floor(nLines / 3)), Math.max(1, Math.floor(nLines * 0.55))) : -1;
     for (let i = 0; i < nLines; i++) {
       const inTown = town[i]!;
       let gap = inTown ? milesToFt(0.1 + 0.4 * this.r.next()) : milesToFt(0.2 + 2.3 * Math.pow(this.r.next(), 4));
       gap = Math.max(gap, minNextGap);
-      const calm = o.calmTail && i >= Math.floor(nLines * 0.6); // final leg: the tail before the last CP carries no uncompensated losses
+      // calm lines (no uncompensated losses): the final leg's tail before the last CP, and whenever the modeled debt is already high
+      const tail = o.calmTail && i >= Math.floor(nLines * 0.6);
+      if (tail && this.lastCalmFromAt < 0) this.lastCalmFromAt = pos + gap;
+      const calm = tail || runningDebt > 7;
       let type: LineType = i === 0 && o.firstIsStop ? 'stop' : this.chooseType(inTown);
       if (calm && !['stop', 'speedSign', 'landmarkSpeed', 'straight'].includes(type)) type = this.r.pick(['stop', 'speedSign', 'landmarkSpeed', 'straight'] as const);
       let card: TrapCard | null = null;
@@ -222,12 +230,14 @@ class Generator {
         if (card?.shortNotice && minNextGap > 790) card = null; // a short-notice line cannot follow a long timed segment
         if (!card) type = 'stop';
       }
-      if (i === missingPauseLine && !calm) { type = 'trap'; card = TRAPS.find(t => t.id === 'missing-pause')!; }
+      if (i === missingPauseLine && !tail) { type = 'trap'; card = TRAPS.find(t => t.id === 'missing-pause')!; }
       // a turn word (incl. Straight) is called out 600 ft before its node and would overwrite an earlier pending callout:
       // every line carrying one sits >= 720 ft after the previous instruction node (short-notice cards: 680-790)
       const hasTurn = type === 'stop' || type === 'signal' || type === 'turn' || type === 'straight' || (type === 'trap' && !!card?.turn);
       if (hasTurn) gap = card?.shortNotice ? this.r.int(680, 790) : Math.max(gap, 720);
-      if (type === 'timed' && i === nLines - 1) type = 'speedSign'; // a timed segment must not reach the next leg's / lunch / finish line
+      // a timed segment never reaches the next leg's / lunch / finish line, and the next timed line waits >= 65 s of cruise
+      // after the previous change (the OracleBot reads the sim's previous timed change for 60 s: docs/status/ENGINE-BUGS.md #2)
+      if (type === 'timed' && (i === nLines - 1 || gap < noTimedWithin)) type = 'speedSign';
       const built = this.buildLine(type, card, inTown, gap);
       if (!built) { i--; minNextGap = Math.max(minNextGap, gap + 300); continue; }
       gap = built.gap;
@@ -256,7 +266,9 @@ class Generator {
       // speed state
       this.speed = built.speedAfter;
       pos = at; lastInsAt = at;
+      runningDebt = this.debtAt(items, at + 1);
       minNextGap = built.minNextGap;
+      noTimedWithin = built.item.kind === 'timed' ? built.minNextGap + 65 * mphToFps(built.speedAfter) : 0;
     }
     items.sort((a, b) => a.at - b.at);
     return items;
@@ -298,12 +310,11 @@ class Generator {
     const pool = TRAPS.filter(c =>
       !this.trapsUsedThisLeg.has(c.id) &&
       (c.id !== 'speed-at-signal' || p.signals) && (c.id !== 'rr-crossing' || p.trains) &&
-      (!c.shortNotice || true) && (c.id !== 'missing-pause' || p.trapDensity >= 0.25 || p.noPauseTraps) &&
-      (town || c.id !== 'speed-at-signal'));
+      (c.id !== 'missing-pause' || p.trapDensity >= 0.25 || p.noPauseTraps) &&
+      (town || c.id !== 'speed-at-signal') && (!c.shortNotice || gap >= 650));
     if (!pool.length) return null;
     // prefer cards not yet used anywhere in the stage
     const fresh = pool.filter(c => !this.usedTraps.has(c.id));
-    void gap;
     return this.r.pick(fresh.length ? fresh : pool);
   }
 
@@ -461,7 +472,7 @@ class Generator {
         if (it.slow && x > it.slow.at && x < it.slow.at + it.slow.lengthFt + 300) return false;
       }
       // SIM-021: the sim ends 30 min after the last perfect CP time, so the final CP sits in the tail of the last leg
-      if (lastLeg && (last.at - x > 6 * FT_MI || x < last.at * 0.65)) return false;
+      if (lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600)) return false;
       return x >= 600 && this.debtAt(items, x) <= MAX_DEBT_AT_CP;
     };
     const nextAfter = (it: Item): number => items.find(j => j.at > it.at)?.at ?? last.at;
@@ -505,7 +516,7 @@ class Generator {
           else if (it.at - x < it.needBefore) return false;
           if (it.slow && x > it.slow.at && x < it.slow.at + it.slow.lengthFt + 300) return false;
         }
-        return !(lastLeg && (last.at - x > 6 * FT_MI || x < last.at * 0.65));
+        return !(lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600));
       };
       let bestX = -1, bestDebt = Infinity;
       for (let x = 600; x < last.at - BEFORE.control; x += 100) { if (!geomOk(x)) continue; const d = this.debtAt(items, x); if (d < bestDebt - 1e-9 || (lastLeg && d <= bestDebt + 0.1)) { bestDebt = d; bestX = x; } }
@@ -514,6 +525,7 @@ class Generator {
       this.tags.push(`cp:cp${this.cpNo + 1}:bestEffort:${bestDebt.toFixed(1)}`);
     }
     if (choice.mode === 'afterStop') this.afterStopPlaced = true;
+    this.tags.push(`cp:cp${this.cpNo + 1}:debt:${this.debtAt(items, choice.at).toFixed(1)}`);
     return choice;
   }
 
@@ -521,8 +533,8 @@ class Generator {
   private debtAt(items: Item[], x: number): number {
     type Ev = { at: number; cost: number; ins: boolean; speedAfter?: number };
     const evs: Ev[] = [];
-    for (const it of items) {
-      if (it.at >= x) break;
+    for (const it of [...this.carry, ...items]) {
+      if (it.at >= x) continue;
       evs.push({ at: it.at, cost: it.cost, ins: !!it.ins, speedAfter: it.ins ? it.speedAfter : undefined });
       if (it.slow) {
         const v = it.slow.speedMph, v0 = Math.max(v + 1, this.speedBefore(items, it));
@@ -530,7 +542,7 @@ class Generator {
       }
     }
     evs.sort((a, b) => a.at - b.at);
-    let debt = 0, speed = this.legStartSpeed;
+    let debt = 0, speed = this.carry.length ? this.carrySpeed : this.legStartSpeed;
     for (let k = 0; k < evs.length; k++) {
       const e = evs[k]!; const next = evs[k + 1];
       debt += e.cost;
@@ -543,11 +555,15 @@ class Generator {
     return debt;
   }
   private speedBefore(items: Item[], it: Item): number {
-    let v = this.legStartSpeed;
-    for (const j of items) { if (j.at >= it.at) break; if (j.ins) v = j.speedAfter; }
+    let v = this.carry.length ? this.carrySpeed : this.legStartSpeed;
+    for (const j of [...this.carry, ...items]) { if (j.at >= it.at) break; if (j.ins) v = j.speedAfter; }
     return v;
   }
+  private carrySpeed = 35;
+  private lastCalmFromAt = -1;
   private legStartSpeed = 35;
+  /** Items of the previous plan that lie after its checkpoint (re-based to this leg's start, at <= 0): same timing leg. */
+  private carry: Item[] = [];
 
   // ---------- emission ----------
   private emitLeg(items: Item[], cp: CpChoice): void {

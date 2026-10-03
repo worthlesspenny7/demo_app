@@ -92,7 +92,7 @@ export class OracleBot implements Bot {
         if (d <= dLead + 1) { p.speedCalled = true; this.act({ type: 'call.speed', mph: p.ins.speed }); }
       }
       // timed segment anchor: arm when crossing
-      if (p.ins.timed && !p.speedCalled && d <= 1) {
+      if (p.ins.timed && !p.speedCalled && d <= 0) {
         p.speedCalled = true;
         if (!isStop) this.act({ type: 'call.speed', mph: p.ins.timed.holdSpeed });
         this.timedPending = { plan: p, thenSpeed: p.ins.timed.thenSpeed, called: false };

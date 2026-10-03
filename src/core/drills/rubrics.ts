@@ -28,7 +28,11 @@ export function headlineTip(r: StageResult): string {
   }
 }
 
-export function basicRubric(r: StageResult, thresholds: [number, number, number], extra: string[] = []): Rubric {
+/** Star thresholds scale with the driver's speed-holding noise so that Gold (rookie driver) still grades the navigator. */
+export function driverScale(skill: string | undefined): number { return skill === 'rookie' ? 2.2 : skill === 'sportsman' ? 1.5 : 1; }
+
+export function basicRubric(r: StageResult, thresholds: [number, number, number], extra: string[] = [], driverSkill?: string): Rubric {
+  const k = driverScale(driverSkill); thresholds = [thresholds[0] * k, thresholds[1] * k, thresholds[2] * k];
   const errs = legErrors(r); const mean = meanAbs(errs);
   const stars = r.offCourseCount > 0 ? Math.min(1, starsFromMeanAbs(mean, thresholds)) as 0 | 1 : starsFromMeanAbs(mean, thresholds);
   const feedback = [headlineTip(r), ...extra];
