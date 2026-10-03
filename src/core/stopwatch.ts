@@ -1,15 +1,24 @@
 /** One stopwatch (analog or digital) and an analog TOD clock with a bezel. DESIGN §8. */
 export type WatchKind = 'analog' | 'digital';
+/** WATCH-008: the digital watch shows the stopwatch (chrono) or the rally time of day (tod). */
+export type WatchMode = 'chrono' | 'tod';
+/** The handbook recommends a digital stopwatch with lap/split and time of day (HB p.5): the engine default. */
+export const DEFAULT_WATCH: WatchKind = 'digital';
+export const LAP_MEMORY = 10;
 
 export class Stopwatch {
   running = false;
   private elapsedAtStop = 0;
   private startedAt: number | null = null;
+  /** Splits (cumulative elapsed at each lap). Interval / cumulative pairs: lapTable(). */
   laps: number[] = [];
+  mode: WatchMode = 'chrono';
   /** Countdown bezel index (seconds on the dial). Analog only; dial is `dialSeconds` long. */
   bezel = 0;
   readonly dialSeconds: number;
-  constructor(readonly kind: WatchKind = 'analog', dialSeconds = 60) { this.dialSeconds = dialSeconds; }
+  /** Seconds a split stays frozen before the display releases by itself; 0 = hold until recall (WATCH-008). */
+  holdSeconds: number;
+  constructor(readonly kind: WatchKind = 'analog', dialSeconds = 60, holdSeconds = 0) { this.dialSeconds = dialSeconds; this.holdSeconds = holdSeconds; }
   setBezel(seconds: number): void { const d = this.dialSeconds; this.bezel = ((Math.round(seconds * 10) / 10) % d + d) % d; }
   /** Seconds until the sweep hand reaches the bezel index (wraps on the dial). */
   bezelRemaining(now: number): number {
@@ -25,20 +34,45 @@ export class Stopwatch {
   start(now: number): void { if (!this.running) { this.running = true; this.startedAt = now; } }
   stop(now: number): void { if (this.running) { this.elapsedAtStop = this.elapsed(now); this.running = false; this.startedAt = null; } }
   toggle(now: number): void { this.running ? this.stop(now) : this.start(now); }
-  /** Digital: display freezes on the split until recall(); analog: the hand keeps sweeping. */
+  /** Digital only: chrono <-> time of day. */
+  setMode(m: WatchMode): void { if (this.kind === 'digital') this.mode = m; }
+  toggleMode(): void { this.setMode(this.mode === 'chrono' ? 'tod' : 'chrono'); }
+
+  /** Digital: the display freezes on the split; it releases on recall() or after holdSeconds. Analog: the hand keeps sweeping. */
   frozenAt: number | null = null;
-  lap(now: number): number { const e = this.elapsed(now); this.laps.push(e); if (this.kind === 'digital') this.frozenAt = e; return e; }
-  recall(): void { this.frozenAt = null; }
-  /** Analog watches reset only when stopped (the crown); digital anytime. */
-  reset(now: number): boolean {
-    if (this.kind === 'analog' && this.running) return false;
-    this.running = false; this.startedAt = null; this.elapsedAtStop = 0; this.laps = []; this.frozenAt = null; void now;
+  private frozenSince = 0;
+  /** Index into laps of the lap being recalled (cycling back through the last 10), or null for live. */
+  recalled: number | null = null;
+  /** Is the split display still frozen at `now` (before the auto-release)? */
+  isFrozen(now: number): boolean { return this.frozenAt !== null && (this.holdSeconds <= 0 || now - this.frozenSince < this.holdSeconds - 1e-9); }
+  lap(now: number): number {
+    const e = this.elapsed(now); this.laps.push(e);
+    if (this.kind === 'digital') { this.frozenAt = e; this.frozenSince = now; this.recalled = null; }
+    return e;
+  }
+  /** Interval and cumulative time of every lap, the shape of the book's calibration box ("5m32.0s" over "7m21.3s"). */
+  lapTable(): { interval: number; cumulative: number }[] {
+    return this.laps.map((c, i) => ({ interval: i === 0 ? c : c - this.laps[i - 1]!, cumulative: c }));
+  }
+  /** Release a frozen split; otherwise step back through the last 10 laps, and back to live after the oldest. */
+  recall(now?: number): void {
+    if (this.frozenAt !== null) { const live = now === undefined || this.isFrozen(now); this.frozenAt = null; if (live) return; }
+    if (!this.laps.length) return;
+    const oldest = Math.max(0, this.laps.length - LAP_MEMORY);
+    const next = this.recalled === null ? this.laps.length - 1 : this.recalled - 1;
+    this.recalled = next < oldest ? null : next;
+  }
+  /** Stopped-only reset (the crown / button); `force` overrides the guard (WATCH-008). */
+  reset(now: number, force = false): boolean {
+    if (this.running && !force) return false;
+    this.running = false; this.startedAt = null; this.elapsedAtStop = 0; this.laps = []; this.frozenAt = null; this.recalled = null; void now;
     return true;
   }
-  /** Reading at the dial's resolution: analog 1/5 s, digital 1/100 s. */
+  /** What the display shows at `now`: the rally time of day in tod mode, a recalled lap, a frozen split, or the live elapsed time. */
   reading(now: number): number {
-    const e = this.frozenAt !== null ? this.frozenAt : this.elapsed(now);
     const q = this.kind === 'analog' ? 0.2 : 0.01;
+    if (this.mode === 'tod') return Math.round((((now % 86400) + 86400) % 86400) / q) * q;
+    const e = this.recalled !== null ? this.laps[this.recalled]! : this.isFrozen(now) ? this.frozenAt! : this.elapsed(now);
     return Math.round(e / q) * q;
   }
 }

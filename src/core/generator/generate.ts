@@ -12,12 +12,12 @@
  */
 import { ScenarioBuilder, EXITS, PERFECT_TIMEWISE, type NodeSpec, type InsSpec } from '../builder.js';
 import {
-  type Scenario, type CarSpec, type SpeedoSpec, type DriverSpec, type AidsConfig, type Exit, type Control, type TurnDir, type Section,
+  type Scenario, type CarSpec, type SpeedoSpec, type DriverSpec, type AidsConfig, type Exit, type Control, type TurnDir, type Section, type TimeZoneLabel,
   FORD_1939, DRIVER_EXPERT, TRAINING_AIDS, validateScenario, nodeById,
 } from '../course.js';
 import { buildGhost, ghostTimeAt, annotatePerfectTimes } from '../ghost.js';
 import { rng, type Rng } from '../rng.js';
-import { milesToFt, mphToFps, formatClock } from '../units.js';
+import { milesToFt, mphToFps } from '../units.js';
 import { TRAPS, GENERIC_DISTRACTORS, trapToNodeSpec, trapDistractorBefore, routeExit, mainRoadExit, exitForCallout, type TrapCard } from './traps.js';
 
 export type LineType = 'stop' | 'turn' | 'speedSign' | 'landmarkSpeed' | 'curveSign' | 'timed' | 'signal' | 'rr' | 'trap' | 'straight';
@@ -48,11 +48,30 @@ export interface GenProfile {
   /** Fraction of lines in town clusters (default 0.3). */
   townFraction?: number;
   name?: string;
+  /**
+   * STAGE-001 skeleton: 'day' = start + tire warm-up, speedometer calibration run (3-6 calibration points), transit, time-of-day restart,
+   * timed portion, "End timed portion" + TA point, a lunch transit with promoted stops, a restart, a second timed portion, End timed portion + TA point,
+   * a transit to the finish, finish line with the Observation Checkpoint.
+   */
+  skeleton?: 'day';
+  /** REG-006: probability that a STOP prints the 15 s pause in Column C (default 1; the full-day profiles use 0.85). The car stops either way. */
+  pauseOnStopProbability?: number;
+  /** REG-006: probability that a traffic signal prints a pause (default 0). */
+  pauseOnSignalProbability?: number;
+  /** STAGE-004: probability of one free zone per timed portion (default 0). */
+  freeZoneProbability?: number;
+  /** End the (last) timed portion with "End timed portion", its end-of-stage TA point and a transit to the finish (DRILL-025). */
+  endTimed?: boolean;
+  /** Assigned starting position in minutes and the time-zone label printed on clock faces (STAGE-002). */
+  asp?: number;
+  timeZone?: TimeZoneLabel;
+  bookStyle?: 'example' | 'race';
 }
 
-export const SPEEDS: readonly number[] = [25, 30, 35, 40, 45, 50];
-const TOWN_SPEEDS: readonly number[] = [25, 30, 35];
-const RURAL_SPEEDS: readonly number[] = [30, 35, 40, 45, 50];
+/** STAGE-007: multiples of 5 from 15 to 55; 20 is the common town speed, 50 and 55 are highway speeds. */
+export const SPEEDS: readonly number[] = [20, 25, 30, 35, 40, 45, 50, 55];
+const TOWN_SPEEDS: readonly number[] = [20, 25, 30, 35];
+const RURAL_SPEEDS: readonly number[] = [30, 35, 40, 45, 50, 55];
 const FT_MI = 5280;
 
 /** Feet a checkpoint must sit AFTER an item (sight zone: a stopped car 400 ft before the CP would violate SIM-004) and BEFORE it (braking). */
@@ -90,14 +109,14 @@ interface Item {
 interface CpChoice { at: number; mode: 'afterStop' | 'afterSpeed' | 'open'; anchorKind?: string }
 
 export const PROFILES: Record<'pauseDrill' | 'timedDrill' | 'landmarkDrill' | 'calibration' | 'recovery' | 'fullLeg' | 'combo' | 'fullStage', GenProfile> = {
-  pauseDrill: { name: 'pauseDrill', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { stop: 70, straight: 10, speedSign: 10, turn: 0, timed: 0, landmarkSpeed: 5, curveSign: 5 }, townFraction: 0 },
+  pauseDrill: { name: 'pauseDrill', pauseOnStopProbability: 1, legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { stop: 70, straight: 10, speedSign: 10, turn: 0, timed: 0, landmarkSpeed: 5, curveSign: 5 }, townFraction: 0 },
   timedDrill: { name: 'timedDrill', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { timed: 60, stop: 10, speedSign: 15, straight: 10, turn: 0, landmarkSpeed: 5, curveSign: 0 }, townFraction: 0 },
   landmarkDrill: { name: 'landmarkDrill', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { speedSign: 35, landmarkSpeed: 30, curveSign: 15, stop: 10, straight: 5, turn: 0, timed: 5 }, townFraction: 0 },
   calibration: { name: 'calibration', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: true, lunchRestart: false, mix: { stop: 30, speedSign: 30, straight: 20, turn: 0, timed: 0 }, townFraction: 0 },
-  recovery: { name: 'recovery', legs: 1, lineDensity: 'normal', trapDensity: 0.1, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.3 },
-  fullLeg: { name: 'fullLeg', legs: 1, lineDensity: 'normal', trapDensity: 0.35, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.15 },
-  combo: { name: 'combo', legs: 2, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: false, slowTraffic: true, calibration: false, lunchRestart: false },
-  fullStage: { name: 'fullStage', legs: 0, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: true, slowTraffic: true, calibration: true, lunchRestart: true, trafficWaitProbability: 0.15 },
+  recovery: { name: 'recovery', pauseOnStopProbability: 0.85, legs: 1, lineDensity: 'normal', trapDensity: 0.1, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.3 },
+  fullLeg: { name: 'fullLeg', pauseOnStopProbability: 0.85, endTimed: true, legs: 1, lineDensity: 'normal', trapDensity: 0.35, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.15 },
+  combo: { name: 'combo', pauseOnStopProbability: 0.85, legs: 2, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: false, slowTraffic: true, calibration: false, lunchRestart: false },
+  fullStage: { name: 'fullStage', skeleton: 'day', pauseOnStopProbability: 0.85, freeZoneProbability: 0.5, endTimed: true, legs: 0, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: true, slowTraffic: true, calibration: true, lunchRestart: true, trafficWaitProbability: 0.15 },
 };
 
 const LANDMARKS = ['bridge', 'church on R', 'water tower on L', 'cattle guard', 'county line sign', 'grain elevator on R', 'cemetery on L', 'overpass', 'fire station on R', 'creek bridge'];
@@ -112,8 +131,12 @@ class Generator {
   private readonly b: ScenarioBuilder;
   private readonly tags: string[];
   private speed = 35;
-  private lineNo = 1;              // the start line is 1
+  /** Lines emitted so far (the start line is 1). */
+  private get lineNo(): number { return this.b.lineCount; }
   private cpNo = 0;
+  private legCounter = 0;
+  private perLeg: number[] = [];
+  private freeZoneFtAfterTransit = 0;
   private afterStopPlaced = false;
   private usedTraps = new Set<string>();
   private trainsPlaced = 0; private trainHits = 0;
@@ -124,10 +147,13 @@ class Generator {
     return { durationSeconds: this.r.int(60, 120), hit };
   }
   private trapsUsedThisLeg = new Set<string>();
+  private noPauseThisLeg = 0;
+  /** The last leg of a timed portion must place a checkpoint after a STOP when none has been placed yet (GEN-007). */
+  private forceAfterStop = false;
   private missingPauses = 0;
   readonly legs: number;
 
-  constructor(readonly seed: number, readonly profile: GenProfile, kind: 'leg' | 'stage') {
+  constructor(readonly seed: number, readonly profile: GenProfile, private readonly kind: 'leg' | 'stage') {
     this.r = rng(`gen:${kind}:${seed}`);
     const wanted = profile.cpCount ?? profile.legs;
     this.legs = kind === 'leg' ? 1 : wanted > 0 ? wanted : this.r.int(4, 7);
@@ -135,34 +161,35 @@ class Generator {
     this.b = new ScenarioBuilder({
       id: `gen-${profile.name ?? kind}-${seed}`, name: `${profile.name ?? kind} #${seed}`, seed, startTime: profile.startTime ?? 8 * 3600,
       car: profile.car ?? FORD_1939, speedo: profile.speedo ?? PERFECT_TIMEWISE, driver: profile.driver ?? DRIVER_EXPERT, aids: profile.aids ?? TRAINING_AIDS,
-      tags: this.tags, trafficWaitProbability: profile.trafficWaitProbability ?? 0,
+      tags: this.tags, trafficWaitProbability: profile.trafficWaitProbability ?? 0, asp: profile.asp, timeZone: profile.timeZone, bookStyle: profile.bookStyle,
     });
   }
 
   // ---------- public ----------
   build(): Scenario {
     const p = this.profile;
-    const perLeg = this.linesPerLeg();
-    this.speed = p.calibration ? 50 : this.r.pick(RURAL_SPEEDS);
-    this.b.start(this.speed, { text: p.calibration ? `START. Speed ${this.speed}. Begin speedometer calibration run` : undefined });
-    if (p.calibration) this.emitCalibration();
-    const lunchAfter = p.lunchRestart && this.legs >= 2 ? Math.max(1, Math.floor(this.legs / 2)) : -1;
-    const forceNoPause = !!p.noPauseTraps;
-    for (let leg = 1; leg <= this.legs; leg++) {
-      const n = perLeg[leg - 1]!;
-      const items = this.planLeg(n, { firstIsStop: leg - 1 === lunchAfter, forceMissingPause: forceNoPause && leg === 1, calmTail: leg === this.legs });
-      const cp = this.chooseCheckpoint(items, leg === this.legs);
-      this.emitLeg(items, cp);
-      const lastAt = items[items.length - 1]!.at;
-      let v = this.legStartSpeed; for (const it of items) { if (it.at > cp.at) break; if (it.ins) v = it.speedAfter; }
-      this.carrySpeed = v;
-      this.carry = items.filter(it => it.at > cp.at).map(it => ({ ...it, at: it.at - lastAt, slow: it.slow ? { ...it.slow, at: it.slow.at - lastAt } : undefined }));
-      if (leg === lunchAfter) { this.emitLunch(); this.carry = []; } // the restart re-anchors the clock: no debt carries over
+    this.perLeg = this.linesPerLeg();
+    const day = p.skeleton === 'day' && this.kind === 'stage';
+    if (day) this.tags.push('stage:day');
+    if (p.calibration || day) this.emitOpening();
+    else { this.speed = this.r.pick(RURAL_SPEEDS); this.b.start(this.speed); }
+    const afterRestart = !!(p.calibration || day);
+    if (day) {
+      const a = Math.ceil(this.legs / 2);
+      this.emitLegs(a, { firstIsStop: false, lastOfStage: false, afterTransit: afterRestart });
+      this.emitLunchTransit();
+      this.emitLegs(this.legs - a, { firstIsStop: true, lastOfStage: true, afterTransit: true });
+    } else {
+      const lunchAfter = p.lunchRestart && this.legs >= 2 ? Math.max(1, Math.floor(this.legs / 2)) : -1;
+      if (lunchAfter > 0) {
+        this.emitLegs(lunchAfter, { firstIsStop: false, lastOfStage: false, afterTransit: afterRestart });
+        this.emitLunchTransit();
+        this.emitLegs(this.legs - lunchAfter, { firstIsStop: true, lastOfStage: true, afterTransit: true });
+      } else this.emitLegs(this.legs, { firstIsStop: false, lastOfStage: true, afterTransit: afterRestart });
     }
-    this.b.advanceFt(milesToFt(0.3 + 0.3 * this.r.next()));
-    this.b.finish();
+    if (p.endTimed) this.emitClosing();
+    else { this.b.advanceFt(milesToFt(0.3 + 0.3 * this.r.next())); this.b.observationFinish(); }
     const sc = this.b.build();
-    if (p.calibration) annotatePerfectTimes(sc);
     const problems = [...validateScenario(sc), ...checkRouteExits(sc)];
     if (problems.length) throw new Error(`generator produced an invalid scenario (seed ${this.seed}): ${problems.join('; ')}`);
     return sc;
@@ -175,48 +202,129 @@ class Generator {
       const n = d === 'low' ? this.r.int(10, 14) : d === 'normal' ? this.r.int(26, 32) : this.r.int(36, 44);
       return [n];
     }
-    const fixed = (this.profile.calibration ? 9 : 0) + 3; // calibration lines + start/restart/finish
+    const day = this.profile.skeleton === 'day';
+    const fixed = day ? 42 : (this.profile.calibration ? 9 : 0) + 3; // warm-up, calibration, transit, TA and lunch lines, restarts, finish
     const total = d === 'low' ? this.r.int(110, 150) : d === 'normal' ? this.r.int(185, 235) : this.r.int(245, 300);
     const per = Math.max(6, Math.round((total - fixed) / this.legs));
     return Array.from({ length: this.legs }, () => per + this.r.int(-2, 2));
   }
 
-  // ---------- calibration (>= 15 mi at 50 mph, >= 6 intervals) ----------
-  private emitCalibration(): void {
-    const b = this.b;
-    b.advanceFt(1500);
-    this.instruction({ sign: { text: 'CALIBRATION START', shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', speed: 50, text: 'Begin calibration at "CALIBRATION START". Speed 50' });
-    let total = 0, k = 0;
-    while (total < 15.2 || k < 10) {
-      const d = Math.min(1.8, Math.max(0.9, 0.9 + 0.9 * this.r.next()));
-      total += d; k++;
-      b.advanceMiles(d);
-      if (k % 3 === 0) { const lm = this.r.pick(LANDMARKS); this.instruction({ label: lm, sightDistance: 500 }, { section: 'calibration', speed: 50, text: `At ${lm}. Speed 50` }); }
-      else this.instruction({ sign: { text: `MILE ${k}`, shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', speed: 50, text: `"MILE ${k}" sign. Speed 50` });
-    }
-    b.advanceFt(1200);
-    this.speed = this.r.pick([35, 40, 45]);
-    this.instruction({ sign: { text: 'END CALIBRATION', shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', speed: this.speed, text: `End of calibration at "END CALIBRATION". Speed ${this.speed}` });
-    this.tags.push(`calibration:miles:${total.toFixed(1)}:intervals:${k}`);
-    // The calibration run is not scored: an official restart follows it (Q14 default), 2-3 minutes after the ghost's arrival.
-    const endPos = b.position; b.advanceFt(900);
-    const ghostArrival = (this.profile.startTime ?? 8 * 3600) + endPos / (50 * 1.4666667) + 900 / (this.speed * 1.4666667);
-    const restartAt = Math.ceil((ghostArrival + 150) / 60) * 60;
-    b.restart(this.speed, restartAt, { text: `Calibration complete. RESTART at ${formatClock(restartAt)}. Speed ${this.speed}` });
-    this.lineNo++;
-    this.tags.push(`calibration:restart:${restartAt}`);
+  // ---------- STAGE-001 opening: warm-up, calibration run, transit, restart ----------
+  private emitOpening(): void {
+    const b = this.b, r = this.r;
+    const town = r.pick(TOWN_NAMES);
+    this.speed = 50;
+    b.start(undefined);
+    b.warmup({ seconds: 1200 });
+    const warmMiles = r.int(75, 90) / 10;
+    b.advanceFt(milesToFt(0.3 + 0.4 * r.next()));
+    this.instruction({ control: 'SIGNAL', exits: EXITS.crossroads('R'), sightDistance: 800 }, { turn: 'R' });
+    b.advanceMiles(1.0 + 0.8 * r.next());
+    this.instruction({ sign: { text: `LEAVING ${town} CITY LIMIT`, shape: 'rect', side: 'R' }, sightDistance: 500 }, {});
+    b.advanceMiles(1.5 + r.next());
+    // the Example Rally prints no pause at this stop: the driver stops anyway (REG-006)
+    this.instruction({ control: 'STOP', exits: EXITS.crossroads('S'), sightDistance: 700, sign: { text: 'STOP', shape: 'octagon', side: 'R' } }, { turn: 'S' });
+    const warmLeft = warmMiles - b.position / 5280;
+    b.advanceMiles(Math.max(0.5, warmLeft));
+    // speedometer calibration run: >= 15 miles, mostly 50 mph, 3-6 calibration points with official times to 0.1 s
+    const calMiles = r.int(155, 205) / 10; const points = r.int(3, 6);
+    const w = Array.from({ length: points }, () => 0.7 + r.next()); const wsum = w.reduce((x, y) => x + y, 0);
+    const gaps = w.map(x => calMiles * x / wsum);
+    const t1miles = r.int(25, 60) / 10; const t1sec = Math.ceil(t1miles / 30 * 3600 / 60) * 60;
+    b.calibrationRun({ miles: calMiles, speed: 50, points, gaps, allowanceExtraSeconds: 60 * r.int(2, 5), thenTransit: { exact: false, seconds: t1sec } });
+    this.tags.push(`calibration:miles:${calMiles.toFixed(1)}:points:${points}`);
+    b.advanceMiles(t1miles * 0.55);
+    const bear = r.pick(['BL', 'BR'] as const);
+    this.instruction({ exits: EXITS.wye(bear), sightDistance: 600, label: 'Y' }, { turn: bear });
+    b.advanceMiles(t1miles * 0.45);
+    // time-of-day restart: printed base = start + warm-up + calibration allowance + transit (HB: 8:00 + 20m + 26m + 9m = 8:55), plus ASP minutes for the team
+    const base = b.opts.startTime + 1200 + b.calibrationInfo!.allowanceSeconds + t1sec;
+    this.speed = r.pick(TOWN_SPEEDS);
+    b.restart(this.speed, base);
+    this.tags.push(`restart:base:${base}`);
+    this.freeZoneFtAfterTransit = Math.ceil(120 * mphToFps(this.speed)) + 400;
   }
 
-  // ---------- lunch ----------
-  private emitLunch(): void {
-    this.b.advanceFt(milesToFt(0.3 + 0.3 * this.r.next()));
-    const g = buildGhost(this.b.build());
-    const arrive = ghostTimeAt(g, this.b.position);
-    const restartTime = Math.ceil((arrive + 45 * 60) / 60) * 60;
-    this.speed = this.r.pick(TOWN_SPEEDS);
-    this.b.restart(this.speed, restartTime, { text: `LUNCH. Restart at ${formatClock(restartTime)}. Speed ${this.speed}` });
-    this.lineNo++;
-    this.tags.push(`lunch:restart:${this.lineNo}:${restartTime}`);
+  // ---------- timed portions ----------
+  private emitLegs(count: number, o: { firstIsStop: boolean; lastOfStage: boolean; afterTransit: boolean }): void {
+    const p = this.profile; const forceNoPause = !!p.noPauseTraps;
+    const fzLeg = count > 1 && this.r.chance(p.freeZoneProbability ?? 0) ? this.r.int(0, count - 1) : -1;
+    for (let k = 0; k < count; k++) {
+      const leg = ++this.legCounter; const n = this.perLeg[leg - 1]!;
+      const lastLeg = o.lastOfStage && k === count - 1;
+      const items = this.planLeg(n, { firstIsStop: o.firstIsStop && k === 0, forceMissingPause: forceNoPause && leg === 1, calmTail: lastLeg });
+      this.forceAfterStop = k === count - 1;
+      const cp = this.chooseCheckpoint(items, lastLeg, k === 0 && o.afterTransit ? this.freeZoneFtAfterTransit : 0);
+      if (k === fzLeg) this.addFreeZone(items, cp);
+      this.emitLeg(items, cp);
+      const lastAt = items[items.length - 1]!.at;
+      let v = this.legStartSpeed; for (const it of items) { if (it.at > cp.at) break; if (it.ins) v = it.speedAfter; }
+      this.carrySpeed = v;
+      this.carry = items.filter(it => it.at > cp.at).map(it => ({ ...it, at: it.at - lastAt, slow: it.slow ? { ...it.slow, at: it.slow.at - lastAt } : undefined }));
+    }
+    this.carry = []; // the end of a timed portion re-anchors the clock: no debt carries over
+  }
+
+  /** STAGE-004: one free zone inside this leg, on two existing instruction rows with no Timing Checkpoint between them. */
+  private addFreeZone(items: Item[], cp: CpChoice): void {
+    const rows = items.filter(i => i.ins && !i.ins.timed);
+    const pairs: [Item, Item][] = [];
+    for (let i = 0; i < rows.length; i++) for (let j = i + 2; j < rows.length; j++) {
+      const a = rows[i]!, b = rows[j]!;
+      if ((b.at < cp.at - 150) || (a.at > cp.at + 150)) pairs.push([a, b]);
+    }
+    if (!pairs.length) return;
+    const [a, b] = this.r.pick(pairs);
+    a.ins = { ...a.ins!, freeZone: 'begin' }; b.ins = { ...b.ins!, freeZone: 'end' };
+    this.tags.push(`freezone:${this.lineNo + items.filter(i => i.ins && i.at <= a.at).length + 1}`);
+  }
+
+  // ---------- lunch transit (STAGE-001 / STAGE-005) ----------
+  /**
+   * End of a timed portion: "End timed portion" (+ TA point), a transit holding a hosted meal stop ("leave 45m prior to your end-of-transit time")
+   * and optionally a rest stop, then the time-of-day restart. The numbers are chosen so the transit pace (what a navigator drives) gets the car
+   * to the meal stop with time to spare, and from the meal stop to the restart before the restart minute.
+   */
+  private emitLunchTransit(): void {
+    const b = this.b, r = this.r;
+    b.advanceFt(milesToFt(0.25 + 0.3 * r.next()));
+    const g = buildGhost(b.build());
+    const tEnd = ghostTimeAt(g, b.position);
+    const m1 = r.int(60, 90) / 10, m2 = r.int(65, 85) / 10; const leadMeal = 45 * 60;
+    const pace = 15; // mph: the slowest pace a transit navigator is told to drive; transit allowances below are generous
+    const t1 = m1 / pace * 3600 + 120;
+    const L = Math.ceil((leadMeal + t1 + 300) / 300) * 300;
+    const M = m1 + m2;
+    const withRest = r.chance(0.5);
+    b.endTimedPortion({ endOfStage: false, transit: { exact: false, seconds: L, miles: Math.round(M * 10) / 10 } });
+    b.advanceMiles(m1 * 0.5);
+    this.instruction({ sign: { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect', side: 'R' }, sightDistance: 500 }, {});
+    b.advanceMiles(m1 * 0.5);
+    b.promotedStop('meal', leadMeal);
+    const restMiles = withRest ? 0.4 : 0;
+    b.advanceMiles(m2 * 0.5);
+    this.instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 600, label: 'side road R' }, { turn: 'R' });
+    b.advanceMiles(m2 * 0.5 - restMiles - 0.3);
+    if (withRest) { b.promotedStop('rest', 180); b.advanceMiles(restMiles); }
+    b.advanceMiles(0.3);
+    const base = Math.ceil((tEnd + L) / 60) * 60 - b.opts.asp * 60;
+    this.speed = r.pick(TOWN_SPEEDS);
+    b.restart(this.speed, base);
+    this.tags.push(`lunch:restart:${b.lineCount}:${base}`);
+    this.freeZoneFtAfterTransit = Math.ceil(120 * mphToFps(this.speed)) + 400;
+  }
+
+  /** "End timed portion" with the end-of-stage TA point, then the exact-time transit to the finish line and its Observation Checkpoint. */
+  private emitClosing(): void {
+    const b = this.b, r = this.r;
+    b.advanceFt(milesToFt(0.25 + 0.3 * r.next()));
+    const miles = r.int(80, 160) / 10; const secs = Math.ceil(miles / 30 * 3600 / 60) * 60;
+    b.endTimedPortion({ endOfStage: true, transit: { exact: true, seconds: secs, miles } });
+    b.advanceMiles(miles * 0.45);
+    const d = r.pick(['L', 'R'] as const);
+    this.instruction({ exits: EXITS.tee(d), sightDistance: 600, label: 'T' }, { turn: d });
+    b.advanceMiles(miles * 0.55 - 0.05);
+    b.observationFinish();
   }
 
   // ---------- leg planning ----------
@@ -226,7 +334,7 @@ class Generator {
     this.legStartSpeed = this.speed;
     let pos = 0, minNextGap = 500, lastInsAt = 0, noTimedWithin = 0, runningDebt = 0;
     this.lastCalmFromAt = -1;
-    this.trapsUsedThisLeg.clear();
+    this.trapsUsedThisLeg.clear(); this.noPauseThisLeg = 0;
     const missingPauseLine = o.forceMissingPause ? this.r.int(Math.max(1, Math.floor(nLines / 3)), Math.max(1, Math.floor(nLines * 0.55))) : -1;
     for (let i = 0; i < nLines; i++) {
       const inTown = town[i]!;
@@ -388,21 +496,25 @@ class Generator {
         const useTee = dir !== 'S' && r.chance(0.4);
         const exits = useTee ? EXITS.tee(dir as 'L' | 'R') : EXITS.crossroads(dir);
         const node: NodeSpec = { control: 'STOP', exits, sightDistance: 700, sign: { text: 'STOP', shape: 'octagon', side: 'R' }, label: useTee ? 'T' : undefined };
-        const ins: InsSpec = { turn: dir, pause: 15, speed: speedAfter, hint: this.hintFor(gap, 'stop', undefined) };
-        return { item: { node, ins, kind: 'stop', costAfter: AFTER.control, needBefore: BEFORE.control, cost: COST.stop }, gap, speedAfter, minNextGap };
+        // REG-006: the book prints the 15 s pause on most STOPs (profile.pauseOnStopProbability), not all; the driver stops either way
+        // at most two unprinted pauses per leg: the missing seconds are uncompensated by anyone who trusts the ghost, and the checkpoint chooser must be able to find recovery road
+        const printPause = this.noPauseThisLeg >= 2 || r.chance(this.profile.pauseOnStopProbability ?? 1);
+        if (!printPause) this.noPauseThisLeg++;
+        const ins: InsSpec = { turn: dir, pause: printPause ? 15 : undefined, speed: speedAfter, hint: this.hintFor(gap, 'stop', undefined) };
+        return { item: { node, ins, kind: 'stop', costAfter: AFTER.control, needBefore: BEFORE.control, cost: printPause ? COST.stop : COST.stopNoPause }, gap, speedAfter, minNextGap };
       }
       case 'signal': {
         const dir = r.pick(['S', 'S', 'L', 'R'] as const);
         if (dir !== 'S') gap = Math.max(gap, 720);
         speedAfter = r.chance(0.7) ? this.pickSpeed(town, false) : this.speed;
         const node: NodeSpec = { control: 'SIGNAL', exits: EXITS.crossroads(dir), sightDistance: 800 };
-        const ins: InsSpec = { turn: dir, speed: speedAfter, hint: this.hintFor(gap, 'signal', undefined) };
+        const ins: InsSpec = { turn: dir, speed: speedAfter, pause: r.chance(this.profile.pauseOnSignalProbability ?? 0) ? 15 : undefined, hint: this.hintFor(gap, 'signal', undefined) };
         return { item: { node, ins, kind: 'signal', costAfter: AFTER.control, needBefore: BEFORE.control, cost: COST.signalRed, signal: this.signalSpec() }, gap, speedAfter, minNextGap };
       }
       case 'rr': {
         speedAfter = r.chance(0.5) ? this.pickSpeed(town, false) : this.speed;
         const node: NodeSpec = { kind: 'landmark', control: 'RR', sign: { text: 'RR', shape: 'rr', side: 'R' }, sightDistance: 700, label: 'RR crossing' };
-        const ins: InsSpec = { speed: speedAfter, text: `At RR crossing. Speed ${speedAfter}`, hint: this.hintFor(gap, 'rr', undefined) };
+        const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'rr', undefined) };
         const train = this.makeTrain();
         return { item: { node, ins, kind: 'rr', costAfter: AFTER.control, needBefore: BEFORE.control, cost: train?.hit ? COST.trainHit : COST.speed, train }, gap, speedAfter, minNextGap };
       }
@@ -438,7 +550,7 @@ class Generator {
         speedAfter = this.pickSpeed(town, true);
         const lm = r.pick(LANDMARKS);
         const node: NodeSpec = { label: lm, sightDistance: 500 };
-        const ins: InsSpec = { speed: speedAfter, text: `At ${lm}. Speed ${speedAfter}`, hint: this.hintFor(gap, 'landmarkSpeed', undefined) };
+        const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'landmarkSpeed', undefined) };
         return { item: { node, ins, kind: 'landmarkSpeed', costAfter: AFTER.speed, needBefore: BEFORE.plain, cost: COST.speed }, gap, speedAfter, minNextGap };
       }
       case 'timed': {
@@ -451,7 +563,7 @@ class Generator {
         const lm = r.pick(LANDMARKS);
         const node: NodeSpec = { label: lm, sightDistance: 500 };
         const timed = { holdSpeed: hold, seconds, thenSpeed: then };
-        const ins: InsSpec = { timed, speed: hold, text: `At ${lm}. ${hold} mph for ${fmtT(seconds)} then ${then}`, hint: this.hintFor(gap, 'timed', undefined) };
+        const ins: InsSpec = { timed, speed: hold, hint: this.hintFor(gap, 'timed', undefined) };
         return { item: { node, ins, kind: 'timed', costAfter: Math.ceil(reach) + 600, needBefore: BEFORE.plain, cost: COST.timed }, gap, speedAfter, minNextGap };
       }
       case 'straight': {
@@ -477,7 +589,7 @@ class Generator {
   }
 
   // ---------- checkpoint placement (GEN-005 / GEN-007) ----------
-  private chooseCheckpoint(items: Item[], lastLeg: boolean): CpChoice {
+  private chooseCheckpoint(items: Item[], lastLeg: boolean, minX = 0): CpChoice {
     const ins = items.filter(i => i.ins);
     const last = ins[ins.length - 1]!;
     const ok = (x: number): boolean => {
@@ -488,12 +600,12 @@ class Generator {
       }
       // SIM-021: the sim ends 30 min after the last perfect CP time, so the final CP sits in the tail of the last leg
       if (lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600)) return false;
-      return x >= 600 && this.debtAt(items, x) <= MAX_DEBT_AT_CP;
+      return x >= Math.max(600, minX) && this.debtAt(items, x) <= MAX_DEBT_AT_CP;
     };
     const nextAfter = (it: Item): number => items.find(j => j.at > it.at)?.at ?? last.at;
     const sample = (lo: number, hi: number): number | null => {
       if (hi - lo < 50) return null;
-      for (let k = 0; k < 6; k++) { const x = lo + this.r.next() * (hi - lo); if (ok(x)) return Math.round(x); }
+      for (let k = 0; k < 14; k++) { const x = lo + this.r.next() * (hi - lo); if (ok(x)) return Math.round(x); }
       return null;
     };
     const afterStop: CpChoice[] = []; const afterSpeed: CpChoice[] = [];
@@ -519,7 +631,7 @@ class Generator {
     // force one "CP right after a STOP" per stage (GEN-007); otherwise ~55 % inopportune placements
     const inopportune = [...afterStop, ...afterSpeed];
     let choice: CpChoice | undefined;
-    if (afterStop.length && !this.afterStopPlaced && (lastLeg || this.r.chance(0.5))) choice = this.r.pick(afterStop);
+    if (afterStop.length && !this.afterStopPlaced && (lastLeg || this.forceAfterStop || this.r.chance(0.5))) choice = this.r.pick(afterStop);
     else if (inopportune.length && this.r.chance(0.55)) choice = this.r.pick(inopportune);
     else if (open.length) choice = this.r.pick(open);
     else if (inopportune.length) choice = this.r.pick(inopportune);
@@ -531,7 +643,7 @@ class Generator {
           else if (it.at - x < it.needBefore) return false;
           if (it.slow && x > it.slow.at && x < it.slow.at + it.slow.lengthFt + 300) return false;
         }
-        return !(lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600));
+        return x >= minX && !(lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600));
       };
       let bestX = -1, bestDebt = Infinity;
       for (let x = 600; x < last.at - BEFORE.control; x += 100) { if (!geomOk(x)) continue; const d = this.debtAt(items, x); if (d < bestDebt - 1e-9 || (lastLeg && d <= bestDebt + 0.1)) { bestDebt = d; bestX = x; } }
@@ -591,7 +703,7 @@ class Generator {
       b.advanceFt(it.at - prevAt); prevAt = it.at;
       if (it.ins) {
         this.instruction(it.node, it.ins);
-        if (it.node.control === 'STOP' && it.ins.pause === undefined) this.tags.push(`trap:missingPause:${this.lineNo}`);
+        if (it.node.control === 'STOP' && it.ins.pause === undefined) this.tags.push(it.trapId === 'missing-pause' ? `trap:missingPause:${this.lineNo}` : `stop:noPause:${this.lineNo}`);
       } else b.node(it.node);
       if (it.signal) b.hazard({ kind: 'signal', redSeconds: it.signal.redSeconds, greenSeconds: it.signal.greenSeconds, offset: it.signal.offset });
       if (it.train) {
@@ -615,7 +727,7 @@ class Generator {
     if (cp.mode === 'open' && prev.some(i => i.ins?.turn && i.ins.turn !== 'S' || i.node.control === 'SIGNAL')) this.tags.push(`cp:cp${this.cpNo}:afterManeuver:turn`);
   }
 
-  private instruction(node: NodeSpec, ins: InsSpec): void { this.b.instruction(node, ins); this.lineNo++; }
+  private instruction(node: NodeSpec, ins: InsSpec): void { this.b.instruction(node, ins); }
 }
 
 function fmtT(sec0: number): string { const sec = Math.round(sec0); const m = Math.floor(sec / 60), s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; }

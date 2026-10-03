@@ -374,10 +374,12 @@ export function trapToNodeSpec(card: TrapCard, opts: { speed?: number; pause?: n
   let pause: number | undefined;
   if (card.control === 'STOP') pause = card.pause === null ? undefined : opts.pause ?? card.pause ?? 15;
   else if (typeof card.pause === 'number') pause = card.pause;
-  const parts = [card.instructionText];
-  if (pause !== undefined) parts.push(`Pause ${pause}`);
-  if (opts.speed !== undefined) parts.push(`Speed ${opts.speed}`);
-  const ins: InsSpec = { text: parts.join('. '), turn: card.turn, pause, speed: opts.speed, hint: card.hint };
+  // the card's own wording first, then the GRIID-004 pause / speed sentences (Column D, 'example' style)
+  const parts = [/[.!?]$/.test(card.instructionText) ? card.instructionText : `${card.instructionText}.`];
+  if (pause !== undefined && opts.speed !== undefined) parts.push(`Pause ${pause} seconds, then change average speed to ${opts.speed} miles per hour.`);
+  else if (pause !== undefined) parts.push(`Pause ${pause} seconds.`);
+  else if (opts.speed !== undefined) parts.push(`Change average speed to ${opts.speed} miles per hour.`);
+  const ins: InsSpec = { text: parts.join(' '), turn: card.turn, pause, speed: opts.speed, hint: card.hint };
   return { node, ins };
 }
 

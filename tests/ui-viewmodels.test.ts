@@ -881,3 +881,153 @@ describe('UI-026 S at the finish and the turn-loss block', () => {
     expect(turnLossBlock(sc, 1).here).toBeNull();
   });
 });
+
+// ---------- teaching content: LESSON-001..005, CHART-004/005 wording, UI-033 ----------
+import { LESSONS, lessonText, type Lesson } from '../content/lessons.js';
+import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, packardValue, ageFactorFor } from '../content/reference-data.js';
+import { STOPWATCH_NOTE, CLOCK_NOTE } from '../src/ui/screens/settings.js';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../src/ui/state.js';
+import { vi } from 'vitest';
+
+const lesson = (id: string): Lesson => { const l = LESSONS.find(x => x.id === id); if (!l) throw new Error(`no lesson ${id}`); return l; };
+const hasAll = (text: string, phrases: string[]): void => { for (const p of phrases) expect(text, `missing phrase: ${p}`).toContain(p); };
+const checkOk = (l: Lesson): void => { expect(l.check.question.length).toBeGreaterThan(10); expect(l.check.options.length).toBeGreaterThanOrEqual(3); expect(l.check.answer).toBeGreaterThanOrEqual(0); expect(l.check.answer).toBeLessThan(l.check.options.length); expect(l.check.explain.length).toBeGreaterThan(10); };
+
+describe('LESSON-001 The Four S\'s', () => {
+  it('LESSON-001 exists with the four S\'s in the handbook\'s order and priorities, cites HB p.13-14 and has a check question', () => {
+    const l = lesson('four-s'); const t = lessonText(l);
+    expect(l.title).toBe("The Four S's"); checkOk(l);
+    hasAll(t, ['HB p.13-14', 'Safety first', 'Start on time', 'Stay on course', 'Stay on time', "concentrate on the first 3 S's", 'WWV', 'automatically on time the instant you reach a checkpoint']);
+    expect(t.indexOf('Safety first')).toBeLessThan(t.indexOf('Start on time')); expect(t.indexOf('Start on time')).toBeLessThan(t.indexOf('Stay on course')); expect(t.indexOf('Stay on course')).toBeLessThan(t.indexOf('Stay on time'));
+    expect(l.source).toMatch(/08-rookie-handbook-body/); expect(l.source).toMatch(/V\.H/);
+  });
+  it('LESSON-001 gives the TA rules in plain words with the farm-tractor example and the real penalties', () => {
+    const t = lessonText(lesson('four-s'));
+    hasAll(t, ['What qualifies', 'What never does', 'multiples of 10 s', 'within 15 minutes', 'TA point', 'could have made up', TA_PATTERN, 'Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.']);
+    hasAll(t, ['1 s per second', '2 min late, 5 min early', 'Missed timing checkpoint', '3 min', 'More than 30 min', 'Failure to stop at a STOP sign', 'DNF']);
+    const l = lesson('four-s'); expect(l.check.options[l.check.answer]).toContain('0m20s');
+  });
+  it('LESSON-001 every lesson keeps a source citing the research files and has one check question', () => {
+    expect(LESSONS.length).toBeGreaterThanOrEqual(10);
+    for (const l of LESSONS) { expect(l.source.length, l.id).toBeGreaterThan(10); expect(l.source, l.id).toMatch(/docs\/research|DESIGN/); checkOk(l); }
+    expect(new Set(LESSONS.map(l => l.id)).size).toBe(LESSONS.length);
+    expect(LESSONS[0]!.id).toBe('ghost-car');   // the start-here path still begins with the ghost car
+  });
+});
+
+describe('LESSON-002 Team protocol', () => {
+  it('LESSON-002 teaches the call pattern ending in GO, the read-back rule and the sign glossary', () => {
+    const l = lesson('protocol'); const t = lessonText(l);
+    expect(l.title).toBe('Team protocol'); checkOk(l);
+    hasAll(t, ['Next: STOP sign, crossroad, turn right, 35 after.', 'Stopped', '3, 2, 1, GO', 'always ends a countdown with the word GO', 'HB Appendix B']);
+    hasAll(t, ['crossroad', 'T', 'sideroad', 'Y', 'soft right curve', 'soft offset right curve', 'blinker', 'yield', 'comes quick']);
+    hasAll(t, ['repeats back every turn and every speed', 'timed section', 'cross off each instruction', 'names the next sign before looking down', 'never pull up to a restart point before your minute', 'make up a loss as soon as it is safe', 'team errors only', 'the driver watches the road']);
+    const glossary = l.body.find((b): b is Extract<typeof b, { table: unknown }> => typeof b !== 'string' && 'table' in b)!;
+    expect(glossary.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['crossroad', 'T', 'sideroad', 'Y', 'soft right curve', 'soft offset right curve', 'blinker', 'yield', 'comes quick']));
+  });
+  it('LESSON-002 carries a printable card for the driver of exactly eight lines', () => {
+    const card = lesson('protocol').body.find((b): b is Extract<typeof b, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
+    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(8);
+    expect(card.card.lines.join(' ')).toMatch(/GO/); expect(card.card.lines.join(' ')).toMatch(/Stopped/);
+  });
+});
+
+describe('LESSON-003 Marking up the instructions', () => {
+  it('LESSON-003 lists the six notations with a page-break example and the restart and transit arithmetic', () => {
+    const l = lesson('markup'); const t = lessonText(l); checkOk(l);
+    expect(l.title).toBe('Marking up the instructions');
+    const list = l.body.find((b): b is Extract<typeof b, { list: string[] }> => typeof b !== 'string' && 'list' in b)!;
+    expect(list.list).toHaveLength(6); expect(list.ordered).toBe(true);
+    hasAll(t, ['HB p.15', 'Carry the speed from the bottom of each page to the top of the next', 'Write every speed not shown', 'Highlight every "comes quick"', 'note it at the bottom of the previous page', 'chart pause time beside every printed pause', 'restart time', 'OUT time', '8:55:00 + 12 min = 9:07:00', 'PAGE 2 of 6', 'PAGE 3 of 6', '8.6']);
+    expect(l.check.options[l.check.answer]).toBe('40 MPH');
+  });
+});
+
+describe('LESSON-004 Transits and restarts', () => {
+  it('LESSON-004 covers advisory vs exact transits, IN + interval = OUT, lunch inside the transit, base + ASP, the free zone and the wrong-minute warning', () => {
+    const l = lesson('transits'); const t = lessonText(l); checkOk(l);
+    expect(l.title).toBe('Transits and restarts');
+    hasAll(t, ['Advisory transit', 'Exact transit', 'IN + interval = OUT', 'leave here 45 minutes prior to your end-of-transit time', 'assigned start position', 'ASP', '2-minute free zone', 'wrong minute', 'a lot of make up']);
+    expect(l.check.options[l.check.answer]).toBe('2:22:00');   // 2:55:00 + 12 min - 45 min
+  });
+});
+
+describe('LESSON-005 Reference pages', () => {
+  it('LESSON-005 the penalty table carries the 1 s, 120 / 300 / 180 s numbers with rule numbers', () => {
+    const by = (rule: string) => PENALTY_ROWS.find(r => r.rule === rule)!;
+    expect(by('V.E.1.a').seconds).toBe(1); expect(by('V.E.1.b').seconds).toBe(120); expect(by('V.E.1.c').seconds).toBe(300); expect(by('V.E.2.a, V.C.2.b').seconds).toBe(180); expect(by('V.E.3.a').seconds).toBe(30);
+    expect(by('V.E.3.e').penalty).toBe('DNF');
+    for (const r of PENALTY_ROWS) expect(r.rule).toMatch(/^V\.E\.\d/);
+  });
+  it('LESSON-005 the age factor table is the printed V.D table: 0.845 for 1939, 0.915 for 1953, 1.000 from 1954, 0.800 for 1930, 0.500 for 1900', () => {
+    const f = (y: string) => AGE_FACTOR_ROWS.find(r => r.year === y)!.factor;
+    expect(f('1939')).toBe(0.845); expect(f('1953')).toBe(0.915); expect(f('1954+')).toBe(1); expect(f('1930')).toBe(0.8); expect(f('1929')).toBe(0.79); expect(f('1936')).toBe(0.83); expect(f('1926')).toBe(0.76); expect(f('1912')).toBe(0.62); expect(f('1900')).toBe(0.5);
+    expect(AGE_FACTOR_ROWS).toHaveLength(55); expect(ageFactorFor(1939)).toBe(0.845); expect(ageFactorFor(1965)).toBe(1);
+  });
+  it('LESSON-005 the three Packard charts are static tables labelled "1936 Packard example, HB p.7-9" with 8.6 for 30->40 stop & go and 4.0 for 40->35 turn', () => {
+    expect(PACKARD_LABEL).toBe('1936 Packard example, HB p.7-9'); expect(PACKARD_CHARTS.map(c => c.id)).toEqual(['accel', 'stopgo', 'turn']);
+    expect(packardValue('stopgo', 30, 40)).toBe(8.6); expect(packardValue('turn', 40, 35)).toBe(4); expect(packardValue('accel', 0, 40)).toBe(4.5);
+    expect(packardValue('stopgo', 15, 15)).toBe(13); expect(packardValue('turn', 50, 50)).toBe(7.7); expect(packardValue('accel', 50, 0)).toBe(3.3);
+    for (const c of PACKARD_CHARTS) for (const r of c.rows) expect(r.values).toHaveLength(c.cols.length);
+  });
+  it('LESSON-005 Column C syntax and speed-change position tables carry rule numbers', () => {
+    expect(COLUMN_C_ROWS.map(r => r.shows)).toEqual(expect.arrayContaining(['7:30:00', '3h15m00s', '0m45s', '(35m00s)', '45 MPH']));
+    expect(SPEED_CHANGE_ROWS.map(r => r.rule)).toEqual(expect.arrayContaining(['VII.E.2.b', 'VII.E.2.c', 'VII.E.2.d']));
+    expect(TA_PATTERN).toBe('Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.');
+  });
+});
+
+describe('CHART-004 and CHART-005 lesson wording', () => {
+  it('CHART-004 pause-arithmetic, timed-leads and recovery use the handbook rules', () => {
+    hasAll(lessonText(lesson('pause-arithmetic')), ['Stop & Go chart', 'sometimes the instructed pause time may be different than 15 seconds', '13.6 s']);
+    hasAll(lessonText(lesson('timed-leads')), ['split the speed change at the sign', 'midpoint speed', '32.5', 'Half a ramp early is the same thing']);
+    const rec = lessonText(lesson('recovery'));
+    hasAll(rec, ['drive 10 % above the instructed speed for 10 x the seconds lost', '38.5 mph for 40 s makes up 4 s at 35', '44 mph for 44 s makes up 4.4 s at 40', '(Assigned - Actual) / Assigned x seconds at the reduced speed = seconds lost', '40 assigned, 30 actual, 20 s']);
+    expect(lesson('recovery').check.options[lesson('recovery').check.answer]).toBe('44 mph for 44 s');
+  });
+  it('CHART-005 calibration shows the Timewise worked example: 4.1 s late = 8.2 s/h = 10 clicks, 4315 -> 4305', () => {
+    const t = lessonText(lesson('calibration'));
+    hasAll(t, ['new factor = old factor x correct time / actual time', '28m43.2s', '28m47.3s', '4.1 s', '8.2 s per hour', '10 clicks', '4315 - 10 = 4305', '4305']);
+    expect(Math.round(4315 * (28 * 60 + 43.2) / (28 * 60 + 47.3))).toBe(4305);
+  });
+  it('CHART-004 the GRIID lesson names five columns, the Column B symbols, Column C syntax and Column D remarks versus example sentences', () => {
+    const t = lessonText(lesson('griid-cameo'));
+    hasAll(t, ['five columns', 'B = section symbols', 'hourglass', '7:30:00', '3h15m00s', '0m45s', 'advisory', 'Comes quick', 'Look sharp', 'full sentence', 'VII.B.3.c']);
+  });
+});
+
+describe('UI-033 Settings: handbook defaults (digital stopwatch, analog clock), analog stopwatch selectable', () => {
+  it('UI-033 the defaults are a digital stopwatch and an analog clock, and the notes say the analog stopwatch is not the handbook\'s recommendation', () => {
+    expect(DEFAULT_SETTINGS.watch).toBe('digital'); expect(DEFAULT_SETTINGS.clock).toBe('analog');
+    hasAll(STOPWATCH_NOTE, ['digital stopwatch', 'lap/split', 'time-of-day', 'HB p.5', 'analog stopwatch', 'not the handbook\'s recommendation', 'selectable']);
+    hasAll(CLOCK_NOTE, ['analog by default', 'digital readout', 'optional', 'WWV']);
+  });
+  it('UI-033 the clock setting persists through save and load and a missing field falls back to analog', () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } });
+    try {
+      saveSettings({ ...DEFAULT_SETTINGS, clock: 'digital', watch: 'analog' });
+      expect(loadSettings().clock).toBe('digital'); expect(loadSettings().watch).toBe('analog');   // analog stays selectable
+      const [key] = [...store.keys()]; const old = JSON.parse(store.get(key!)!) as Record<string, unknown>; delete old['clock']; store.set(key!, JSON.stringify(old));
+      expect(loadSettings().clock).toBe('analog');
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
+
+describe('LESSON-006 Which timer, when', () => {
+  it('LESSON-006 sits right after the Four S\'s and states the clock / stopwatch split with the two never-do rules', () => {
+    const i = LESSONS.findIndex(l => l.id === 'which-timer'); expect(i).toBeGreaterThan(0); expect(LESSONS[i - 1]!.id).toBe('four-s');
+    const l = lesson('which-timer'); const t = lessonText(l); checkOk(l); expect(l.title).toBe('Which timer, when');
+    hasAll(t, ['HB p.5', 'WWV', 'base time plus your assigned start position', 'IN and OUT times of an exact transit', '15-minute Time Allowance window', 'lap at every calibration point', 'asterisk', 'wheels stop', '10 % make-up count', 'backup', 'never read time of day off a running chrono', 'never time an interval off the clock']);
+    expect(l.check.options[l.check.answer]).toMatch(/stopwatch at the sign/);
+  });
+  it('LESSON-006 has a situation / device / what-you-write-down table and a worked calibration-lap example against the box', () => {
+    const l = lesson('which-timer');
+    const tab = l.body.find((b): b is Extract<typeof b, { table: { head: string[] } }> => typeof b !== 'string' && 'table' in b)!;
+    expect(tab.table.head).toEqual(['Situation', 'Device', 'What you write down']);
+    for (const r of tab.table.rows) expect(r).toHaveLength(3);
+    expect(tab.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['Start or restart', 'Exact transit', 'TA window (15 min)', 'Calibration run', 'Timed speed change', 'Pause', '10 % make-up count']));
+    const t = lessonText(l);
+    hasAll(t, ['1m49.3s', '7m21.3s', '16m02.0s', '25m17.8s', 'box cumulative', 'your lap', 'Late 4.3 s']);
+  });
+});

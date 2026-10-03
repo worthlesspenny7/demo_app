@@ -70,10 +70,10 @@ describe('PT-01 regressions', () => {
 });
 
 describe('generator wiring and golden transcript', () => {
-  it('CAL-003 generated stage calibration section: >= 3 intervals at 50 mph, >= 15 miles, perfect times filled', () => {
+  it('CAL-003 generated stage calibration section: 3-6 calibration points after the begin line (STAGE-006), at 50 mph, >= 15 miles, perfect times filled', () => {
     const sc = generateStage(4, PROFILES.fullStage!);
     const cal = sc.book.filter(i => i.section === 'calibration');
-    expect(cal.length).toBeGreaterThanOrEqual(4);
+    expect(cal.length).toBeGreaterThanOrEqual(4); expect(cal.length).toBeLessThanOrEqual(7);
     expect(cal.slice(0, -1).every(i => (i.speed ?? 50) === 50)).toBe(true);
     const s0 = sc.course.nodes.find(n => n.id === cal[0]!.nodeId)!.s, s1 = sc.course.nodes.find(n => n.id === cal[cal.length - 1]!.nodeId)!.s;
     expect(s1 - s0).toBeGreaterThanOrEqual(milesToFt(15));
@@ -108,12 +108,12 @@ describe('post-validation specs', () => {
     const early = new Simulator(mk()); startLikeOracle(early); stepUntil(early, () => early.car.s >= s - 600); early.act({ type: 'call.turn', dir: 'R' }); runToEnd(early);
     expect(early.events.some(e => e.type === 'turnMissed')).toBe(false); expect(early.offCourseCount).toBe(0);
   });
-  it('GEN-009/GEN-010 calibration restart, train caps and speed-limit text', () => {
+  it('GEN-009 (superseded by STAGE-006) / GEN-010 the calibration run is followed by a transit and a time-of-day restart, train caps and speed-limit text', () => {
     for (const seed of [1, 2, 3]) {
       const sc = generateStage(seed, PROFILES.fullStage!);
       const cal = sc.book.filter(i => i.section === 'calibration'); const last = cal[cal.length - 1]!;
-      const restart = sc.book.find(i => i.section === 'restart' && i.n > last.n && /RESTART at \d\d:\d\d:\d\d/.test(i.text))!;
-      expect(restart).toBeTruthy(); expect(restart.restartTime! % 60).toBe(0); expect(restart.n).toBe(last.n + 1);
+      const restart = sc.book.find(i => i.section === 'restart' && i.n > last.n)!;
+      expect(restart).toBeTruthy(); expect(restart.restartTime! % 60).toBe(0); expect(restart.n).toBeGreaterThan(last.n); expect(last.transit && !last.transit.end).toBe(true); expect(restart.transit?.end).toBe(true); expect(restart.baseTime).toBe(restart.restartTime);
       const trains = sc.hazards.filter(h => h.kind === 'train'); expect(trains.length).toBeLessThanOrEqual(2);
       expect((sc.tags ?? []).filter(t => /^train:\d+:hit$/.test(t)).length).toBeLessThanOrEqual(1);
       for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; const m = n.sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1]), `line ${ins.n}`).toBeGreaterThanOrEqual(ins.speed); }
@@ -174,13 +174,13 @@ describe('check-off honesty', () => {
     const mk = (route: 'turn' | 'S') => new ScenarioBuilder({ startTime: hms(8, 0, 0), driver: { ...DRIVER_EXPERT, inconsistency: 0 }, excursionFt: 1200, aids: aidsForRung(2) }).start(45).advanceMiles(0.6).instruction({ exits: EXITS.sideRoad('R', { route }), sightDistance: 700 }, { turn: route === 'turn' ? 'R' : 'S', speed: 35 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
     const texts = (sim: Simulator) => sim.events.filter(e => e.type === 'driver').map(e => String(e.detail?.text));
     // called in time and taken
-    const ok = new Simulator(mk('turn')); startLikeOracle(ok); const s = nodeS(ok.sc, 'n2'); stepUntil(ok, () => ok.car.s >= s - 600); ok.act({ type: 'call.turn', dir: 'R' }); runToEnd(ok);
+    const ok = new Simulator(mk('turn')); startLikeOracle(ok); const s = nodeS(ok.sc, 'n2'); stepUntil(ok, () => ok.car.s >= s - 600); ok.act({ type: 'call.turn', dir: 'R' }); stepUntil(ok, () => ok.car.s >= s + 5); ok.act({ type: 'call.speed', mph: 35 }); runToEnd(ok); // GRIID-006: the line is complete once its speed change is made
     expect(texts(ok).some(t => /Did the turn, line 2/.test(t))).toBe(true);
     // no call: the car goes straight (off route) and the driver must not claim the turn
     const none = new Simulator(mk('turn')); startLikeOracle(none); runToEnd(none);
     expect(texts(none).some(t => /Did the turn/.test(t))).toBe(false); expect(none.offCourseCount).toBeGreaterThanOrEqual(1);
     // a turn line whose route is actually straight-through ('S'): no call is fine, he just checks it off
-    const st = new Simulator(mk('S')); startLikeOracle(st); runToEnd(st);
+    const st = new Simulator(mk('S')); startLikeOracle(st); stepUntil(st, () => st.car.s >= nodeS(st.sc, 'n2') + 5); st.act({ type: 'call.speed', mph: 35 }); runToEnd(st);
     expect(texts(st).some(t => /Did that one, line 2/.test(t))).toBe(true); expect(st.offCourseCount).toBe(0);
   });
 });

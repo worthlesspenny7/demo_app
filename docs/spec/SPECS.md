@@ -73,7 +73,7 @@ SIM-005 Crossing an observation checkpoint without stopping within 200 ft sets o
 SIM-006 phase is 'preread' until act('start'); the preread timer is 30 min of sim time by default; act('start') before the official start time records an early departure but the leg anchor stays the official start time.
 SIM-007 step(dt) with dt = 0.1 is deterministic: two simulators with the same scenario and the same action script produce identical result() JSON.
 SIM-008 result() lists every checkpoint with actual TOD, perfect TOD, error seconds, ace flag, penalty, and totals raw and ageFactored.
-SIM-009 act('ta.declare', seconds) in a leg credits min(declared, measured qualifying delay) against that leg's error and flags over-declaration > 5 s.
+SIM-009 Time Allowance requests: act('ta.request', {legIndex, seconds, fromLine, toLine, note?}) files a request per leg at a TA point (TA-001..TA-003); act('ta.declare', seconds) is a deprecated alias for the current leg (superseded by TA-001/TA-002; books without a TA point keep the old anywhere-filing and the plain min(request, measured, lateness) credit). The credit flags an over-request > 10 s (was 5 s).
 SIM-010 act('line.set', n) is reflected in observe().currentLine and has no effect on the world.
 SIM-011 act('note', text) appends to observe().notes (the lapboard).
 SIM-012 act('speedo.setFactor', k) changes the Timewise reading immediately; it is rejected with an error for the mechanical speedo.
@@ -96,15 +96,15 @@ SIM-028 act('line.annotate', n, text) stores a per-line note (e.g. the dwell "7.
 
 ## SCORING
 SCORE-001 Leg error = round(actual_k) - (anchor_{k-1} + perfectLeg_k) with anchor_0 = official start time and anchor_k = actual_k (leg reset).
-SCORE-002 Penalty = |error| capped at rules.maxPerCp (default 300); a never-crossed CP scores the cap; > 30 min late scores the cap.
+SCORE-002 Penalty = |error| capped at rules.maxLate (120 s late) / rules.maxEarly (300 s early); a never-crossed CP scores rules.missedCheckpoint (180 s); > 30 min after the cumulative perfect time scores 180 s (superseded by REG-001).
 SCORE-003 Sight-zone violation adds rules.sightZonePenalty (default 30) once per CP.
-SCORE-004 Observation CP missed adds rules.observationMissPenalty (default 60).
-SCORE-005 Age factor: 1954+ = 1.000, 1939 = 0.845, 1953 = 0.915; years between known points interpolate linearly; a 40 s raw stage in a 1939 car scores 33.80.
+SCORE-004 Observation CP stop missed adds rules.observationMissPenalty (180 s; superseded by REG-005).
+SCORE-005 Age factor is the printed V.D table, not interpolated: 1954+ = 1.000, 1953 = 0.915, 1939 = 0.845; a 40 s raw stage in a 1939 car scores 33.80 (see REG-002).
 SCORE-006 Ace flag when error = 0; stage aces counted.
-SCORE-007 Early restart > 5 min before restartTime adds rules.earlyRestart penalty.
+SCORE-007 Leaving a promoted lunch/pit/rest stop > 5 min early adds 60 s the first time and 300 s the second (superseded by REG-005); a time-of-day restart left early only makes the leg early.
 SCORE-008 Campaign total = sum of stage scores; Trophy Run excluded from total by default (rules.trophyRunCounts = false) but used as tiebreak.
-SCORE-009 rules.rookieDropWorstLeg = true removes the worst leg per stage from the stage raw.
-SCORE-010 TA credit = min(declared, measured qualifying delay, max(rawError, 0)) rounded to rules.taGranularitySeconds (default 1; Q5): it never turns a late leg into an early one; over-declaration > 5 s sets taOverDeclared. [P2]
+SCORE-009 rules.rookieDropWorstLeg is removed; stage scores have no discards, only the championship does (superseded by REG-003).
+SCORE-010 TA credit = min(request, measured qualifying delay minus the 10 %-recoverable estimate), never turning a late leg early; over-request > 10 s sets taOverDeclared (superseded by TA-003).
 SCORE-011 Every stage result carries a benchmark label for the raw day score {champion <= 3, expert <= 13, sportsman <= 25, rookie <= 46, blown > 46} and the result card shows it next to the nearest bot's score on the same seed. [P2]
 
 ## PERF TABLE / CALIBRATION
@@ -114,7 +114,7 @@ PERF-003 dwellFor(pause, vIn, vOut) = pause - stopLoss and is floored at 0.
 PERF-004 rampLead(v1, v2) = ramp duration / 2 and, for |v2 - v1| <= 15 mph, a timed change called at T - rampLead has |position error| < 10 ft versus the ghost (simulated); the card prints the lead per from/to pair.
 CAL-001 k = sum(P)/sum(A); for P=[100,100,100], A=[103,103,103] k = 0.9709 (+-1e-4).
 CAL-002 indicatedToHold(35, k=0.9709) = 36.05 and cheatCard covers 20..50 step 5.
-CAL-003 The calibration section of a generated stage has >= 3 intervals at 50 mph and total length >= 15 miles.
+CAL-003 The calibration section of a generated stage has the begin line plus 3-6 calibration points, mostly 50 mph, and total length >= 15 miles (STAGE-006).
 CAL-004 Mechanical-speedo cheat card is built per assigned speed (20..50 step 5) in a pre-event drill with a true-speed reference (practice mode), and the morning calibration run shifts every card entry by the single day factor k; a card built by linear scaling from a 50-mph k alone is >= 0.5 mph wrong at 25 mph for the stock preset (the drill shows this). [P1]
 
 ## HAZARDS
@@ -197,9 +197,9 @@ DET-001 src/core/** contains no Math.random, Date.now, performance.now, window, 
 
 ## ADDED AFTER VALIDATION (2026-10-03)
 DRV-018 A 90-degree-or-sharper turn called so late that the car is still above 1.6x the turn speed at the node is refused ("Too late, I can't make that turn"), logged as turnMissed, and the driver continues straight-as-possible (off course if that is not the route); a bear or a turn called in time is taken. [P1]
-GEN-009 A generated stage's calibration run is a transit: an official restart line follows "END CALIBRATION" with restartTime rounded up to the minute 2-3 min after the ghost's arrival, the book text shows the restart clock time, and leg 1's clock starts at that restart. [P1]
+GEN-009 A generated stage's calibration run is followed by a transit and a time-of-day restart (superseded by STAGE-006; the old rounded-up-restart text is gone). [P1]
 GEN-010 Generated stages place at most 2 railroad crossings with trains and at most 1 that actually blocks; a "SPEED LIMIT NN" sign never posts a limit below the assigned speed. [P2]
-BOT-006 The oracle declares the measured qualifying delay as a Time Allowance once per leg, and times a compound STOP + timed line from the ghost's departure of its own node, never a stale earlier segment. [P2]
+BOT-006 The oracle files Time Allowance requests at the printed TA point (measured delay rounded down to 10 s, capped at the committee's possible credit) and acknowledges the scorecard; legacy books keep ta.declare once per leg; it times a compound STOP + timed line from the ghost's departure of its own node. [P2]
 RUB-001 Debrief headline: "Clean run" only when the mean |leg error| <= 3 s and the car never left the course; otherwise the headline names the largest cause whose sign matches the net error, and when stops (or another cause) lost time that cruise clawed back it says "lost N s in stops and recovered M s in cruise" instead of calling the recovery a wandering driver. [P1]
 RUB-002 Attribution after a restart release: the acceleration ramp from a lunch/calibration restart to the assigned speed is booked to the 'start' bucket, not 'cruise'. [P2]
 DRILL-018 D15 is its own scenario (about 40 lines, >= 8 pause lines, >= 2 timed lines, 10 min pre-read); its rubric ignores empty annotations, reads the first number in free text ("go at 7.3s"), and applies no turn cap to a straight-through STOP. [P1]
@@ -291,7 +291,7 @@ DRILL-026 D01 (stopwatch handling) and D07 (calibration) run on the digital pres
 
 ## BACKLOG
 # [P3] future specs from the design reviews; not required for v1 and ignored by spec-check.
-GHOST-011 rules.turnSpeedDatum: 'afterTurn' applies a turn-line speed at s + intersectionWidth, 'leadingEdge' at s; a 35->25 turn over 80 ft differs by 0.62 s between the two (Q3). [P3]
+GHOST-011 (superseded by GRIID-007; rules.turnSpeedDatum is not implemented) rules.turnSpeedDatum: 'afterTurn' applies a turn-line speed at s + intersectionWidth, 'leadingEdge' at s; a 35->25 turn over 80 ft differs by 0.62 s between the two (Q3). [P3]
 GHOST-012 Transit sections add no travel time and contain no CPs; the ghost time at the following restart line equals restartTime; a free zone keeps the assigned speed and contains no CPs. [P3]
 CAR-007 1939 preset acceleration includes shift dips at 12 and 30 mph of shiftDip seconds (0.8 default); 0-40 time exceeds the dip-free integral by 1.4-1.8 s. [P3]
 CAR-008 Course grade g(s) (hidden, +-6 %) adds -32.2*g to net acceleration; at 50 mph on +4 % the 1939 preset sags to 46-48 mph and the driver says "Can't hold 50". [P3]

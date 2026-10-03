@@ -17,48 +17,52 @@ describe('scoring', () => {
     const l2 = scoreLeg({ leg: leg(2, 300), record: rec('cp2', 28800 + 912), anchorActual: 28800 + 612, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES);
     expect(l2.error).toBe(0); expect(l2.ace).toBe(true);
   });
-  it('SCORE-002 cap and missed checkpoints', () => {
+  it('SCORE-002 per-leg caps (late 120 s, early 300 s) and missed checkpoints (180 s) replace the single 300 s cap; superseded by REG-001', () => {
     const big = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 600 + 1000), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES);
-    expect(big.penalty).toBe(300);
+    expect(big.penalty).toBe(120); expect(big.capped).toBe(true);
     const missed = scoreLeg({ leg: leg(1, 600), record: undefined, anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES);
-    expect(missed.penalty).toBe(300); expect(missed.extras.missed).toBe(true);
+    expect(missed.penalty).toBe(180); expect(missed.extras.missed).toBe(true);
     const late = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 600 + 31 * 60), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES);
-    expect(late.extras.missed).toBe(true); expect(late.penalty).toBe(300);
+    expect(late.extras.missed).toBe(true); expect(late.penalty).toBe(180);
   });
   it('SCORE-003 sight-zone violation adds 30', () => {
     const l = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 602, true), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES);
     expect(l.penalty).toBe(32); expect(l.extras.sightZone).toBe(30);
   });
-  it('SCORE-004 observation miss adds 60 to the stage', () => {
+  it('SCORE-004 observation miss adds 180 to the stage (REG-005)', () => {
     const legs: LegScore[] = [scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 603), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES)];
-    const st = scoreStage(legs, 1974, DEFAULT_RULES, { observationMissed: true, earlyRestartMinutes: 0 });
-    expect(st.raw).toBe(63);
+    const st = scoreStage(legs, 1974, DEFAULT_RULES, { observationMissed: true });
+    expect(st.raw).toBe(183); expect(st.observationPenalty).toBe(180);
   });
-  it('SCORE-005 age factor table and interpolation', () => {
+  it('SCORE-005 age factor is the printed table (REG-002) and a 40 s raw stage in a 1939 car scores 33.80', () => {
     expect(ageFactor(1954)).toBe(1); expect(ageFactor(1970)).toBe(1); expect(ageFactor(1939)).toBe(0.845); expect(ageFactor(1953)).toBe(0.915);
-    expect(ageFactor(1946)).toBeGreaterThan(0.85); expect(ageFactor(1946)).toBeLessThan(0.915);
+    expect(ageFactor(1946)).toBe(0.88);
     const legs: LegScore[] = [scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES)];
-    expect(scoreStage(legs, 1939, DEFAULT_RULES, { observationMissed: false, earlyRestartMinutes: 0 }).score).toBe(33.8);
+    expect(scoreStage(legs, 1939, DEFAULT_RULES, { observationMissed: false }).score).toBe(33.8);
   });
   it('SCORE-006 aces counted', () => {
     const legs: LegScore[] = [1, 2, 3].map(i => scoreLeg({ leg: leg(i, 600), record: rec(`cp${i}`, 28800 + 600 + (i === 2 ? 4 : 0)), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES));
-    expect(scoreStage(legs, 1939, DEFAULT_RULES, { observationMissed: false, earlyRestartMinutes: 0 }).aces).toBe(2);
+    expect(scoreStage(legs, 1939, DEFAULT_RULES, { observationMissed: false }).aces).toBe(2);
   });
-  it('SCORE-007 early restart penalty', () => {
-    const st = scoreStage([], 1939, DEFAULT_RULES, { observationMissed: false, earlyRestartMinutes: 6 });
-    expect(st.earlyRestartPenalty).toBe(60);
-    expect(scoreStage([], 1939, DEFAULT_RULES, { observationMissed: false, earlyRestartMinutes: 4 }).earlyRestartPenalty).toBe(0);
+  it('SCORE-007 leaving a promoted stop > 5 min early is 60 s the first time and 300 s the second (REG-005); a time-of-day restart left early only makes the leg early', () => {
+    const st = scoreStage([], 1939, DEFAULT_RULES, { observationMissed: false, earlyDepartureMinutes: [6] });
+    expect(st.earlyRestartPenalty).toBe(60); expect(st.earlyDeparturePenalty).toBe(60);
+    expect(scoreStage([], 1939, DEFAULT_RULES, { observationMissed: false, earlyDepartureMinutes: [4] }).earlyRestartPenalty).toBe(0);
+    expect(scoreStage([], 1939, DEFAULT_RULES, { observationMissed: false, earlyDepartureMinutes: [6, 9] }).earlyDeparturePenalty).toBe(360);
   });
   it('SCORE-008 trophy run excluded by default (rules flag)', () => { expect(DEFAULT_RULES.trophyRunCounts).toBe(false); });
-  it('SCORE-009 rookie drop worst leg', () => {
+  it('SCORE-009 rules.rookieDropWorstLeg is gone: stage scores have no discards, only the championship does (REG-003)', () => {
+    expect('rookieDropWorstLeg' in DEFAULT_RULES).toBe(false);
     const legs: LegScore[] = [5, 40, 7].map((e, i) => scoreLeg({ leg: leg(i + 1, 600), record: rec(`cp${i + 1}`, 28800 + 600 + e), anchorActual: 28800, taDeclared: 0, taQualifying: 0 }, DEFAULT_RULES));
-    expect(scoreStage(legs, 1974, { ...DEFAULT_RULES, rookieDropWorstLeg: true }, { observationMissed: false, earlyRestartMinutes: 0 }).raw).toBe(12);
+    expect(scoreStage(legs, 1974, DEFAULT_RULES, { observationMissed: false }).raw).toBe(52);
   });
-  it('SIM-009 time allowance credit = min(declared, qualifying) and over-declaration flagged', () => {
+  it('SIM-009 time allowance credit = min(request, measured delay) with over-request flagged beyond 10 s (see TA-003 and SCORE-010)', () => {
     const l = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 50, taQualifying: 35 }, DEFAULT_RULES);
     expect(l.taCredit).toBe(35); expect(l.error).toBe(5); expect(l.taOverDeclared).toBe(true);
     const ok = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 30, taQualifying: 35 }, DEFAULT_RULES);
     expect(ok.taCredit).toBe(30); expect(ok.taOverDeclared).toBe(false);
+    const edge = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 45, taQualifying: 35 }, DEFAULT_RULES);
+    expect(edge.taOverDeclared).toBe(false); // 10 s tolerance
   });
 });
 

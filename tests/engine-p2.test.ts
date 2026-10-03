@@ -108,16 +108,18 @@ describe('driver cues and semantics', () => {
     sim.act({ type: 'call.stop' }); stepUntil(sim, () => sim.waitingForGo, 200); expect(sim.waitReason).toBe('hold'); expect(sim.car.v).toBe(0);
     sim.act({ type: 'call.go' }); sim.step(2); expect(sim.car.v).toBeGreaterThan(0);
   });
-  it('DRV-017 check-off names the executed line and observe carries lastExecutedLine', () => {
-    const sim = new Simulator(stopSc()); startLikeOracle(sim); stepUntil(sim, () => sim.waitingForGo, 300); sim.act({ type: 'call.go' }); sim.step(3);
+  it('DRV-017 GRIID-006 check-off names the executed line and observe carries lastExecutedLine', () => {
+    const sim = new Simulator(stopSc()); startLikeOracle(sim); stepUntil(sim, () => sim.waitingForGo, 300); sim.act({ type: 'call.speed', mph: 40 }); sim.act({ type: 'call.go' }); sim.step(3);
+    expect(sim.observe().driver.lastExecutedLine).not.toBe(2); // GRIID-006: the instruction is not complete until the speed change is made
+    stepUntil(sim, () => sim.observe({ peek: true }).driver.lastExecutedLine === 2, 60);
     const o = sim.observe(); expect(o.driver.lastExecutedLine).toBe(2);
     expect(sim.events.some(e => e.type === 'driver' && /line 2/.test(String(e.detail?.text)))).toBe(true);
-    const legal = new Simulator({ ...stopSc(), aids: LEGAL_AIDS }); startLikeOracle(legal); stepUntil(legal, () => legal.waitingForGo, 300); legal.act({ type: 'call.go' }); legal.step(3);
+    const legal = new Simulator({ ...stopSc(), aids: LEGAL_AIDS }); startLikeOracle(legal); stepUntil(legal, () => legal.waitingForGo, 300); legal.act({ type: 'call.speed', mph: 40 }); legal.act({ type: 'call.go' }); legal.step(30);
     expect(legal.observe().driver.lastExecutedLine).toBeNull();
   });
   it('WATCH-006 digital lap freezes the display until recall; two laps store two splits', () => {
     const w = new Stopwatch('digital'); w.start(0); w.lap(10); expect(w.reading(15)).toBeCloseTo(10, 6); w.lap(20); expect(w.laps.length).toBe(2); expect(w.reading(25)).toBeCloseTo(20, 6);
-    w.recall(); expect(w.reading(25)).toBeCloseTo(25, 6); expect(w.reset(25)).toBe(true);
+    w.recall(); expect(w.reading(25)).toBeCloseTo(25, 6); expect(w.reset(25)).toBe(false); expect(w.reset(25, true)).toBe(true); // WATCH-008: reset only while stopped unless forced
     const a = new Stopwatch('analog'); a.start(0); a.lap(10); expect(a.reading(15)).toBeCloseTo(15, 6);
   });
 });
@@ -193,7 +195,7 @@ describe('simulator rules', () => {
     const sc = new ScenarioBuilder({ startTime: T0, driver: quiet }).start(35).advanceMiles(1).checkpoint().advanceFt(300).finish().build();
     const a = new Simulator(sc); a.act({ type: 'start' }); a.act({ type: 'call.stop' }); // stops at the finish? no: holds at next node (the finish) - instead never go: use speed 0
     a.act({ type: 'call.speed', mph: 0 }); a.step(40 * 60); expect(a.phase).toBe('finished'); expect(a.result().score.legs[0]!.extras.missed).toBe(true);
-    const b = new Simulator(sc); b.act({ type: 'start' }); b.step(10); b.act({ type: 'abort' }); expect(b.phase).toBe('finished'); expect(b.result().score.legs[0]!.penalty).toBe(DEFAULT_RULES.maxPerCp);
+    const b = new Simulator(sc); b.act({ type: 'start' }); b.step(10); b.act({ type: 'abort' }); expect(b.phase).toBe('finished'); expect(b.result().score.legs[0]!.penalty).toBe(DEFAULT_RULES.missedCheckpoint); expect(b.result().dnf).toBe(true);
   });
   it('SIM-022 actions are recorded with ticks and replay reproduces the identical result', () => {
     const sc = compound(); const sim = new Simulator(sc); const r1 = runBot(sim, new OracleBot(sim));
@@ -242,12 +244,15 @@ describe('simulator rules', () => {
 });
 
 describe('scoring and hazards extras', () => {
-  it('SCORE-010 TA never turns a late leg early and rounds to granularity', () => {
+  it('SCORE-010 TA credit = min(request, measured delay minus the 10 %-recoverable estimate) and never turns a late leg early', () => {
     const leg = { index: 1, cpId: 'cp1', cpS: 1000, perfectTod: T0 + 600, perfectDuration: 600, anchor: { kind: 'official' as const, tod: T0 } };
     const l = scoreLeg({ leg, record: { cpId: 'cp1', kind: 'timing', actualTod: T0 + 610, rawTod: T0 + 610, sightViolation: false }, anchorActual: T0, taDeclared: 40, taQualifying: 40 }, DEFAULT_RULES);
     expect(l.taCredit).toBe(10); expect(l.error).toBe(0);
     const early = scoreLeg({ leg, record: { cpId: 'cp1', kind: 'timing', actualTod: T0 + 595, rawTod: T0 + 595, sightViolation: false }, anchorActual: T0, taDeclared: 10, taQualifying: 10 }, DEFAULT_RULES);
     expect(early.taCredit).toBe(0); expect(early.error).toBe(-5);
+    // the committee deducts what could have been made up: 60 s delay, 25 s recoverable, 60 s requested -> 35 s credited, 25 s over-requested is flagged
+    const late = scoreLeg({ leg, record: { cpId: 'cp1', kind: 'timing', actualTod: T0 + 660, rawTod: T0 + 660, sightViolation: false }, anchorActual: T0, taDeclared: 60, taQualifying: 60, taRecoverable: 25 }, DEFAULT_RULES);
+    expect(late.taCredit).toBe(35); expect(late.error).toBe(25); expect(late.taOverDeclared).toBe(true); expect(late.taReason).toMatch(/could have been made up/);
   });
   it('SCORE-011 benchmark labels', () => {
     expect(benchmarkLabel(2)).toBe('champion'); expect(benchmarkLabel(13)).toBe('expert'); expect(benchmarkLabel(20)).toBe('sportsman'); expect(benchmarkLabel(46)).toBe('rookie'); expect(benchmarkLabel(47)).toBe('blown');

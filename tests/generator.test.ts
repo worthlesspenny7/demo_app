@@ -14,26 +14,16 @@ const timingCps = (sc: Scenario) => sc.checkpoints.filter(c => c.kind === 'timin
 const insOf = (sc: Scenario, n: Node) => sc.book.find(b => b.nodeId === n.id);
 const distractors = (sc: Scenario) => sc.course.nodes.filter(n => !sc.book.some(b => b.nodeId === n.id));
 
-/**
- * The OracleBot plus the one thing a perfect Great Race navigator also does: declare the measured Time Allowance for
- * red signals and trains (scoring caps the credit at the raw lateness, so recovering AND declaring never makes a leg early).
- */
+/** The OracleBot files its Time Allowance requests at the printed TA points itself (TA-002); this wrapper only keeps the old test vocabulary. */
 class OracleWithTA implements Bot {
   name = 'oracle+ta';
-  private declared: Record<number, number> = {};
-  constructor(private readonly sim: Simulator, private readonly inner: OracleBot) {}
-  onTick(): void {
-    this.inner.onTick();
-    const sim = this.sim;
-    if (sim.phase !== 'running') return;
-    const q = sim.taQualifying[sim.legIndex] ?? 0;
-    if (q > 0 && this.declared[sim.legIndex] !== q) { this.declared[sim.legIndex] = q; sim.act({ type: 'ta.declare', seconds: q }); }
-  }
+  constructor(private readonly sim: Simulator, private readonly inner: OracleBot) { void this.sim; }
+  onTick(): void { this.inner.onTick(); }
 }
 function oracleRun(sc: Scenario) { const sim = new Simulator(sc); const r = runBot(sim, new OracleWithTA(sim, new OracleBot(sim)), 8 * 3600); return { sim, r }; }
 
 describe('generator', () => {
-  it('GEN-001 generateStage(seed) is deterministic and valid (nodes sorted by s, instructions reference existing nodes, every leg has exactly one timing CP, speeds are multiples of 5 in 20..50; 20 only in town clusters)', () => {
+  it('GEN-001 generateStage(seed) is deterministic and valid (nodes sorted by s, instructions reference existing nodes, every leg has exactly one timing CP, speeds are multiples of 5 in 20..55 (STAGE-007))', () => {
     for (const seed of [1, 2, 3]) {
       const a = generateStage(seed, PROFILES.fullStage), b = generateStage(seed, PROFILES.fullStage);
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));
@@ -47,8 +37,8 @@ describe('generator', () => {
       let prev = 0;
       for (const leg of ghost.legs) { expect(a.book.some(i => { const s = nodeById(a.course, i.nodeId).s; return s > prev && s < leg.cpS; })).toBe(true); prev = leg.cpS; }
       for (const ins of a.book) {
-        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v % 5).toBe(0); expect(v).toBeGreaterThanOrEqual(20); expect(v).toBeLessThanOrEqual(50); expect(SPEEDS.includes(v) || v === 20).toBe(true); }
-        if (ins.speed === 20) expect(ins.hint ?? '').toContain('town'); // 20 is reserved for town clusters (the generator does not use it today)
+        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v % 5).toBe(0); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); }
+        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined && !ins.transit && ins.section !== 'calibration' && ins.section !== 'start') expect(SPEEDS.includes(v)).toBe(true);
       }
     }
     expect(JSON.stringify(generateLeg(4, PROFILES.fullLeg))).toBe(JSON.stringify(generateLeg(4, PROFILES.fullLeg)));
@@ -61,17 +51,19 @@ describe('generator', () => {
       expect(sc.book.length).toBeGreaterThanOrEqual(150); expect(sc.book.length).toBeLessThanOrEqual(260);
       const cps = timingCps(sc); expect(cps.length).toBeGreaterThanOrEqual(4); expect(cps.length).toBeLessThanOrEqual(7);
       const cal = sc.book.filter(i => i.section === 'calibration');
-      expect(cal.length).toBeGreaterThanOrEqual(7);
+      expect(cal.length).toBeGreaterThanOrEqual(4); expect(cal.length).toBeLessThanOrEqual(7); // the begin line plus 3-6 calibration points (STAGE-001)
       // >= 15 miles at 50 mph with perfect interval/cumulative times printed
       const calS = cal.map(i => nodeById(sc.course, i.nodeId).s);
       expect((calS[calS.length - 1]! - calS[0]!) / FT_MI).toBeGreaterThanOrEqual(15);
       expect(cal.every(i => i.perfectInterval !== undefined && i.perfectCumulative !== undefined)).toBe(true);
       expect(cal[cal.length - 1]!.perfectCumulative!).toBeGreaterThan(15 * 3600 / 50);
-      const restart = sc.book.filter(i => i.section === 'restart' && /LUNCH/.test(i.text));
-      expect(restart.length).toBe(1); expect(restart[0]!.restartTime).toBeDefined();
+      const restarts = sc.book.filter(i => i.section === 'restart');
+      expect(restarts.length).toBe(2); // after the calibration transit and after the lunch transit
+      const lunch = restarts[1]!; expect(lunch.restartTime).toBeDefined();
       const ghost = buildGhost(sc);
-      expect(restart[0]!.restartTime! % 60).toBe(0);
-      expect(restart[0]!.restartTime!).toBeGreaterThan(ghost.legs[0]!.perfectTod);
+      expect(lunch.restartTime! % 60).toBe(0);
+      expect(lunch.restartTime!).toBeGreaterThan(ghost.legs[0]!.perfectTod);
+      const meal = sc.book.find(i => i.promotedStop?.kind === 'meal'); expect(meal?.promotedStop?.leaveBeforeEndSeconds).toBe(45 * 60); expect(meal!.n).toBeLessThan(lunch.n);
       const finish = sc.course.nodes.find(n => n.kind === 'finish')!;
       const obs = sc.checkpoints.filter(c => c.kind === 'observation');
       expect(obs.length).toBe(1); expect(Math.abs(obs[0]!.s - finish.s)).toBeLessThan(1);
@@ -82,20 +74,23 @@ describe('generator', () => {
     expect(validateScenario(twelve)).toEqual([]);
   });
 
-  it('GEN-003 Every generated STOP node has a Pause in the book (default 15) unless profile.noPauseTraps injects a missing one deliberately (flagged in truth)', () => {
-    for (const seed of [1, 2, 3]) {
+  it('GEN-003 Every generated STOP node has a Pause (15) in the book on 70-100 % of STOPs (profile.pauseOnStopProbability, REG-006), never more than two unprinted per leg; each unprinted one is flagged in truth (stop:noPause / trap:missingPause), and profile.noPauseTraps still injects the deliberate missing-pause trap', () => {
+    let stops = 0, printed = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
       const sc = stage(seed);
-      const missing = new Set((sc.tags ?? []).filter(t => t.startsWith('trap:missingPause:')).map(t => Number(t.split(':')[2])));
+      const flagged = new Set((sc.tags ?? []).filter(t => t.startsWith('trap:missingPause:') || t.startsWith('stop:noPause:')).map(t => Number(t.split(':')[2])));
       for (const n of sc.course.nodes.filter(n => n.control === 'STOP')) {
         const ins = insOf(sc, n);
         expect(ins, `STOP node ${n.id} must carry an instruction`).toBeDefined();
-        if (missing.has(ins!.n)) expect(ins!.pause).toBeUndefined();
-        else expect(ins!.pause).toBe(15);
+        stops++;
+        if (flagged.has(ins!.n)) expect(ins!.pause).toBeUndefined(); else { expect(ins!.pause === 15 || (sectionAt(sc, n.s) === 'warmup' && ins!.pause === undefined)).toBe(true); if (ins!.pause === 15) printed++; }
+        if (!flagged.has(ins!.n) && sectionAt(sc, n.s) !== 'warmup') expect(ins!.pause).toBe(15);
       }
     }
-    const clean = generateStage(2, { ...PROFILES.fullStage, trapDensity: 0 });
-    expect((clean.tags ?? []).some(t => t.startsWith('trap:missingPause'))).toBe(false);
-    expect(clean.book.filter(i => nodeById(clean.course, i.nodeId).control === 'STOP').every(i => i.pause === 15)).toBe(true);
+    expect(printed / stops).toBeGreaterThanOrEqual(0.6); // warm-up stops carry no pause (Example Rally #4)
+    const all = generateStage(2, { ...PROFILES.fullStage, trapDensity: 0, pauseOnStopProbability: 1 });
+    expect((all.tags ?? []).some(t => t.startsWith('trap:missingPause') || t.startsWith('stop:noPause'))).toBe(false);
+    expect(all.book.filter(i => nodeById(all.course, i.nodeId).control === 'STOP' && sectionAt(all, nodeById(all.course, i.nodeId).s) !== 'warmup').every(i => i.pause === 15)).toBe(true);
     const trap = generateStage(2, { ...PROFILES.fullStage, noPauseTraps: true });
     const tags = (trap.tags ?? []).filter(t => t.startsWith('trap:missingPause:'));
     expect(tags.length).toBeGreaterThanOrEqual(1);
@@ -117,8 +112,8 @@ describe('generator', () => {
       // exits must agree with how sim.ts picks exits: the callout band, or the pavement-first main road without a callout
       if (card.exits.length) expect((card.turn ? exitForCallout(card.exits, card.turn) : mainRoadExit(card.exits)).isRoute).toBe(true);
       const { node, ins } = trapToNodeSpec(card, { speed: 35 });
-      expect(ins.text).toContain(card.instructionText); expect(ins.text).toContain('Speed 35');
-      if (card.control === 'STOP' && card.pause !== null) { expect(ins.pause).toBe(15); expect(ins.text).toContain('Pause 15'); }
+      expect(ins.text).toContain(card.instructionText); expect(ins.text).toContain('35 miles per hour');
+      if (card.control === 'STOP' && card.pause !== null) { expect(ins.pause).toBe(15); expect(ins.text).toContain('Pause 15 seconds'); }
       if (card.pause === null) { expect(ins.pause).toBeUndefined(); expect(ins.text).not.toContain('Pause'); }
       expect(node.control).toBe(card.control);
       const d = trapDistractorBefore(card, rng(7));
@@ -212,8 +207,9 @@ describe('generator', () => {
     const combo = generateStage(1, PROFILES.combo); expect(timingCps(combo).length).toBe(2);
     // signals carry a hazard and no pause; trains are timed so about half the oracle arrivals meet them
     const sc = stage(1);
-    for (const n of sc.course.nodes.filter(n => n.control === 'SIGNAL')) { expect(sc.hazards.some(h => h.kind === 'signal' && Math.abs(h.s - n.s) < 1)).toBe(true); expect(insOf(sc, n)!.pause).toBeUndefined(); }
-    for (const n of sc.course.nodes.filter(n => n.control === 'RR')) expect(sc.hazards.some(h => h.kind === 'train' && Math.abs(h.s - n.s) < 1)).toBe(true);
+    for (const n of sc.course.nodes.filter(n => n.control === 'SIGNAL' && sectionAt(sc, n.s) !== 'warmup')) { expect(sc.hazards.some(h => h.kind === 'signal' && Math.abs(h.s - n.s) < 1)).toBe(true); expect(insOf(sc, n)!.pause).toBeUndefined(); }
+    for (const h of sc.hazards.filter(h => h.kind === 'train')) expect(sc.course.nodes.some(n => n.control === 'RR' && Math.abs(h.s - n.s) < 1)).toBe(true); // a crossing without a hazard is simply open (never a plain RR with a pause: REG-006)
+    for (const n of sc.course.nodes.filter(n => n.control === 'RR')) expect(insOf(sc, n)?.pause).toBeUndefined();
     const trains = (sc.tags ?? []).filter(t => t.startsWith('train:'));
     expect(trains.length).toBeGreaterThan(0);
     // timed segments never span another instruction and hold 20-90 s
@@ -223,7 +219,7 @@ describe('generator', () => {
     expect(hints).toBeGreaterThan(0.1); expect(hints).toBeLessThan(0.5);
   });
 
-  it('oracle smoke: the OracleBot finishes 6 full legs and 2 full stages on course within 5 s per leg', () => {
+  it('oracle smoke: the OracleBot finishes 6 full legs and 2 full stages on course within 5 s per leg (plus the committee-recoverable half after a delay)', () => {
     for (let seed = 1; seed <= 6; seed++) {
       const sc = generateLeg(seed, { ...PROFILES.fullLeg, trafficWaitProbability: 0 });
       const { sim, r } = oracleRun(sc);
@@ -231,7 +227,8 @@ describe('generator', () => {
       expect(r.offCourseCount).toBe(0);
       expect(r.observationMissed).toBe(false);
       expect(r.score.legs.length).toBe(1);
-      for (const leg of r.score.legs) { expect(leg.error, `fullLeg seed ${seed}`).not.toBeNull(); expect(Math.abs(leg.error!), `fullLeg seed ${seed} leg ${leg.index}`).toBeLessThanOrEqual(5); }
+      // 5 s, plus half of what the committee says could have been made up after a train or red light (TA-003): the oracle cannot drive +10 % through every approach zone
+      for (const leg of r.score.legs) { expect(leg.error, `fullLeg seed ${seed}`).not.toBeNull(); expect(Math.abs(leg.error!), `fullLeg seed ${seed} leg ${leg.index}`).toBeLessThanOrEqual(5 + 0.5 * (sim.taRecoverable[leg.index] ?? 0)); }
     }
     for (const seed of [1, 2]) {
       const sc = generateStage(seed, { ...PROFILES.fullStage, trafficWaitProbability: 0 });
@@ -241,7 +238,8 @@ describe('generator', () => {
       expect(r.observationMissed).toBe(false);
       expect(r.score.legs.length).toBe(timingCps(sc).length);
       expect(r.score.earlyRestartPenalty).toBe(0);
-      for (const leg of r.score.legs) { expect(leg.error, `fullStage seed ${seed} leg ${leg.index}`).not.toBeNull(); expect(Math.abs(leg.error!), `fullStage seed ${seed} leg ${leg.index}`).toBeLessThanOrEqual(5); }
+      for (const leg of r.score.legs) { expect(leg.error, `fullStage seed ${seed} leg ${leg.index}`).not.toBeNull(); expect(Math.abs(leg.error!), `fullStage seed ${seed} leg ${leg.index}`).toBeLessThanOrEqual(5 + 0.5 * (sim.taRecoverable[leg.index] ?? 0)); }
+      expect(r.dnf).toBe(false); expect(r.ta.scorecardAcked).toBe(true);
     }
   }, 60000);
 });

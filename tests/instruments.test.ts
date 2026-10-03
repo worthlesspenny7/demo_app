@@ -53,7 +53,8 @@ describe('stopwatch and clock', () => {
   it('WATCH-002 lap keeps running; analog resets only when stopped', () => {
     const w = new Stopwatch('analog'); w.start(0); expect(w.lap(12.3)).toBeCloseTo(12.3); expect(w.running).toBe(true);
     expect(w.reset(13)).toBe(false); w.stop(13); expect(w.reset(13)).toBe(true); expect(w.elapsed(20)).toBe(0); expect(w.laps).toEqual([]);
-    const d = new Stopwatch('digital'); d.start(0); expect(d.reset(5)).toBe(true);
+    const d = new Stopwatch('digital'); d.start(0); expect(d.reset(5)).toBe(false); expect(d.reset(5, true)).toBe(true); // WATCH-008: forced; stopped resets are free
+    d.start(6); d.stop(7); expect(d.reset(8)).toBe(true);
   });
   it('WATCH-003 reading quantization', () => {
     const a = new Stopwatch('analog'); a.start(0); expect(a.reading(12.33)).toBeCloseTo(12.4, 9);

@@ -1,7 +1,7 @@
 /** Scripted navigators used for playtesting and validation. DESIGN §15. They may read TRUTH. */
 import { Simulator, type Action } from '../core/sim.js';
 import type { Scenario, Instruction, TurnDir } from '../core/course.js';
-import { nodeById } from '../core/course.js';
+import { nodeById, instructionS } from '../core/course.js';
 import { accelLoss, stopLoss, rampLead } from '../core/perf-table.js';
 import { mphToFps } from '../core/units.js';
 import { rng, type Rng } from '../core/rng.js';
@@ -10,19 +10,27 @@ export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'goCount' |
 
 export interface Bot { name: string; onTick(sim: Simulator): void }
 
-interface Plan { ins: Instruction; s: number; vIn: number; vOut: number; turnCalled: boolean; speedCalled: boolean; stopHandled: boolean; crossedTod: number | null }
+interface Plan { ins: Instruction; s: number; vIn: number; vOut: number; turnCalled: boolean; speedCalled: boolean; stopHandled: boolean; crossedTod: number | null; /** speed to drive through a transit begun on this line */ transitMph: number | null }
 
-/** Assigned speed in force just before each instruction (from the book). */
+/** Speed that covers a transit's approximate miles in its allowed time, rounded UP to a multiple of 5 so the car arrives early and waits (HB p.11). */
+function transitSpeedFor(ins: Instruction): number | null {
+  const t = ins.transit; if (!t || t.end || !t.miles || t.seconds <= 0) return null;
+  return Math.min(55, Math.max(15, Math.ceil(t.miles / (t.seconds / 3600) / 5) * 5));
+}
+
+/** Assigned speed in force just before each instruction (from the book); a transit's pace stands in for the assigned speed. */
 function planBook(sc: Scenario): Plan[] {
   let v = 0; const out: Plan[] = [];
   for (const ins of sc.book) {
     const vIn = v;
-    const vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? v;
-    out.push({ ins, s: nodeById(sc.course, ins.nodeId).s, vIn, vOut, turnCalled: false, speedCalled: false, stopHandled: false, crossedTod: null });
+    const tm = ins.speed === undefined && !ins.timed ? transitSpeedFor(ins) : null;
+    const vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? tm ?? v;
+    out.push({ ins, s: instructionS(sc.course, ins), vIn, vOut, turnCalled: false, speedCalled: false, stopHandled: false, crossedTod: null, transitMph: tm });
     v = ins.timed ? ins.timed.thenSpeed : vOut;
   }
   return out;
 }
+const isHoldIns = (ins: Instruction): boolean => (ins.section === 'restart' && ins.restartTime !== undefined) || !!(ins.transit?.end && ins.transit.exact && ins.restartTime === undefined) || !!ins.promotedStop;
 
 export interface OracleOptions {
   /** Add this latency (s) to every callout. */
@@ -61,9 +69,12 @@ export class OracleBot implements Bot {
     const sim = this.sim; const sc = sim.sc; const car = sim.car;
     this.flush();
     if (sim.phase === 'preread') {
-      const v0 = sc.book[0]!.speed ?? 30;
+      const v0 = sc.book[0]!.speed ?? this.plans[0]!.transitMph ?? 30;
       const lead = this.o.ignoreLosses ? 0 : accelLoss(v0, sc.car);
-      if (!this.departed && sim.tod >= sc.startTime - lead - 1e-6) { this.departed = true; sim.act({ type: 'start' }); if (this.o.useWatch) sim.act({ type: 'watch.start' }); }
+      if (!this.departed && sim.tod >= sc.startTime - lead - 1e-6) {
+        this.departed = true; sim.act({ type: 'start' }); if (this.o.useWatch) sim.act({ type: 'watch.start' });
+        if (sc.book[0]!.speed === undefined && this.plans[0]!.transitMph !== null) this.act({ type: 'call.speed', mph: this.plans[0]!.transitMph });
+      }
       return;
     }
     if (sim.phase !== 'running') return;
@@ -75,7 +86,7 @@ export class OracleBot implements Bot {
       if (d < -100) continue; // already passed: nothing below applies (keeps a 250-line stage O(active lines) per tick)
       if (d > 900) break;
       const node = nodeById(sc.course, p.ins.nodeId);
-      const isStop = node.control === 'STOP' || p.ins.section === 'restart' || (p.ins.section === 'finish');
+      const isStop = node.control === 'STOP' || isHoldIns(p.ins) || (p.ins.section === 'finish');
       // turn callout
       if (p.ins.turn && !p.turnCalled && d <= 600) {
         // do not arm while an intervening real-road exit would match the callout (the driver would take it)
@@ -91,6 +102,8 @@ export class OracleBot implements Bot {
         const dLead = mphToFps(p.vIn) * lead;
         if (d <= dLead + 1) { p.speedCalled = true; this.act({ type: 'call.speed', mph: p.ins.speed }); }
       }
+      // a transit has no assigned speed: drive its pace (rounded up) so the car arrives early and waits
+      if (p.transitMph !== null && !p.speedCalled && d <= 0 && sim.targetIndicated !== p.transitMph) { p.speedCalled = true; this.act({ type: 'call.speed', mph: p.transitMph }); }
       // timed segment anchor: arm when crossing
       if (p.ins.timed && !p.speedCalled && d <= 0) {
         p.speedCalled = true;
@@ -106,9 +119,11 @@ export class OracleBot implements Bot {
           if (out !== (sim.targetIndicated ?? -1)) this.act({ type: 'call.speed', mph: out });
           if (this.o.useWatch) sim.act({ type: 'watch.lap' });
         }
-        if (p.ins.section === 'restart' && p.ins.restartTime !== undefined) {
-          const lead = this.o.ignoreLosses ? 0 : accelLoss(p.vOut, sc.car);
-          if (sim.tod >= p.ins.restartTime - lead) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); }
+        if (isHoldIns(p.ins)) {
+          // restart: leave at the time-of-day; exact transit: at IN + interval; promoted stop: at the scheduled departure (never 5 minutes early)
+          const goTod = sim.holdGoTod(node);
+          const lead = this.o.ignoreLosses || p.ins.promotedStop ? 0 : accelLoss(p.vOut, sc.car);
+          if (goTod === null || sim.tod >= goTod - lead) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); }
         } else if (sim.waitReason === 'stop' || sim.waitReason === 'hold') {
           const pause = p.ins.pause ?? 0;
           const turnAng = p.ins.turn ? turnAngle(p.ins.turn) : 0;
@@ -134,12 +149,27 @@ export class OracleBot implements Bot {
     this.declareTA();
   }
 
-  /** Declare the measured qualifying delay once per leg (a real navigator hands in the TA form). */
+  /**
+   * Time Allowance (TA-001/TA-002): a real navigator files at the printed TA point, one request per delayed leg, in multiples of 10 s:
+   * the measured delay rounded down to 10 s, never more than what the committee can credit (measured minus what could be made up, rounded up).
+   * Books without a TA point (legacy drills) use the deprecated ta.declare once per leg.
+   */
   private taDone = new Set<number>();
   private declareTA(): void {
     if (this.o.ignoreLosses) return;
-    const sim = this.sim; const leg = sim.legIndex; const q = sim.taQualifying[leg] ?? 0;
-    if (q > 0 && !this.taDone.has(leg) && !sim.waitingForGo) { this.taDone.add(leg); this.act({ type: 'ta.declare', seconds: Math.round(q), legIndex: leg }); }
+    const sim = this.sim; const st = sim.taState();
+    if (st.hasTaPoints) {
+      if (!st.windowOpen) return;
+      for (const leg of st.eligibleLegs) {
+        if (this.taDone.has(leg)) continue; this.taDone.add(leg);
+        const adv = sim.taAdvice(leg); const amount = Math.min(Math.floor(adv.measuredDelay / 10) * 10, Math.ceil(adv.possible / 10) * 10);
+        if (amount > 0) this.act({ type: 'ta.request', legIndex: leg, seconds: amount, fromLine: adv.fromLine ?? 1, toLine: adv.toLine ?? adv.fromLine ?? 1, note: `Delayed ${Math.round(adv.measuredDelay)} s by a train or accident scene. Made up ${Math.round(adv.recoverable)} s.` });
+      }
+      if (st.endOfStage && !sim.scorecardAcked) this.act({ type: 'scorecard.ack' });
+      return;
+    }
+    const leg = sim.legIndex; const adv = sim.taAdvice(leg);
+    if (adv.measuredDelay > 0 && !this.taDone.has(leg) && !sim.waitingForGo) { this.taDone.add(leg); this.act({ type: 'ta.declare', seconds: Math.round(adv.possible), legIndex: leg }); }
   }
 
   /** Make up or burn off accumulated error in open cruise (uses truth pace; the "perfect navigator"). */
@@ -148,18 +178,27 @@ export class OracleBot implements Bot {
     if (this.o.ignoreLosses || this.o.forgetPauses || this.o.noRecovery) return;
     const sim = this.sim; const car = sim.car;
     if (sim.waitingForGo || this.timedPending && !this.timedPending.called) return;
+    // no pace chasing inside the warm-up / calibration / transit part of the stage: nothing there is timed against the ghost
+    let inTransit = false;
+    for (const p of this.plans) { if (p.s > car.s) break; if ((p.ins.transit && !p.ins.transit.end) || p.ins.section === 'start' && p.ins.transit) inTransit = true; else if (p.ins.transit?.end || p.ins.restartTime !== undefined || p.ins.section === 'finish') inTransit = false; }
+    if (inTransit) { this.recovering = null; return; }
     // find assigned speed now and distance to the next instruction node
-    let assigned: number | null = null; let nextD = Infinity;
-    for (const p of this.plans) { if (p.s <= car.s) assigned = p.ins.timed ? (this.timedPending?.called ? p.ins.timed.thenSpeed : p.ins.timed.holdSpeed) : p.ins.speed ?? assigned; else { nextD = p.s - car.s; break; } }
+    let assigned: number | null = null; let nextD = Infinity; let nextPlan: Plan | null = null;
+    for (const p of this.plans) { if (p.s <= car.s) assigned = p.ins.timed ? (this.timedPending?.called ? p.ins.timed.thenSpeed : p.ins.timed.holdSpeed) : p.ins.speed ?? assigned; else { nextD = p.s - car.s; nextPlan = p; break; } }
     if (assigned === null) return;
     const pace = sim.pace();
-    const nearEvent = nextD < 900 || car.mode !== 'cruise';
+    // keep the pace-making speed until close to the next line, unless that line needs a stop, a turn or a speed change worked precisely
+    const delicate = !!nextPlan && (nextPlan.ins.pause !== undefined || (nextPlan.ins.turn !== undefined && nextPlan.ins.turn !== 'S') || nextPlan.ins.timed !== undefined || (nextPlan.ins.speed !== undefined && nextPlan.ins.speed !== assigned) || isHoldIns(nextPlan.ins) || nextPlan.ins.section === 'finish' || (sim.sc.course.nodes.find(n => n.id === nextPlan!.ins.nodeId)?.control ?? 'none') !== 'none');
+    const nearEvent = nextD < (delicate ? 900 : 300) || car.mode !== 'cruise';
     if (this.recovering !== null) {
-      if (Math.abs(pace) < 0.3 || nearEvent) { this.recovering = null; this.act({ type: 'call.speed', mph: assigned }); }
+      // done when the lateness (or earliness) he was working off is gone, including when a checkpoint has just reset the clock
+      const done = this.recovering > assigned ? pace < 0.3 : pace > -0.3;
+      if (done || nearEvent) { this.recovering = null; this.act({ type: 'call.speed', mph: assigned }); }
       return;
     }
     if (!nearEvent && Math.abs(pace) > 0.8 && Math.abs(car.mph() - assigned) < 1.5) {
-      const d = Math.abs(pace) > 6 ? 5 : 2;
+      // the 10 % rule (HB p.10): the bigger the lateness the harder he drives, up to +20 %; a small error gets +2 mph
+      const big = Math.abs(pace); const d = big > 25 ? Math.ceil(assigned * 0.2) : big > 6 ? Math.max(5, Math.ceil(assigned * 0.1)) : 2;
       this.recovering = pace > 0 ? assigned + d : Math.max(15, assigned - d);
       this.act({ type: 'call.speed', mph: this.recovering });
     }
