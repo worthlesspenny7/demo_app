@@ -1,27 +1,32 @@
 # Project Status (read this first after any context reset)
 
-Project: Time-Speed-Distance Rally Simulator ("Rally Trainer") to prepare for the
-Great Race (Hemmings Motor News Great Race, formerly Great American Race) in a
-1939 Ford Deluxe, navigator toolkit = rally book + mechanical stopwatch(es) +
-calculator (if permitted) + car's speedometer.
-
-Owner: Josh (engineer, will be navigator / co-driver for dad + brother).
-Owner is hands-off until ~Sunday afternoon (2026-10-04/05). Goal: a fully
-verified, validated, enjoyable simulator that teaches everything needed.
+Project: Rally Trainer - Great Race style time-speed-distance navigator
+simulator for Josh (navigator) + dad (driver) in a 1939 Ford Deluxe.
+Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 
 ## Phases
-- [ ] Phase I  - Research TSD rallies / Great Race -> docs/research/*.md, distilled into docs/spec/REQUIREMENTS.md
-- [ ] Phase II - Design the simulator -> docs/spec/DESIGN.md + docs/spec/SPECS.md (numbered, testable specs)
-- [ ] Phase III - Build + agent playtest + validate -> src/, tests/, docs/playtest/*.md
+- [x] Phase I  - Research -> docs/research/00..07 (web budget exhausted; many items UNVERIFIED, see docs/spec/OPEN-QUESTIONS.md)
+- [x] Phase II - Design -> docs/spec/REQUIREMENTS.md, DESIGN.md, SPECS.md (critic review pending)
+- [ ] Phase III-a core engine + tests (src/core, tests/)
+- [ ] Phase III-b agent harness + bots (src/agent)
+- [ ] Phase III-c browser UI (src/ui)
+- [ ] Phase III-d agent playtesting (bugs) -> docs/playtest/
+- [ ] Phase III-e validation (education, playability, enjoyment, realism) -> docs/playtest/VALIDATION.md
 
 ## Current step
-Phase I just started. Repo was wiped of the old Rails demo app (unrelated).
+Starting core engine implementation. Critic agents reviewing the design in parallel.
 
-## Key decisions log
-- 2026-10-03: Stack = TypeScript (Node 22), pure core engine (no DOM) + CLI/agent
-  harness + browser UI (Vite). Reason: agent-runnable headless + enjoyable UI.
+## Environment constraints (this session)
+- WebFetch blocked by egress policy; WebSearch budget 200/session exhausted.
+- git push -> 403 (Claude GitHub App not installed on worthlesspenny7/demo_app). Commit locally, retry push at milestones.
+
+## Key facts that drive the design (see REQUIREMENTS.md)
+- Calculators prohibited in the Great Race; one stopwatch; analog clock; odometer covered; paper tables legal.
+- Ghost car: instantaneous speed changes; pauses add printed seconds; teams subtract measured car losses.
+- Checkpoint crossing resets the leg clock (errors do not compound). 1 pt/second, Ace = 0.
+- 1939 age factor 0.845. Champions ~1 s/leg; rookies 20-46 s/day.
 
 ## How to resume
-1. Read this file, then docs/status/LOG.md (chronological), then docs/spec/*.
-2. Run `npm test` to see the current health of the specs.
-3. Continue from "Current step".
+1. Read this file, docs/status/LOG.md, docs/spec/SPECS.md.
+2. `npm install && npm test && npm run spec:check`.
+3. Continue from "Current step"; keep LOG.md appended.
