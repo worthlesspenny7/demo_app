@@ -9,15 +9,15 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [x] Phase II - Design -> docs/spec/REQUIREMENTS.md, DESIGN.md, SPECS.md (critic review pending)
 - [x] Phase III-a core engine + tests (src/core, tests/) - 156 tests green
 - [x] Phase III-b agent harness + bots (src/agent): protocol (hello/act/advance/observe/result, scheduled actions), CLI `npm run sim`, bots oracle/rookie/noPause/lateCall/goCount/random, scripts/rally-session.sh for live LLM sessions
-- [~] Phase III-c browser UI (src/ui) - agent building (view-models done)
-- [~] Generator + trap library (src/core/generator) - agent building
+- [x] Phase III-c browser UI (src/ui): Vite app, cockpit/school/debrief/reference/quiz/math/settings; Playwright smoke green
+- [x] Generator + 24-card trap library (src/core/generator); drills D11/D12/D13 use it
 - [x] Drill curriculum D01-D18 (src/core/drills) with rubrics/tiers/unlocks
-- [~] Phase III-d agent playtesting (bugs) -> docs/playtest/ (protocol bug-hunt running)
-- [ ] Phase III-e validation (education, playability, enjoyment, realism) -> docs/playtest/VALIDATION.md
+- [x] Phase III-d agent playtesting (bugs): PT-01 protocol (26 bugs, HIGH/MEDIUM fixed), PT-02 drills (14 bugs, fixed), PT-03 UI bug hunt (running)
+- [~] Phase III-e validation: VALIDATION-realism.md, VALIDATION-education.md, VALIDATION-playability-enjoyment.md (agents running) -> then fixes -> final VALIDATION.md summary
 
 ## Current step
-Waiting on generator + UI agents; then wire generator into CLI (gen:) and drills D11/D12/D13 (setGenerator), run UI playtests with Playwright-driving agents, then validation reviews.
-Spec coverage: run `npm run spec:check` (BACKLOG section excluded).
+Validation passes running. Next: apply their top fixes, re-run tests + e2e, write docs/playtest/VALIDATION.md (summary for Josh), final status.
+Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)
 - WebFetch blocked by egress policy; WebSearch budget 200/session exhausted.
