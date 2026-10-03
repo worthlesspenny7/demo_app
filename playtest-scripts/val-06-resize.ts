@@ -1,0 +1,11 @@
+import { launch, shot, BASE, pause } from './val-common.js';
+const { page, browser } = await launch({ width: 1280, height: 720 });
+const q = () => page.evaluate(() => { const g = (s: string) => { const r = (document.querySelector(s) as HTMLElement).getBoundingClientRect(); return [Math.round(r.x), Math.round(r.width)]; }; return { road: g('.road'), book: g('.book'), sw: g('#stopwatch'), sd: [document.documentElement.scrollWidth, innerWidth] }; });
+await page.goto(`${BASE}/#/cockpit/drill/D03/0/1`); await page.waitForTimeout(500); await pause(page);
+console.log('fresh 1280x720', JSON.stringify(await q()));
+await page.setViewportSize({ width: 1920, height: 1080 }); await page.waitForTimeout(500);
+console.log('resized up to 1920', JSON.stringify(await q()));
+await page.setViewportSize({ width: 1366, height: 768 }); await page.waitForTimeout(800);
+console.log('resized down to 1366', JSON.stringify(await q()));
+await shot(page, 'cockpit-after-shrink-1366');
+await browser.close();

@@ -52,7 +52,7 @@ const D03: Drill = {
   scenario(seed, t) { const tier = tierOf(D03, t); const r = rng(seed); const b = base('D03', 'Pause drill', seed, tier, { trafficWaitProbability: t >= 2 ? 0.25 : 0 }).start(r.pick([30, 35, 40]));
     for (let i = 0; i < 6; i++) { b.advanceMiles(0.35 + r.next() * 0.4); b.stop(r.pick(['S', 'S', 'L', 'R']), r.pick([30, 35, 40]), { pause: r.pick([15, 15, 15, 20, 30]) }); if (i % 2 === 1) { b.advanceMiles(0.2 + r.next() * 0.3); b.checkpoint(); } }
     return b.advanceMiles(0.3).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [1, 3, 6], ['Pause arithmetic: dwell = printed pause - stop/start loss for the entry/exit speeds on your card.'], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [1, 3, 6], ['Pause arithmetic: dwell = printed pause - stop/start loss for the entry/exit speeds on your card.'], sc.driver.skill, sc); },
 };
 
 // ---------- D04 timed speed changes ----------
@@ -68,7 +68,7 @@ const D04: Drill = {
       if (i === 2) { b.advanceMiles(0.5 + r.next() * 0.3); b.checkpoint(); }
     }
     return b.advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [1, 2.5, 5], ['Compound lines ("STOP P15, 25 for 40 then 45"): the 40 s starts when the ghost leaves, 15 s after arrival, not at your go.'], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [1, 2.5, 5], ['Compound lines ("STOP P15, 25 for 40 then 45"): the 40 s starts when the ghost leaves, 15 s after arrival, not at your go.'], sc.driver.skill, sc); },
 };
 
 // ---------- D05 landmark speed changes ----------
@@ -78,7 +78,7 @@ const D05: Drill = {
   scenario(seed, t) { const tier = tierOf(D05, t); const r = rng(seed); const b = base('D05', 'Landmark speed changes', seed, tier).start(35); let v = 35;
     for (let i = 0; i < 8; i++) { b.advanceMiles(0.3 + r.next() * 0.4); const nv = r.pick([25, 30, 40, 45, 50].filter(x => x !== v)); b.speedAtSign(r.pick([`SPEED LIMIT ${nv}`, 'CURVE', 'END ROAD WORK', 'BRIDGE']), nv, { side: r.chance(0.3) ? 'L' : 'R', shape: r.chance(0.5) ? 'rect' : 'diamond' }); v = nv; if (i === 3) { b.advanceMiles(0.4); b.checkpoint(); } }
     return b.advanceMiles(0.4).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [1, 2.5, 5], ['Lead time = half the ramp time for that pair of speeds; it is on your performance card.'], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [1, 2.5, 5], ['Lead time = half the ramp time for that pair of speeds; it is on your performance card.'], sc.driver.skill, sc); },
 };
 
 // ---------- D06 build your performance table ----------
@@ -104,7 +104,7 @@ const D07: Drill = {
     b.advanceMiles(0.3).restart(40, restartAt, { text: `Calibration done. RESTART at your out-time. Speed 40` });
     b.advanceMiles(3).speedAtSign('SPEED LIMIT 35', 35).advanceMiles(2.5).stop('S', 45).advanceMiles(3).speedAtSign('SPEED LIMIT 40', 40).advanceMiles(2).checkpoint().advanceMiles(1.5).speedAtSign('SPEED LIMIT 45', 45).advanceMiles(3).checkpoint().advanceFt(300).finish();
     const sc = b.build(); annotatePerfectTimes(sc); return sc; },
-  rubric(r, sc) { return basicRubric(r, [3, 8, 15], ['k = sum(perfect)/sum(actual); indicated to hold = assigned / k. Apply it to every speed all day. 1% uncorrected = ~9 s per 15 minutes.'], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [3, 8, 15], ['k = sum(perfect)/sum(actual); indicated to hold = assigned / k. Apply it to every speed all day. 1% uncorrected = ~9 s per 15 minutes.'], sc.driver.skill, sc); },
 };
 
 // ---------- D08 early/late recovery ----------
@@ -118,7 +118,7 @@ const D08: Drill = {
     b.hazard({ kind: 'signal', redSeconds: 20 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 60) });
     b.advanceMiles(2.0).checkpoint().advanceMiles(1.2).checkpoint().advanceFt(300).finish();
     return b.build(); },
-  rubric(r, sc) { return basicRubric(r, [2, 5, 10], ['Recovery factor: +5 mph for (v/5 + 1) x the seconds lost; +2 mph for about 2.3x that. Finish the correction before likely checkpoint spots.'], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [2, 5, 10], ['Recovery factor: +5 mph for (v/5 + 1) x the seconds lost; +2 mph for about 2.3x that. Finish the correction before likely checkpoint spots.'], sc.driver.skill, sc); },
 };
 
 // ---------- D08b time allowance ----------
@@ -144,7 +144,7 @@ const D08b: Drill = {
 const D09: Drill = {
   id: 'D09', title: 'Trap quiz: which way?', objective: 'Read the instruction and the CAMEO/road view; pick the exit. 20 cards from the trap library.', skills: ['P8'], minutes: 5, kind: 'quiz',
   tiers: [{ name: 'Cards', aids: aidsForRung(3), driver: DRIVER_EXPERT, description: '20 cards' }], unlock: [],
-  scenario(seed, t) { return D10.scenario(seed, t); }, rubric(r, sc) { return basicRubric(r, [1, 3, 6], [], sc.driver.skill); },
+  scenario(seed, t) { return D10.scenario(seed, t); }, rubric(r, sc) { return basicRubric(r, [1, 3, 6], [], sc.driver.skill, sc); },
 };
 
 // ---------- D10 course following in motion ----------
@@ -173,7 +173,7 @@ const D10: Drill = {
 const D14: Drill = {
   id: 'D14', title: 'Mental math without a calculator', objective: 'Seconds arithmetic, recovery factors, pause dwell, seconds per mile. Calculators are banned in the Great Race.', skills: ['P2', 'P6', 'P13'], minutes: 5, kind: 'math',
   tiers: [{ name: 'Cards', aids: aidsForRung(3), driver: DRIVER_EXPERT, description: 'question cards' }], unlock: [],
-  scenario(seed, t) { return D03.scenario(seed, t); }, rubric(r, sc) { return basicRubric(r, [1, 3, 6], [], sc.driver.skill); },
+  scenario(seed, t) { return D03.scenario(seed, t); }, rubric(r, sc) { return basicRubric(r, [1, 3, 6], [], sc.driver.skill, sc); },
 };
 
 // ---------- D15 pre-read triage (reading) ----------
@@ -200,7 +200,7 @@ const D17: Drill = {
   id: 'D17', title: 'Lost the watch', objective: 'The watch gets reset mid-leg. Re-establish elapsed time from the clock and Column C and finish the leg.', skills: ['P1', 'P9'], minutes: 8, kind: 'drive',
   tiers: tiers([3, 2, 1]), unlock: [],
   scenario(seed, t) { const sc = D07.scenario(seed, t); sc.id = `D17-${seed}`; sc.name = 'Watch loss'; sc.tags = [...(sc.tags ?? []), `forceWatchReset:${600 + rng(seed).int(0, 300)}`]; return sc; },
-  rubric(r, sc) { return basicRubric(r, [3, 8, 15], ['Your time-of-day clock is the source of truth: elapsed = clock - official start.'], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [3, 8, 15], ['Your time-of-day clock is the source of truth: elapsed = clock - official start.'], sc.driver.skill, sc); },
 };
 
 // ---------- D18 miniature combo leg (gate for D11) ----------
@@ -218,7 +218,7 @@ const D18: Drill = {
       else { if (r.chance(0.5)) { b.instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 15 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 55) }); } else { b.hazard({ kind: 'slow', speedMph: 28, lengthFt: 1500, passWindowAfterFt: 900 }); b.advanceMiles(0.4); } }
     }
     return b.advanceMiles(0.25 + r.next() * 0.3).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [2, 5, 10], [], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [2, 5, 10], [], sc.driver.skill, sc); },
 };
 
 // ---------- D11 / D12 / D13 generator-backed ----------
@@ -231,19 +231,19 @@ const D11: Drill = {
   id: 'D11', title: 'Full leg', objective: 'A real leg: 25-40 instructions, one hidden checkpoint, Great Race legal aids. Stay on course, stay on time.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8', 'P10'], minutes: 15, kind: 'drive',
   tiers: tiers([1, 0, 0]), unlock: [{ drill: 'D18', stars: 1 }, { drill: 'D07', stars: 2 }],
   scenario(seed, t) { const tier = tierOf(D11, t); const sc = genOr('fullLeg', () => { const s = D18.scenario(seed, t); s.id = `D11-${seed}`; s.name = 'Full leg (fallback)'; return s; }, seed); return { ...sc, driver: tier.driver, aids: tier.aids, id: `D11-${seed}-${tier.name}` }; },
-  rubric(r, sc) { return basicRubric(r, [2, 6, 13], [], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [2, 6, 13], [], sc.driver.skill, sc); },
 };
 const D12: Drill = {
   id: 'D12', title: 'Full stage', objective: 'Calibration run, 4-7 hidden checkpoints, lunch restart, observation checkpoint. 150-250 instructions.', skills: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P11'], minutes: 150, kind: 'drive',
   tiers: legalTiers(), unlock: [{ drill: 'D11', stars: 1 }, { drill: 'D15', stars: 1 }, { drill: 'D16', stars: 1 }],
-  scenario(seed, t) { const tier = tierOf(D12, t); const sc = genOr('fullStage', () => D07.scenario(seed, 2), seed, true); return { ...sc, driver: tier.driver, aids: tier.aids, speedo: t >= 1 ? STOCK_1939_SPEEDO : sc.speedo, id: `D12-${seed}-${tier.name}` }; },
-  rubric(r, sc) { return basicRubric(r, [3, 13, 25], [`Benchmark: ${r.score.benchmark}. Champions ~1 s per leg; a good rookie day is 13-21 s.`], sc.driver.skill); },
+  scenario(seed, t) { const tier = tierOf(D12, t); const sc = genOr('fullStage', () => D07.scenario(seed, 2), seed, true); return { ...sc, driver: tier.driver, aids: tier.aids, speedo: t >= 1 ? STOCK_1939_SPEEDO : sc.speedo, id: `D12-${seed}-${tier.name}`, prereadSeconds: 30 * 60 }; },
+  rubric(r, sc) { return basicRubric(r, [3, 13, 25], [`Benchmark: ${r.score.benchmark}. Champions ~1 s per leg; a good rookie day is 13-21 s.`], sc.driver.skill, sc); },
 };
 const D13: Drill = {
   id: 'D13', title: 'Campaign: the Great Race', objective: 'Trophy Run plus nine stages in the 1939 Ford with age factor 0.845. Division ladder by cumulative score.', skills: ['P11'], minutes: 1500, kind: 'drive',
   tiers: legalTiers(), unlock: [{ drill: 'D12', stars: 1 }],
   scenario(seed, t) { return D12.scenario(seed * 100 + 1, t); },
-  rubric(r, sc) { return basicRubric(r, [3, 13, 25], [], sc.driver.skill); },
+  rubric(r, sc) { return basicRubric(r, [3, 13, 25], [], sc.driver.skill, sc); },
 };
 
 for (const d of [D01, D03, D04, D05, D06, D07, D08, D08b, D09, D10, D11, D12, D13, D14, D15, D16, D17, D18]) registerDrill(d);

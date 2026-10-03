@@ -66,21 +66,6 @@ async function main(): Promise<void> {
   await page.locator('#skip').click(); await page.keyboard.press('d'); await adv(page, 30); await page.reload(); await page.waitForTimeout(300);
   log('after reload mid-run: hash', await page.evaluate(() => location.hash), '| phase:', (await obs(page)).phase, '| any warning text?', (await page.locator('#view').innerText()).includes('lost'));
   await goto(page, '#/debrief'); log('debrief after reload:', (await page.locator('#view').innerText()).replace(/\n/g, ' | ').slice(0, 80));
-  // resize
-  for (const vp of [[1280, 720], [1920, 1080], [1366, 768]] as const) {
-    await page.setViewportSize({ width: vp[0], height: vp[1] });
-    await goto(page, '#/cockpit/builtin/varied/3'); await page.waitForSelector('#cockpit'); await page.locator('#view').focus(); await page.locator('#skip').click(); await page.keyboard.press('d'); await page.keyboard.press(' '); await pause(page); await adv(page, 20);
-    const m = await page.evaluate(() => {
-      const q = (s: string) => (document.querySelector(s) as HTMLElement)?.getBoundingClientRect();
-      const sw = document.querySelector('#stopwatch') as HTMLCanvasElement; const cl = document.querySelector('#clock') as HTMLCanvasElement; const sp = document.querySelector('#speedo') as HTMLCanvasElement;
-      const rows = [...document.querySelectorAll('#book .row')]; const bookR = q('#book');
-      return { innerW: innerWidth, innerH: innerHeight, scrollW: document.documentElement.scrollWidth, scrollH: document.documentElement.scrollHeight, cockpit: q('#cockpit'), road: q('.cockpit .road'), instruments: q('.instruments'), sw: sw.getBoundingClientRect(), cl: cl.getBoundingClientRect(), sp: sp.getBoundingClientRect(), drawer: q('.drawer'), book: bookR, bookScroll: (document.querySelector('#book') as HTMLElement).scrollHeight, rowsVisible: rows.filter(r => { const b = r.getBoundingClientRect(); return b.top >= bookR.top && b.bottom <= bookR.bottom; }).length, rowsTotal: rows.length, lapboardH: q('.lapboard')?.height, hudW: q('.hud')?.width, hudChildrenRight: Math.max(...[...document.querySelectorAll('.hud > *')].map(e => e.getBoundingClientRect().right)) };
-    });
-    const f = (r: any) => r ? `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}` : 'none';
-    log(`viewport ${vp[0]}x${vp[1]}: scroll ${m.scrollW}x${m.scrollH} (overflow x: ${m.scrollW > m.innerW}, y: ${m.scrollH > m.innerH}) cockpit ${f(m.cockpit)} road ${f(m.road)} instruments ${f(m.instruments)} stopwatch ${f(m.sw)} clock ${f(m.cl)} speedo ${f(m.sp)} drawer ${f(m.drawer)} book ${f(m.book)} rows visible ${m.rowsVisible}/${m.rowsTotal} lapboard h ${m.lapboardH} hud right ${Math.round(m.hudChildrenRight)} vs road right ${Math.round(m.road.right)}`);
-    log(`   road fraction of left pane: ${(m.road.height / (m.road.height + m.instruments.height)).toFixed(2)}; stopwatch dial ${Math.round(m.sw.width)} px (>=240?) ${m.sw.width >= 240}; drawer bottom ${Math.round(m.drawer.bottom)} vs innerH ${m.innerH}`);
-    await shot(page, `layout-${vp[0]}`);
-  }
   log('page errors:', h.errors); log('console:', h.consoleErrors.slice(0, 10));
   await h.close();
 }

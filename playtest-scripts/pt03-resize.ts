@@ -14,7 +14,7 @@ async function main(): Promise<void> {
   const f = (r: any) => r ? `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)} (bottom ${Math.round(r.bottom)})` : 'none';
   for (const vp of [[1280, 720], [1920, 1080], [1366, 768], [1024, 700]] as const) {
     await page.setViewportSize({ width: vp[0], height: vp[1] });
-    await goto(page, '#/cockpit/builtin/varied/3'); await page.waitForSelector('#cockpit'); await page.locator('#view').focus(); await page.locator('#skip').click(); await page.keyboard.press('d'); await page.keyboard.press(' '); await pause(page); await adv(page, 20); await page.keyboard.press('l'); await page.keyboard.press('l');
+    await page.goto('about:blank'); await goto(page, '#/cockpit/builtin/varied/3'); await page.waitForSelector('#cockpit'); await page.locator('#view').focus(); await page.locator('#skip').click(); await page.keyboard.press('d'); await page.keyboard.press(' '); await pause(page); await adv(page, 20); await page.keyboard.press('l'); await page.keyboard.press('l');
     await page.waitForTimeout(100);
     const m: any = await page.evaluate(MEASURE);
     log(`viewport ${vp[0]}x${vp[1]}: page scroll ${m.scrollW}x${m.scrollH} (overflow x ${m.scrollW > m.innerW}, y ${m.scrollH > m.innerH})`);

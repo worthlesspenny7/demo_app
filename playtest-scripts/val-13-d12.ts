@@ -1,0 +1,27 @@
+import { launch, shot, BASE, pause, obs } from './val-common.js';
+import { startRun, drive } from './val-player.js';
+const tier = process.argv[2] ?? '0';
+const { page, browser, errors } = await launch();
+await page.goto(`${BASE}/#/cockpit/drill/D12/${tier}/1`); await page.waitForTimeout(800); await pause(page);
+const o0: any = await obs(page);
+console.log('D12 tier', tier, 'lines', o0.book.length, 'secondsToStart', o0.secondsToStart, 'aids', JSON.stringify(o0.aids), 'start', o0.startTime);
+console.log('drawer', await page.locator('.drawer .bar .muted').last().innerText());
+console.log(o0.book.slice(0, 22).map((b: any) => `${b.n} [${b.section ?? ''}] ${b.text}`).join('\n'));
+await shot(page, `d12-t${tier}-preread`);
+console.log('preread text:', (await page.locator('#preread').innerText()).replace(/\n/g, ' ').slice(0, 260));
+// pre-read: can the player do anything useful? fast-forward button
+await page.click('#skip'); await page.waitForTimeout(200);
+console.log('after skip: phase', (await obs(page)).phase, 'secondsToStart', (await obs(page)).secondsToStart);
+await shot(page, `d12-t${tier}-afterskip`);
+await pause(page);
+await page.keyboard.press('d'); await page.keyboard.press(' ');
+const t0 = o0.startTime;
+const log = await drive(page, { name: 'D12', verbose: false, pressN: true }, `o.tod > ${t0 + 1200}`);
+await page.waitForTimeout(150); await shot(page, `d12-t${tier}-20min`);
+const o: any = await obs(page);
+console.log('at 20 min: tod', o.tod, 'line', o.currentLine, 'state', o.driver.state, 'keys', log.keys, 'sim wall 1x', log.wall1x.toFixed(0), 'adaptive4x', log.wallAdaptive4x.toFixed(0), 'waiting', log.waitingSeconds.toFixed(0));
+console.log('dad:', (await page.locator('#driverlog').innerText()).replace(/\n/g, ' | '));
+console.log('card:', (await page.locator('.drawer .box').nth(1).innerText()).replace(/\n/g, ' | '));
+console.log('cp events so far:', await page.evaluate(() => (window as any).__rally.sim.events.filter((e: any) => e.type === 'checkpoint').length));
+console.log('errors', errors);
+await browser.close();

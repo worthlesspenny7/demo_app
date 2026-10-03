@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   }
   await shot(page, 'd04-preread-book');
   // run
-  await page.keyboard.press('d'); await page.keyboard.press(' ');
+  { let q = await obs(page); await adv(page, Math.max(0, q.secondsToStart - 3)); await page.keyboard.press('d'); q = await obs(page); await adv(page, Math.max(0, q.secondsToStart)); await page.keyboard.press(' '); }
   const cd = await drive(page, 400, 'countdown'); log('D04 first countdown moment:', JSON.stringify(cd));
   o = await obs(page); log('aids now:', JSON.stringify(o.aids), '| ledger box:', (await page.locator('.drawer .box').nth(0).innerText()).replace(/\n/g, ' | '), '| perf card:', (await page.locator('.drawer .box').nth(1).innerText()).replace(/\n/g, ' | '));
   await shot(page, 'd04-countdown-aid');
@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   o = await obs(page); log('D18 aids at preread:', JSON.stringify(o.aids), '| legIndex', o.legIndex, '| chip leg:', await page.locator('.hud .chip').nth(2).textContent());
   const rows18 = await page.evaluate(() => [...document.querySelectorAll('#book .row')].map(r => `${r.getAttribute('data-n')}: ${(r.querySelector('.text') as HTMLElement).innerText.replace(/\n/g, ' / ')} | C=${r.querySelector('.colc')?.textContent} | ann=${(r.querySelector('.ann') as HTMLElement).innerText.replace(/\n/g, ' ')}`));
   for (const r of rows18) log('  ', r);
-  await page.keyboard.press('d'); await page.keyboard.press(' ');
+  { let q = await obs(page); await adv(page, Math.max(0, q.secondsToStart - 3)); await page.keyboard.press('d'); q = await obs(page); await adv(page, Math.max(0, q.secondsToStart)); await page.keyboard.press(' '); }
   const t18 = await drive(page, 500, 'timedDone'); log('D18 timed change called:', JSON.stringify(t18));
   o = await obs(page); log('D18 aids mid-run:', JSON.stringify(o.aids), '| ledger box:', (await page.locator('.drawer .box').nth(0).innerText()).replace(/\n/g, ' | '));
   await shot(page, 'd18-midrun-no-aids');

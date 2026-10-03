@@ -1,0 +1,22 @@
+import { launch, shot, BASE, adv, obs, pause } from './val-common.js';
+const { page, browser, errors } = await launch();
+await page.goto(`${BASE}/#/school/ghost-car`); await page.waitForTimeout(300);
+await shot(page, 'school-lesson1');
+console.log('SCHOOL', (await page.locator('.lesson').innerText()).slice(0, 2500));
+console.log('scrollH', await page.evaluate(() => document.documentElement.scrollHeight));
+await page.locator('.opt').first().click(); await shot(page, 'school-lesson1-wrong'); console.log(await page.locator('.quiz p').last().innerText());
+await page.goto(`${BASE}/#/`); await page.waitForTimeout(200);
+await page.locator('.card[data-drill="D01"] button.primary').click(); await page.waitForTimeout(500);
+await pause(page);
+await shot(page, 'd01-preread-1366x768');
+console.log('preread', (await page.locator('#preread').innerText()));
+const o = await obs(page); console.log('book lines', o.book.length, JSON.stringify(o.book.slice(0,4)));
+console.log('doc scroll (cockpit)', await page.evaluate(() => [document.documentElement.scrollHeight, document.documentElement.clientHeight, document.querySelector('#cockpit')!.getBoundingClientRect().height]));
+await page.setViewportSize({ width: 1920, height: 1080 }); await page.waitForTimeout(400); await shot(page, 'd01-preread-1920x1080');
+await page.setViewportSize({ width: 1366, height: 768 }); await page.waitForTimeout(400);
+// depart
+await page.keyboard.press('d'); await page.waitForTimeout(200);
+await page.keyboard.press(' ');
+await adv(page, 20); await pause(page); await shot(page, 'd01-run-1366x768');
+console.log('errors', errors);
+await browser.close();

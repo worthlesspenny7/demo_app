@@ -27,7 +27,7 @@ async function main(): Promise<void> {
       }
       const evs = r.sim.events; for (let i = w.__seen; i < evs.length; i++) { const e = evs[i]; if (e.type === 'node' && e.detail?.kind === 'sign') { const ins = book.find((b: any) => b.nodeId === e.detail?.nodeId); if (ins && /MILE|CALIBRATION/.test(ins.text)) { r.act({ type: 'watch.lap' }); const oo = r.observe(); out.push({ line: ins.n, text: ins.text, lap: oo.stopwatch.laps[oo.stopwatch.laps.length - 1], perfectCum: ins.perfectCumulative, tod: e.tod - oo.startTime }); } } } w.__seen = evs.length;
       if (o.driver.waitingForGo && o.driver.state.includes('stop')) { if (!w.__ws) w.__ws = o.tod; if (o.tod - w.__ws > 7) { r.act({ type: 'call.go' }); w.__ws = 0; } }
-      r.advance(0.1);
+      r.advance(0.25);
       if (out.length === 3 && !w.__shot) { w.__shot = true; return { partial: true, out }; }
     }
     return { out, phase: r.sim.phase };
@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   log('notes list:', (await page.locator('.drawer .box').nth(2).innerText()).replace(/\n/g, ' | '));
   const res2 = await page.evaluate(() => {
     const r = window.__rally; const book = r.observe().book; const w = window as any; const out: any[] = []; const called = new Set<number>([1, 10001]); let hold = false;
-    for (let k = 0; k < 20000 && r.sim.phase !== 'finished'; k++) {
+    for (let k = 0; k < 40000 && r.sim.phase !== 'finished'; k++) {
       const o = r.observe();
       for (const f of o.ahead) {
         if (f.kind === 'finish' && f.approxDistanceFt < 700 && !hold) { r.act({ type: 'call.stop' }); hold = true; }
@@ -54,7 +54,7 @@ async function main(): Promise<void> {
       }
       const evs = r.sim.events; for (let i = w.__seen; i < evs.length; i++) { const e = evs[i]; if (e.type === 'node' && e.detail?.kind === 'sign') { const ins = book.find((b: any) => b.nodeId === e.detail?.nodeId); if (ins && /MILE/.test(ins.text)) { r.act({ type: 'watch.lap' }); const oo = r.observe(); out.push({ line: ins.n, lap: oo.stopwatch.laps[oo.stopwatch.laps.length - 1], perfectCum: ins.perfectCumulative, tod: e.tod - oo.startTime }); } } } w.__seen = evs.length;
       if (o.driver.waitingForGo && o.driver.state.includes('stop')) { if (!w.__ws) w.__ws = o.tod; if (o.tod - w.__ws > 7) { r.act({ type: 'call.go' }); w.__ws = 0; } }
-      r.advance(0.1);
+      r.advance(0.25);
     }
     return { out, phase: r.sim.phase, hold };
   });

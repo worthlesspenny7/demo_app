@@ -1,0 +1,13 @@
+import { launch, shot, BASE } from './val-common.js';
+const { page, browser } = await launch();
+await page.goto(`${BASE}/#/`); await page.waitForTimeout(300);
+await shot(page, 'home-1366x768'); await shot(page, 'home-1366-full', true);
+console.log('scrollHeight', await page.evaluate(() => document.documentElement.scrollHeight), 'cards', await page.locator('.card').count());
+console.log('locked cards:', await page.locator('.card.locked').evaluateAll(es => es.map(e => (e as HTMLElement).dataset.drill + ' ' + (e.querySelector('.actions') as HTMLElement).innerText)));
+console.log('home text top:', (await page.locator('.page').innerText()).slice(0, 1200));
+await page.setViewportSize({ width: 1920, height: 1080 }); await page.waitForTimeout(200); await shot(page, 'home-1920x1080');
+await page.setViewportSize({ width: 1366, height: 768 });
+await page.goto(`${BASE}/#/school`); await page.waitForTimeout(200); await shot(page, 'school-list');
+console.log((await page.locator('.page').innerText()).slice(0, 1500));
+await page.goto(`${BASE}/#/school/${await page.evaluate(() => 'x')}`);
+await browser.close();

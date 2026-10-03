@@ -1,0 +1,37 @@
+import { launch, shot, BASE, pause } from './val-common.js';
+import { startRun, drive } from './val-player.js';
+const [drill, tier, seed, tag, optsJson] = process.argv.slice(2);
+const opts = JSON.parse(optsJson ?? '{}');
+const { page, browser, errors } = await launch(opts.vp ? { width: opts.vp[0], height: opts.vp[1] } : undefined);
+await page.goto(`${BASE}/#/cockpit/drill/${drill}/${tier}/${seed}`); await page.waitForTimeout(500); await pause(page);
+await shot(page, `${tag}-preread`);
+const info = await page.evaluate(() => { const o = (window as any).__rally.observe(); return { lines: o.book.length, text: o.book.map((b: any) => `${b.n}: ${b.text}`), aids: o.aids, start: o.startTime }; });
+console.log(drill, 'tier', tier, 'lines', info.lines); if (opts.book) console.log(info.text.join('\n'));
+console.log('preread overlay text:', (await page.locator('#preread').innerText()).replace(/\n/g, ' ').slice(0, 300));
+console.log('drawer bar:', await page.locator('.drawer .bar .muted').last().innerText());
+await startRun(page);
+const t0 = (info.start as number);
+let midShot = 0;
+const total: any = { keys: 0, w1: 0, w4: 0, w8: 0, wait: 0 };
+for (const frac of (opts.snaps ?? [])) {
+  const log = await drive(page, { name: drill, ...opts, pressN: opts.pressN }, `o.tod > ${t0 + frac}`);
+  total.keys += log.keys; await page.waitForTimeout(150); await shot(page, `${tag}-t${Math.round(frac)}s`);
+  console.log('  snap', frac, 'line', await page.locator('#book .row.current').getAttribute('data-n'), '| card:', (await page.locator('.drawer .box').nth(1).innerText()).replace(/\n/g, ' | ').slice(0, 220), '| dad:', (await page.locator('#driverlog').innerText()).replace(/\n/g, ' | ').slice(-200));
+}
+const log = await drive(page, { name: drill, ...opts, verbose: !!opts.verbose });
+const fin = await page.evaluate(() => { const P = (window as any).__P; return P ? { w1: P.wall1, w4: P.wall4, w8: P.wall8, wait: P.waiting } : null; });
+console.log('wall(sim) s at 1x:', fin?.w1?.toFixed(0), ' adaptive@4x:', fin?.w4?.toFixed(0), ' adaptive@8x:', fin?.w8?.toFixed(0), ' waiting-at-stops s:', fin?.wait?.toFixed(0), 'keys', total.keys + log.keys);
+await page.waitForSelector('#debrief', { timeout: 20000 }).catch(() => console.log('NO DEBRIEF'));
+await page.waitForSelector('#counterfactuals .cf-row', { timeout: 15000 }).catch(() => {});
+await page.waitForTimeout(300);
+const t = await page.locator('#debrief').innerText();
+console.log(t.split('WHAT IF')[0].slice(0, 2600));
+console.log('FIXNEXT/BIAS', t.slice(t.indexOf('BIAS OR NOISE')).slice(0, 1500));
+const dad = await page.evaluate(() => { const d = document.querySelector('details pre'); return d ? (d.textContent ?? '').split('\n').filter(l => /driver/.test(l)).map(l => l.replace(/\s+/g, ' ')) : []; });
+console.log('DAD LINES (' + dad.length + '):'); console.log(dad.slice(0, 60).join('\n'));
+await shot(page, `${tag}-debrief`); await shot(page, `${tag}-debrief-full`, true);
+console.log('debrief height', await page.evaluate(() => document.documentElement.scrollHeight));
+await page.goto(`${BASE}/#/`); await page.waitForTimeout(300);
+console.log('home card:', (await page.locator(`.card[data-drill="${drill}"]`).innerText()).replace(/\n/g, ' | '));
+console.log('errors', errors);
+await browser.close();
