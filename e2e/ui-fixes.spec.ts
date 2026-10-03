@@ -25,7 +25,9 @@ test('C3/C4 HUD buttons work above the pre-read; the lapboard note blurs on Ente
   await expect(page.locator('#preread')).toContainText(/Objective/);
   await expect(page.locator('#preread')).toContainText(/front bumper/);   // D01-specific text
   await expect(page.locator('#hintbar')).toContainText(/Lap the watch/);
-  await page.locator('button[data-scale="4"]').click({ timeout: 3000 });  // would time out when the overlay covers the HUD
+  await page.locator('#pause').click({ timeout: 3000 });   // would time out when the overlay covers the HUD
+  await expect(page.locator('#pause')).toHaveText('Resume'); await page.locator('#pause').click();
+  await expect(page.locator('button[data-scale="4"]')).toBeDisabled();   // D01 is locked to 1x (N8)
   await depart(page);
   const note = page.locator('.lapboard input[placeholder^="note"]');
   await note.click(); await note.fill('k = 1.01'); await page.keyboard.press('Enter');

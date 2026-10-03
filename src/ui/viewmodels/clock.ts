@@ -24,7 +24,8 @@ export function clockViewModel(tod: number, bezel = 0): ClockVm {
   const minuteDeg = r3(((t % 3600) / 3600) * 360);
   const secondDeg = r3((sec / 60) * 360);
   const bezelDeg = r3((b / 60) * 360);
-  const bezelRemaining = r3((((b - sec) % 60) + 60) % 60);
+  const bezelRaw = (((b - sec) % 60) + 60) % 60;
+  const bezelRemaining = bezelRaw < 1e-6 || bezelRaw > 60 - 1e-3 ? 0 : r3(bezelRaw);
   return { hourDeg, minuteDeg, secondDeg, bezel: b, bezelDeg, bezelRemaining, digital: formatClock(t) };
 }
 function r3(x: number): number { return Math.round(x * 1000) / 1000; }

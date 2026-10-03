@@ -5,7 +5,7 @@
  *  - what the legal (aids rung <= 1) cockpit hides: digital readouts and the computed answer card
  */
 import type { Scenario, Instruction, AidsConfig } from '../../core/course.js';
-import { stopLoss, rampLead, accelLoss } from '../../core/perf-table.js';
+import { stopLoss, rampLead, accelLoss, turnLoss, buildPerfTable } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
 import { turnCap } from './counterfactual.js';
 import { aidsRung } from './debrief.js';
@@ -89,6 +89,36 @@ export interface PerfCard {
   speedChange?: { from: number; to: number; lead: number; ft: number };
   start?: { speed: number; early: number };
   restart?: { label: string; accel: number | null };
+  /** Non-stop turn loss (seconds the car loses slowing for the turn and re-accelerating), from the car's performance table. */
+  turnLoss?: TurnLossBlock;
+}
+export interface TurnLossBlock {
+  /** Common speeds, 25..45 mph. */
+  speeds: number[];
+  rows: { angle: 90 | 45; losses: number[] }[];
+  /** This line's own turn: angle band, entry/exit speeds and loss, when the line has a 90 or 45 degree turn. */
+  here: { turn: string; angle: 90 | 45; vIn: number; vOut: number; loss: number } | null;
+}
+const TURN_SPEEDS = [25, 30, 35, 40, 45];
+const turnTables = new WeakMap<object, TurnLossBlock['rows']>();
+/** "Turn loss" block for the perf card: 90 and 45 degree rows at the common speeds (same table the engine uses). */
+export function turnLossBlock(sc: Scenario, line: number): TurnLossBlock {
+  let rows = turnTables.get(sc.car);
+  if (!rows) {
+    const t = buildPerfTable(sc.car).turn;
+    rows = ([90, 45] as const).map(angle => ({ angle, losses: TURN_SPEEDS.map(v => t[`${angle}:${v}>${v}`] ?? 0) }));
+    turnTables.set(sc.car, rows);
+  }
+  let here: TurnLossBlock['here'] = null;
+  const ins = sc.book[line - 1];
+  const dir = ins?.turn;
+  if (dir && dir !== 'S') {
+    const angle: 90 | 45 | null = dir === 'L' || dir === 'R' || dir === 'JL' || dir === 'JR' ? 90 : dir === 'BL' || dir === 'BR' ? 45 : null;
+    const { vIn, vOut } = lineSpeeds(sc, line);
+    const vi = vIn && vIn > 0 ? vIn : vOut; const vo = vOut && vOut > 0 ? vOut : vi;
+    if (angle && vi && vo) { try { here = { turn: dir, angle, vIn: vi, vOut: vo, loss: r1(turnLoss(angle, vi, vo, sc.car)) }; } catch { here = null; } }
+  }
+  return { speeds: TURN_SPEEDS, rows, here };
 }
 
 export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy): PerfCard | null {
@@ -110,7 +140,21 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
     else if (node?.control === 'STOP' && sc1) card.stopNoPause = { loss: sc1.loss };
     if (ins.timed) { const lead = r1(rampLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car)); card.timed = { hold: ins.timed.holdSpeed, seconds: ins.timed.seconds, then: ins.timed.thenSpeed, lead, call: r1(ins.timed.seconds - lead) }; }
     else if (sp.vIn !== null && sp.vOut !== null && sp.vIn !== sp.vOut && !ins.pause && node?.control !== 'STOP') { const lead = r1(rampLead(sp.vIn, sp.vOut, sc.car)); card.speedChange = { from: sp.vIn, to: sp.vOut, lead, ft: Math.round(sp.vIn * 1.4667 * lead) }; }
+    if (ins.turn && ins.turn !== 'S') card.turnLoss = turnLossBlock(sc, line);
     if (ins.section === 'start' && ins.speed) card.start = { speed: ins.speed, early: r1(stopLoss(ins.speed, ins.speed, sc.car) * 0.55) };
   } catch { /* partial card */ }
   return card;
+}
+
+/**
+ * S at the finish: when the finish banner or the observation checkpoint is in sight and the book's finish line asks for a stop
+ * (or the course has an observation checkpoint), the pending-callout box shows it like any other line until the player has called S.
+ */
+export function finishPrompt(ahead: { kind: string; approxDistanceFt: number; label?: string }[] | null | undefined, sc: Pick<Scenario, 'book' | 'checkpoints'>, stopCalled: boolean): string | null {
+  if (stopCalled || !Array.isArray(ahead)) return null;
+  const needsStop = sc.checkpoints.some(c => c.kind === 'observation') || sc.book.some(i => i.section === 'finish' && /stop/i.test(i.text ?? ''));
+  if (!needsStop) return null;
+  const f = ahead.find(a => a.kind === 'finish' || (a.kind === 'checkpoint' && /observation/i.test(a.label ?? '')));
+  if (!f) return null;
+  return `S: stop at the observation checkpoint / finish (${f.approxDistanceFt} ft)`;
 }

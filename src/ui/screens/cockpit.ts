@@ -15,16 +15,16 @@ import { audioCues, AudioPlayer } from '../viewmodels/audio.js';
 import { createAnnotations, HIGHLIGHTS, type Highlight } from '../viewmodels/annotations.js';
 import { cockpitLayout } from '../viewmodels/layout.js';
 import { cpCards, debriefViewModel, type CpCard } from '../viewmodels/debrief.js';
-import { instrumentPolicy, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
-import { drillHint, hintBarText } from '../viewmodels/hints.js';
-import { LIVE_KEY, LAST_KEY, snapshotRun, saveStored, loadStored, clearStored, restoreSim, type StoredSource } from '../viewmodels/resume.js';
+import { instrumentPolicy, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, finishPrompt, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
+import { drillHint, hintBarText, scaleHintText } from '../viewmodels/hints.js';
+import { LIVE_KEY, LAST_KEY, snapshotRun, saveStored, loadStored, clearStored, restoreSim, describeSource, sameDrillSource, type StoredSource } from '../viewmodels/resume.js';
 import { recordCampaignStage } from '../viewmodels/campaign.js';
 import { drawStopwatch } from '../render/stopwatch.js';
 import { drawClock } from '../render/clock.js';
 import { drawSpeedo } from '../render/speedo.js';
 import { drawRoad } from '../render/road.js';
 import { prepare, themeFromCss } from '../render/common.js';
-import { app, buildScenario, withDriver, el, escapeHtml, type RunSource, type Run, type Settings } from '../state.js';
+import { app, buildScenario, withDriver, el, escapeHtml, sourceHash, type RunSource, type Run, type Settings } from '../state.js';
 
 declare global { interface Window { __rally?: { sim: Simulator; advance(seconds: number): Observation; act(a: Action): Observation; observe(): Observation; result(): StageResult; finish(): void } } }
 
@@ -38,6 +38,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   // resume a saved live run when Home asked for it (the saved spec carries the driver and watch it started with)
   const saved = app.resume ? loadStored(LIVE_KEY) : null; app.resume = false;
   const resuming = saved && sameSource(saved.source, src) ? saved : null;
+  // N4: a saved run of this drill that the player has not chosen to resume or discard yet (never overwritten silently)
+  let pendingSave: ReturnType<typeof loadStored> = null;
+  if (!resuming) { const other = loadStored(LIVE_KEY); if (other && sameDrillSource(other.source, src)) pendingSave = other; }
   const driverSkill = (resuming?.driverSkill ?? app.settings.driverSkill) as Settings['driverSkill'];
   const scenario = withDriver(built.scenario, driverSkill);
   const watch = resuming?.watch ?? app.settings.watch;
@@ -80,13 +83,26 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const chipPhase = el('span', { class: 'chip', id: 'phase' }); const chipScale = el('span', { class: 'chip', id: 'scale' }); const chipClock = el('span', { class: 'chip mono', id: 'tod' }); const chipLeg = el('span', { class: 'chip' }); const chipMsg = el('span', { class: 'chip alert', id: 'alert' }); chipMsg.style.display = 'none';
   if (!policy.digitalReadouts) chipClock.style.display = 'none';
   const scaleBtns = el('span', { class: 'chip btns' });
-  for (const s of SCALE_STEPS) { const b = el('button', { 'data-scale': String(s) }, `${s}x`); b.onclick = () => { requested = s; }; scaleBtns.append(b); }
+  for (const s of SCALE_STEPS) {
+    const b = el('button', { 'data-scale': String(s), title: lockedTo1x ? 'This drill is locked to 1x' : `run at ${s}x` }, `${s}x`);
+    if (lockedTo1x) b.setAttribute('disabled', ''); else b.onclick = () => { requested = s; };   // N8: really disabled, not just styled
+    scaleBtns.append(b);
+  }
   const pauseBtn = el('button', { id: 'pause' }, 'Pause'); pauseBtn.onclick = () => { paused = !paused; }; scaleBtns.append(pauseBtn);
-  const helpBtn = el('button', {}, 'Keys'); helpBtn.onclick = () => { showHelp = !showHelp; helpBox.style.display = showHelp ? '' : 'none'; }; scaleBtns.append(helpBtn);
+  const helpBtn = el('button', { id: 'keys-btn' }, 'Keys'); helpBtn.onclick = () => setHelp(!showHelp); scaleBtns.append(helpBtn);
   const muteBtn = el('button', {}, app.settings.muted ? 'Unmute' : 'Mute'); muteBtn.onclick = () => { audio.muted = !audio.muted; muteBtn.textContent = audio.muted ? 'Unmute' : 'Mute'; }; scaleBtns.append(muteBtn);
   const abortBtn = el('button', { class: 'danger', id: 'abort' }, 'End run'); abortBtn.onclick = () => { if (confirm('End this run now and go to the debrief? An ended run is not recorded.')) { try { sim.act({ type: 'abort' } as Action); } catch { /* older engine */ } finish(); } }; scaleBtns.append(abortBtn);
   hud.append(chipPhase, chipClock, chipLeg, chipScale, scaleBtns, chipMsg);
-  const helpBox = el('div', { class: 'help' }); for (const k of KEY_HELP) helpBox.append(el('div', { html: `<kbd>${escapeHtml(k.keys)}</kbd> ${escapeHtml(k.does)}` })); let showHelp = app.settings.showHelp; helpBox.style.display = showHelp ? '' : 'none'; roadWrap.append(helpBox);
+  // Keys overlay: a centered, scrollable modal above the HUD; closes on Esc, on a click outside the panel, or on its Close button
+  const helpPanel = el('div', { class: 'help', id: 'keys-panel', role: 'dialog', 'aria-label': 'Keyboard shortcuts' });
+  helpPanel.append(el('h3', {}, 'Keyboard shortcuts'));
+  const helpList = el('div', { class: 'help-list' }); for (const k of KEY_HELP) helpList.append(el('div', { html: `<kbd>${escapeHtml(k.keys)}</kbd> ${escapeHtml(k.does)}` }));
+  const helpClose = el('button', { id: 'keys-close' }, 'Close (Esc)'); helpClose.onclick = () => setHelp(false);
+  helpPanel.append(helpList, helpClose);
+  const helpBox = el('div', { class: 'help-backdrop', id: 'keys-overlay' }, helpPanel);
+  helpBox.onclick = e => { if (e.target === helpBox) setHelp(false); };
+  let showHelp = app.settings.showHelp; helpBox.style.display = showHelp ? '' : 'none';
+  function setHelp(on: boolean): void { showHelp = on; helpBox.style.display = on ? '' : 'none'; }
   const cpCardBox = el('div', { class: 'cpcard', id: 'cpcard' }); cpCardBox.style.display = 'none'; roadWrap.append(cpCardBox);
   const preread = el('div', { class: 'preread', id: 'preread' });
 
@@ -97,7 +113,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     el('div', { class: 'instrument' }, swCanvas, swCap, laps),
     el('div', { class: 'instrument' }, spCanvas, spCap));
   const left = el('div', { class: 'left' }, roadWrap, instruments, preread);
-  const hintBar = el('div', { class: 'hintbar', id: 'hintbar', title: 'objective and the keys that matter' }, el('b', {}, drill ? `${drill.id}: ` : ''), hintBarText(objective, hint));
+  const hintScale = el('span', { class: 'chip', id: 'hint-scale' }, '1x');
+  const hintBar = el('div', { class: 'hintbar', id: 'hintbar', title: 'objective and the keys that matter' },
+    el('span', { class: 'hint-text' }, el('b', {}, drill ? `${drill.id}: ` : ''), hintBarText(objective, hint)),
+    el('span', { class: 'hint-scale', id: 'hint-scalekeys', title: 'time scale keys; ? lists every key' }, el('kbd', {}, '?'), ' keys  ·  ', scaleHintText(lockedTo1x), ' ', hintScale));
   const bookHead = el('div', { class: 'book-head' }, el('b', {}, 'GRIID'), el('span', { class: 'muted' }, `${scenario.name} · ${scenario.book.length} lines · N / Shift+N move, click to set`));
   const rows = el('div', { class: 'rows', id: 'book' });
   const book = el('div', { class: 'book' }, bookHead, rows);
@@ -120,7 +139,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const drawer = el('div', { class: 'drawer' },
     el('div', { class: 'bar' }, el('span', { class: 'muted' }, 'Callout:'), callout, promptWrap, el('span', { class: 'muted', style: 'margin-left:auto' }, `${scenario.car.name} · ${scenario.driver.name} (${scenario.driver.skill}) · ${scenario.speedo.kind} speedo · aids rung ${rung}${rung <= 1 ? ' (legal: no digital readouts)' : ''}`)),
     lapboard);
-  cockpit.append(hintBar, left, book, drawer);
+  cockpit.append(hintBar, left, book, drawer, helpBox);
   root.replaceChildren(cockpit);
 
   // ---------- state ----------
@@ -136,6 +155,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   let finished = false;
   let flashUntil = 0;
   let followedExec: number | null = null;
+  let stopCalledTod: number | null = null;
   let stopWaitTod: number | null = null;
   let lastSave = performance.now();
   const theme = themeFromCss();
@@ -170,6 +190,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   function onKeyDown(e: KeyboardEvent): void {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    if (showHelp && e.key === 'Escape') { e.preventDefault(); setHelp(false); return; }
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); setHelp(!showHelp); return; }
     const cmd = keys.keydown(e);
     if (!cmd) { if (e.key === ' ') e.preventDefault(); return; }
     e.preventDefault();
@@ -183,11 +205,11 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       case 'watch.reset': { const before = sim.observe({ peek: true }).stopwatch.reading; act({ type: 'watch.reset' }); if (sim.observe({ peek: true }).stopwatch.running && before > 0) flash('Analog crown: stop the watch before resetting'); else { swCanvas.classList.add('flash'); setTimeout(() => swCanvas.classList.remove('flash'), 600); } break; }
       case 'bezel': act({ type: 'watch.bezel', seconds: (obs.stopwatch.bezel ?? 0) + cmd.delta }); break;
       case 'call.turn': act({ type: 'call.turn', dir: cmd.dir }); break;
-      case 'call.go': if (sim.phase === 'preread') act({ type: 'start' }); else act({ type: 'call.go' }); break;
-      case 'call.stop': act({ type: 'call.stop' }); break;
+      case 'call.go': if (sim.phase === 'preread') { if (blockedBySave()) break; act({ type: 'start' }); } else act({ type: 'call.go' }); break;
+      case 'call.stop': act({ type: 'call.stop' }); stopCalledTod = sim.tod; break;
       case 'call.uturn': act({ type: 'call.uturn' }); break;
       case 'call.pass': act({ type: 'call.pass' }); break;
-      case 'depart': act({ type: 'start' }); break;
+      case 'depart': if (blockedBySave()) break; act({ type: 'start' }); break;
       case 'call.speed': act({ type: 'call.speed', mph: cmd.mph }); break;
       case 'nudge': { const cur = obs.driver.targetIndicated ?? lineSpeeds(scenario, obs.currentLine).vOut ?? 30; act({ type: 'call.speed', mph: Math.max(5, Math.round((cur + cmd.delta) * 10) / 10) }); break; }
       case 'line':
@@ -217,7 +239,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   document.addEventListener('keydown', onKeyDown); document.addEventListener('keyup', onKeyUp);
 
   // ---------- resilience ----------
-  function liveWorthSaving(): boolean { return !finished && sim.phase !== 'finished' && (sim.actions.length > 0 || sim.phase === 'running'); }
+  function liveWorthSaving(): boolean { return !pendingSave && !finished && sim.phase !== 'finished' && (sim.actions.length > 0 || sim.phase === 'running'); }
   function saveLive(): void { if (!liveWorthSaving()) return; run.annotations = ann.serialize(); saveStored(LIVE_KEY, snapshotRun(sim, src as StoredSource, { driverSkill, watch, annotations: run.annotations, scaleMax: run.scaleMax })); }
   function onBeforeUnload(e: BeforeUnloadEvent): void { if (!liveWorthSaving()) return; saveLive(); e.preventDefault(); e.returnValue = 'A run is in progress.'; }
   function onResize(): void { sizeCockpit(); lastBookKey = ''; renderNow(); }
@@ -275,7 +297,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const w = roadWrap.clientWidth || 600, h = roadWrap.clientHeight || 240;
     const rctx = prepare(roadCanvas, w, h);
     const lastLine = driverLog.length ? driverLog[driverLog.length - 1]! : null;
-    const pending = o.driver.pendingTurn ? `turn ${o.driver.pendingTurn}` : keys.buffer ? `speed ${keys.buffer}…` : null;
+    const stopCalled = stopCalledTod !== null || sim.events.some(e => e.type === 'call.stop');
+    const finishAsk = o.phase === 'running' ? finishPrompt(o.ahead, scenario, stopCalled) : null;
+    const pending = o.driver.pendingTurn ? `turn ${o.driver.pendingTurn}` : keys.buffer ? `speed ${keys.buffer}…` : finishAsk;
     // pace aid: at a STOP show how long to wait (rung 3) or only early / late (rung 2), not the raw count to zero (PT-02 BUG-10)
     const dwellSoFar = stopWaitTod !== null ? o.tod - stopWaitTod : 0;
     let pace: number | null = o.aids.earlyLate ?? null; let paceMode: 'seconds' | 'arrow' | 'wait' = 'seconds'; let waitMoreS: number | null = null;
@@ -311,6 +335,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const scale = currentScale(o);
     chipScale.textContent = paused ? 'PAUSED' : `${scale}x${scale !== requested && !paused ? ` (asked ${requested}x)` : ''}${lockedTo1x ? ' locked' : ''}`;
     chipScale.className = `chip ${paused ? 'alert' : scale > 1 ? 'warn' : ''}`;
+    hintScale.textContent = paused ? 'PAUSED' : `${scale}x${scale !== requested && !lockedTo1x ? ` (asked ${requested}x)` : ''}${lockedTo1x ? ' locked' : ''}`;
     scaleBtns.querySelectorAll('button[data-scale]').forEach(b => { (b as HTMLButtonElement).style.outline = Number((b as HTMLElement).dataset.scale) === requested ? '2px solid var(--accent)' : ''; });
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     if (flashUntil && performance.now() > flashUntil) { chipMsg.style.display = 'none'; flashUntil = 0; }
@@ -322,6 +347,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     } else preread.style.display = 'none';
     // drawer
     callout.textContent = keys.buffer ? `${keys.buffer}_ (Enter calls it)` : o.driver.pendingTurn ? `turn ${o.driver.pendingTurn} pending` : o.driver.targetIndicated !== null ? `holding ${o.driver.targetIndicated}` : '-';
+    if (finishAsk) callout.textContent = `${finishAsk}`;
     if (keys.modifiers.length) callout.textContent += `  [${keys.modifiers.join('')}+arrow]`;
     ledgerBody.innerHTML = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div><div class="muted">Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.</div>${o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${o.aids.earlyLate > 0 ? '+' : ''}${o.aids.earlyLate.toFixed(1)} s</b></div>` : ''}`;
     renderPerfCard(o, dwellSoFar);
@@ -337,13 +363,14 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     else cpCardBox.style.display = 'none';
   }
   function buildPreread(): void {
-    const dep = el('button', { class: 'primary', id: 'depart' }, 'Depart now (D)'); dep.onclick = () => { act({ type: 'start' }); renderNow(); };
-    const skip = el('button', { id: 'skip' }, 'Fast-forward to the start time'); skip.onclick = () => { act({ type: 'skipPreread' }); renderNow(); };
+    const dep = el('button', { class: 'primary', id: 'depart' }, 'Depart now (D)'); dep.onclick = () => { if (blockedBySave()) return; act({ type: 'start' }); renderNow(); };
+    const skip = el('button', { id: 'skip' }, 'Fast-forward to the start time'); skip.onclick = () => { if (blockedBySave()) return; act({ type: 'skipPreread' }); renderNow(); };
     const v0 = scenario.book[0]?.speed; let accel = ''; if (v0) { try { accel = ` Your car loses about ${accelLoss(v0, scenario.car).toFixed(1)} s getting up to ${v0} mph, so depart a few seconds early.`; } catch { accel = ''; } }
     const generic = `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one. The ghost leaves exactly on the second.${accel}`;
     const keysRow = el('div', { class: 'keys3' }); for (const [k, d] of hint.keys) keysRow.append(el('div', {}, el('kbd', {}, k), ' ', d));
     const rs = restartLines(scenario);
     preread.append(el('div', { class: 'box' },
+      resumeBanner(),
       el('h2', {}, drill ? `${drill.id}: ${drill.title}` : scenario.name),
       el('p', { class: 'objective' }, el('b', {}, 'Objective: '), objective),
       el('div', { class: 'keys-title muted' }, 'The keys that matter'), keysRow,
@@ -352,6 +379,30 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       el('div', { class: 'big', id: 'countdown' }),
       el('div', { style: 'display:flex;gap:8px;justify-content:center;margin-top:10px' }, dep, skip),
       el('p', { class: 'muted', style: 'margin-top:8px' }, 'Space starts the stopwatch; most navigators start it on the official second and run it as time-of-day all day.')));
+  }
+  /** N4: the cockpit pre-read offers the saved run of this drill: Resume restores it exactly as Home does, Start fresh discards it. */
+  function resumeBanner(): HTMLElement | null {
+    if (!pendingSave) return null;
+    const sv = pendingSave;
+    const names = drill ? drill.tiers.map(t => t.name) : undefined;
+    const ago = Math.max(0, Math.round((Date.now() - sv.savedAt) / 60000));
+    const res = el('button', { class: 'primary', id: 'resume-run' }, 'Resume');
+    res.onclick = () => {
+      app.resume = true; pendingSave = null; const h = sourceHash(sv.source as RunSource);
+      if (location.hash === h) window.dispatchEvent(new HashChangeEvent('hashchange')); else location.hash = h;
+    };
+    const fresh = el('button', { id: 'start-fresh' }, 'Start fresh');
+    fresh.onclick = () => { clearStored(LIVE_KEY); pendingSave = null; banner.remove(); flash('Saved run discarded'); renderNow(); };
+    const banner = el('div', { class: 'resume-banner', id: 'resume-banner' },
+      el('div', {}, el('b', {}, 'You have an unfinished run of this drill: '), `${describeSource(sv.source, names)} (saved ${ago} min ago, ${sv.actions.length} actions).`),
+      el('div', { style: 'display:flex;gap:8px;justify-content:center;margin-top:6px' }, res, fresh));
+    return banner;
+  }
+  /** Starting a new run while a saved one is waiting would overwrite it: ask first. */
+  function blockedBySave(): boolean {
+    if (!pendingSave) return false;
+    flash('You have an unfinished run: choose Resume or Start fresh first');
+    return true;
   }
   function renderPerfCard(o: Observation, dwellSoFar: number): void {
     const fl = focusLine(o, rung, bookLen);
@@ -370,6 +421,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       } else if (card.stopNoPause) parts.push(`<div>STOP without pause: loss ${card.stopNoPause.loss.toFixed(1)} s is yours to recover.</div>`);
       if (card.timed) parts.push(`<div>Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, call ${card.timed.then} at <b class="mono">${card.timed.call.toFixed(1)}</b> s (lead ${card.timed.lead.toFixed(1)})</div>`);
       else if (card.speedChange) parts.push(`<div>Speed ${card.speedChange.from} → ${card.speedChange.to}: call it <b class="mono">${card.speedChange.lead.toFixed(1)}</b> s before the landmark (${card.speedChange.ft} ft)</div>`);
+      if (card.turnLoss) {
+        const t = card.turnLoss;
+        parts.push(`<div class="turnloss"><b>Turn loss</b> <span class="muted">(s lost slowing and re-accelerating, no stop)</span>${t.here ? `<div>This turn ${t.here.turn} ${t.here.vIn}${t.here.vIn !== t.here.vOut ? ` &rarr; ${t.here.vOut}` : ''} mph: <b class="mono">${t.here.loss.toFixed(1)}</b> s</div>` : ''}${t.rows.map(r => `<div class="mono">${r.angle}&deg;: ${t.speeds.map((v, i) => `${v} <b>${r.losses[i]!.toFixed(1)}</b>`).join(' · ')}</div>`).join('')}</div>`);
+      }
       if (card.start) parts.push(`<div>Standing start to ${card.start.speed}: leave ~<b class="mono">${card.start.early.toFixed(1)}</b> s early</div>`);
     } else {
       const go = ann.goTime(line) || o.annotations?.[line] || '';

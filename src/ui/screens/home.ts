@@ -3,7 +3,8 @@ import '../../core/drills/index.js';
 import { allDrills, isUnlocked } from '../../core/drills/index.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
-import { startPathState } from '../viewmodels/curriculum.js';
+import { drillMinutes, formatMinutes } from '../viewmodels/estimate.js';
+import { startPathState, unlockBest } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
 const TRACKS: { name: string; blurb: string; ids: string[] }[] = [
@@ -17,10 +18,12 @@ export function renderHome(root: HTMLElement): void {
   const page = el('div', { class: 'page' });
   const drills = safeDrills();
   const prog = app.progress.load();
-  const best: Record<string, number> = {}; for (const [id, p] of Object.entries(prog.drills)) best[id] = p.stars;
+  const best = unlockBest(drills, prog);          // Silver/Gold stars only (DRILL-004)
+  const anyTier: Record<string, number> = {}; for (const [id, p] of Object.entries(prog.drills)) anyTier[id] = p.stars;
   page.append(el('h1', {}, 'Rally Trainer'), el('p', { class: 'muted' }, 'Great Race style time-speed-distance navigation: one stopwatch, one clock, a route book and a driver who does what you call. Learn in School, drill in the Cockpit, read the arithmetic in the Debrief.'));
+  if (app.homeNote) { page.append(el('div', { class: 'banner', id: 'home-note' }, app.homeNote)); app.homeNote = ''; }
   const resume = resumePanel(drills); if (resume) page.append(resume);
-  page.append(startHerePanel(best));
+  page.append(startHerePanel(anyTier));
   const runs = app.progress.recentRuns(5);
   if (runs.length) page.append(el('p', { class: 'muted', id: 'lastruns' }, `Last runs: ${runs.map(runLabel).join('  ·  ')}`));
   if (drills.length) {
@@ -37,7 +40,7 @@ export function renderHome(root: HTMLElement): void {
   const cards = el('div', { class: 'cards' });
   for (const b of builtinScenarios()) {
     const card = el('div', { class: 'card playable', 'data-scenario': `${b.name}-${b.seed}` },
-      el('div', { class: 'title' }, b.title), el('div', { class: 'meta' }, `about ${b.minutes} min`), el('div', {}, b.blurb));
+      el('div', { class: 'title' }, b.title), el('div', { class: 'meta' }, `${formatMinutes(b.minutes)} at 1x`), el('div', {}, b.blurb));
     const play = el('button', { class: 'primary' }, 'Play'); play.onclick = () => { location.hash = sourceHash({ kind: 'builtin', name: b.name, seed: b.seed }); };
     card.append(el('div', { class: 'actions' }, play)); cards.append(card);
   }
@@ -69,7 +72,7 @@ function startHerePanel(best: Record<string, number>): HTMLElement {
   if (go && cur) go.onclick = () => { location.hash = cur.step.kind === 'lesson' ? `#/school/${cur.step.id}` : sourceHash({ kind: 'drill', drillId: cur.step.id, tier: 0, seed: 1 }); };
   return el('section', { class: 'panel startpath', id: 'starthere-panel' },
     el('h3', {}, 'Start here'),
-    el('p', {}, 'New? Take the path in order: read the first School lesson (3 minutes), then play D01 (stopwatch), D03 (pauses) and D04 (timed changes) at Bronze. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet.'),
+    el('p', {}, 'New? Take the path in order: read the first School lesson (3 minutes), then play D01 (stopwatch), D03 (pauses) and D04 (timed changes) at Bronze. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the whole-leg drills.'),
     ol, go ? el('div', { style: 'margin-top:10px' }, go) : el('p', { class: 'ok' }, 'Path complete. Take the whole-leg drills (D11) and the full stage (D12).'));
 }
 
@@ -105,13 +108,13 @@ function drillCard(d: Drill, best: Record<string, number>): HTMLElement {
   const bestTxt = p ? (quiz ? `best ${p.bestScore ?? '-'} wrong` : p.bestRaw !== null && p.bestRaw !== undefined ? `best ${p.bestRaw} raw s` : p.bestScore !== null ? `best ${p.bestScore} s/leg (older run)` : '') : '';
   const card = el('div', { class: `card ${unlocked ? 'playable' : 'locked'}`, 'data-drill': d.id },
     el('div', { class: 'title' }, `${unlocked ? '' : '🔒 '}${d.id}  ${d.title}`),
-    el('div', { class: 'meta' }, `${d.kind} · ~${d.minutes} min · ${d.skills.join(' ')}`),
+    el('div', { class: 'meta' }, `${d.kind} · ${formatMinutes(drillMinutes(d))}${d.id === 'D13' ? ' per stage' : ''} at 1x · ${d.skills.join(' ')}`),
     el('div', {}, d.objective),
     multiTier ? tierPips(d, p) : el('div', { class: 'stars' }, '★'.repeat(stars) + '☆'.repeat(3 - stars)),
     p ? el('div', { class: 'muted' }, `${p.runs} run${p.runs === 1 ? '' : 's'}, ${p.aces} ace${p.aces === 1 ? '' : 's'}${bestTxt ? `, ${bestTxt}` : ''}`) : el('div', { class: 'muted' }, 'not yet played'),
   );
   const actions = el('div', { class: 'actions' });
-  if (!unlocked) actions.append(el('span', { class: 'lockline' }, `🔒 Locked: needs ${d.unlock.map(u => `${u.drill} ${'★'.repeat(u.stars)}`).join(', ')}`));
+  if (!unlocked) actions.append(el('span', { class: 'lockline' }, `🔒 Locked: needs ${d.unlock.map(u => `${u.drill} ${'★'.repeat(u.stars)}`).join(', ')} at Silver or Gold`));
   else if (d.id === 'D13') { const b = el('button', { class: 'primary' }, 'Open campaign'); b.onclick = () => { location.hash = '#/campaign'; }; actions.append(b); }
   else if (quiz) { const b = el('button', { class: 'primary' }, 'Open'); b.onclick = () => { location.hash = `#/${d.kind}/${d.id}`; }; actions.append(b); }
   else {

@@ -70,3 +70,8 @@ export function replayFinished(scenario: Scenario, run: Pick<StoredRun, 'actions
 export function describeSource(s: StoredSource, tierNames: string[] = ['Bronze', 'Silver', 'Gold']): string {
   return s.kind === 'drill' ? `${s.drillId} ${tierNames[s.tier] ?? `tier ${s.tier}`} seed ${s.seed}` : `${s.name} #${s.seed}`;
 }
+
+/** Same drill (any tier/seed) or same built-in scenario name: used to offer a saved run on the cockpit pre-read (N4). */
+export function sameDrillSource(a: StoredSource, b: StoredSource): boolean {
+  return a.kind === 'drill' ? b.kind === 'drill' && a.drillId === b.drillId : b.kind === 'builtin' && a.name === b.name;
+}

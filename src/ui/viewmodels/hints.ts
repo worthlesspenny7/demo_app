@@ -12,3 +12,6 @@ const HINTS: Record<string, DrillHint> = {
 };
 export function drillHint(drillId: string | null | undefined): DrillHint { return (drillId && HINTS[drillId]) || GENERIC; }
 export function hintBarText(objective: string, h: DrillHint): string { return `${objective}  ·  ${h.keys.map(([k, d]) => `${k}: ${d}`).join('  ·  ')}`; }
+
+/** Time-scale keys for the cockpit hint bar (UI-011: `>` or `.` faster, `<` or `,` slower; `?` opens the key list). */
+export function scaleHintText(lockedTo1x: boolean): string { return lockedTo1x ? 'time scale locked at 1x on this drill' : '> faster / < slower (or . / ,)'; }

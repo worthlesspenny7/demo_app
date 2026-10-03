@@ -48,7 +48,9 @@ export function stopwatchViewModel(elapsed: number, kind: WatchKind = 'analog', 
   const registerDeg = round3((((reading / 60) % registerMinutes) / registerMinutes) * 360);
   const bezel = ((num(opts.bezel) % dialSeconds) + dialSeconds) % dialSeconds;
   const bezelDeg = round3((bezel / dialSeconds) * 360);
-  const bezelRemaining = round3((((bezel - pos) % dialSeconds) + dialSeconds) % dialSeconds);
+  const bezelRaw = (((bezel - pos) % dialSeconds) + dialSeconds) % dialSeconds;
+  // N6: at the index (within float noise / the 0.001 display rounding) the remaining time is 0.0, not a wrapped dial length
+  const bezelRemaining = bezelRaw < 1e-6 || bezelRaw > dialSeconds - 1e-3 ? 0 : round3(bezelRaw);
   const laps = Array.isArray(opts.laps) ? opts.laps.filter(x => typeof x === 'number') : [];
   const lapRows = laps.slice(-3).reverse().map((l, i, arr) => {
     const idx = laps.length - i;

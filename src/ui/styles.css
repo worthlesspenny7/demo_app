@@ -178,3 +178,18 @@ tr.ace td { color: var(--ok); }
 .tip + .tip { margin-top: 8px; border-left-color: var(--accent2); font-size: 14px; }
 .quiz .opt kbd { margin-right: 8px; }
 .quiz .opt.reveal { border-color: var(--ok); color: var(--ok); }
+
+/* Keys overlay: centered, scrollable, above the HUD and the nav; closes on Esc or a click outside the panel */
+.help-backdrop { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(10,13,18,0.6); }
+.help { position: static; background: #141a22; color: #f2f4f7; border: 1px solid var(--line); border-radius: 10px; padding: 12px 18px; font-size: 13px; width: min(640px, 100%); max-height: calc(100vh - 32px); overflow: auto; columns: unset; max-width: none; }
+.help h3 { margin: 0 0 8px; }
+.help .help-list { columns: 2; column-gap: 22px; }
+.help .help-list div { break-inside: avoid; padding: 2px 0; }
+.help button { margin-top: 10px; }
+.cockpit .hintbar { display: flex; align-items: center; gap: 14px; }
+.cockpit .hintbar .hint-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit .hintbar .hint-scale { flex: none; white-space: nowrap; color: var(--text); }
+.cockpit .hintbar .chip { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-family: var(--mono); }
+.resume-banner { margin-bottom: 10px; padding: 8px 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel-2); font-size: 14px; }
+.drawer .lapboard .turnloss { margin-top: 4px; padding: 3px 6px; border-left: 3px solid var(--accent2); background: var(--panel-2); font-size: 12px; }
+.help kbd { background: #212c3b; color: #f2f4f7; border-color: #3a4556; }

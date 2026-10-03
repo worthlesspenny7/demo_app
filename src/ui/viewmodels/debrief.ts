@@ -36,7 +36,10 @@ export interface StopRow {
   legIndex: number; nodeId: string | null; line: number | null;
   vIn: number | null; vOut: number | null; entrySpeed: number | null; exitSpeed: number | null;
   pause: number; carLoss: number | null; cardLoss: number | null; idealDwell: number | null; correctDwell: number | null;
+  /** The navigator's dwell: wheels-stop to the go call (SIM-032 goDwell). Cross-traffic holds after the go call are in trafficWait. */
   yourDwell: number; goAt: number | null; net: number; delta: number;
+  /** Seconds the driver was held by cross traffic after the go call (ledger-eligible, not the navigator's error). */
+  trafficWait: number;
   /** TOD of the driver's "Stopped" and of the release. */
   waitTod: number; releaseTod: number | null;
   text: string; formulaText: string;
@@ -187,19 +190,22 @@ export function workedStops(events: SimEvent[] | null | undefined, scenario?: Sc
     }
     const idealDwell = carLoss === null ? null : r1(Math.max(0, pause - carLoss));
     const end = st.releaseTod ?? st.goTod ?? st.waitTod;
-    const yourDwell = a ? r1(Math.max(0, a.dwell)) : r1(Math.max(0, end - st.waitTod));
+    const trafficWait = a ? r1(Math.max(0, num(a.trafficWait))) : 0;
+    // N10: the navigator is judged on the dwell up to the go call; a driver held by cross traffic afterwards is not billed to them
+    const yourDwell = a ? r1(Math.max(0, typeof a.goDwell === 'number' ? a.goDwell : a.dwell)) : r1(Math.max(0, end - st.waitTod));
+    const trafficNote = trafficWait > 0.5 ? ` Traffic held the car ${trafficWait.toFixed(1)} s after your go (ledger; not your error).` : '';
     const goAt = st.goTod === null ? null : r1(st.goTod - st.waitTod);
     const net = carLoss === null ? r1(yourDwell - pause) : r1(yourDwell + carLoss - pause);
     const line = a?.line ?? sp?.line ?? null;
     const formulaText = carLoss === null
       ? `dwell = ${pause} - ? ; you called go at ${yourDwell.toFixed(1)} s`
-      : `dwell = ${pause} - ${carLoss.toFixed(1)} = ${idealDwell!.toFixed(1)} s; you called go at ${yourDwell.toFixed(1)} s; ${signed1(net)} s`;
+      : `dwell = ${pause} - ${carLoss.toFixed(1)} = ${idealDwell!.toFixed(1)} s; you called go at ${yourDwell.toFixed(1)} s; ${signed1(net)} s${trafficWait > 0.5 ? `; traffic held the car ${trafficWait.toFixed(1)} s (ledger)` : ''}`;
     const text = carLoss === null
       ? `Stop at line ${line ?? '?'}: pause ${pause} s; you waited ${yourDwell.toFixed(1)} s; ${signed1(net)} s vs the printed pause.`
-      : `Stop at line ${line ?? '?'}: entry ${vIn ?? vOut} / exit ${vOut}${turn && turn !== 'S' ? ` (turn ${turn}, capped at ${turnCap(turn, scenario!)} mph)` : ''}. Pause ${pause} s minus car loss ${carLoss.toFixed(1)} s = ideal dwell ${idealDwell!.toFixed(1)} s. You waited ${yourDwell.toFixed(1)} s -> ${signed1(net)} s.`;
+      : `Stop at line ${line ?? '?'}: entry ${vIn ?? vOut} / exit ${vOut}${turn && turn !== 'S' ? ` (turn ${turn}, capped at ${turnCap(turn, scenario!)} mph)` : ''}. Pause ${pause} s minus car loss ${carLoss.toFixed(1)} s = ideal dwell ${idealDwell!.toFixed(1)} s. You called go at ${yourDwell.toFixed(1)} s -> ${signed1(net)} s.${trafficNote}`;
     out.push({
       legIndex: st.legIndex, nodeId: st.nodeId, line, vIn, vOut, entrySpeed: vIn, exitSpeed: vOut, pause, carLoss, cardLoss: carLoss,
-      idealDwell, correctDwell: idealDwell, yourDwell, goAt, net, delta: net, waitTod: st.waitTod, releaseTod: st.releaseTod, text, formulaText,
+      idealDwell, correctDwell: idealDwell, yourDwell, trafficWait, goAt, net, delta: net, waitTod: st.waitTod, releaseTod: st.releaseTod, text, formulaText,
     });
   }
   return out;
@@ -376,16 +382,17 @@ export function biasNoise(src: { stops: StopRow[]; timed: TimedRow[]; landmarks:
     const all = [...h, ...xs];
     const { mean, sd } = stats(xs);
     const hs = stats(all);
+    // N1: the verdict judges THIS run (mean and SD of this run's rows, as printed: |mean| > sd = bias). The 10-run history is
+    // shown for context only. Fewer than two maneuvers, or a run whose mean and SD both round to under half a second, has no verdict.
     let verdict: BiasRow['verdict'] = 'none';
-    if (all.length >= 2 && hs.mean !== null && hs.sd !== null) verdict = Math.abs(hs.mean) > hs.sd ? 'bias' : 'noise';
-    else if (xs.length === 1 && mean !== null && Math.abs(mean) >= 1) verdict = 'bias';
-    const fix = verdict === 'bias' ? FIX[type].bias(hs.mean ?? mean ?? 0, { perfectSpeedo: !!opts.perfectSpeedo }) : verdict === 'noise' ? FIX[type].noise : '';
+    if (xs.length >= 2 && mean !== null && sd !== null && (Math.abs(mean) >= 0.5 || sd >= 0.5)) verdict = Math.abs(mean) > sd ? 'bias' : 'noise';
+    const fix = verdict === 'bias' ? FIX[type].bias(mean ?? 0, { perfectSpeedo: !!opts.perfectSpeedo }) : verdict === 'noise' ? FIX[type].noise : '';
     return { type, label: MANEUVER_LABEL[type], n: xs.length, mean, sd, histN: all.length, histMean: hs.mean, histSd: hs.sd, verdict, fix };
   });
-  const biasRows = rows.filter(r => r.verdict === 'bias' && (r.histMean ?? 0) !== 0).sort((a, b) => Math.abs(b.histMean ?? 0) - Math.abs(a.histMean ?? 0));
-  const noiseRows = rows.filter(r => r.verdict === 'noise' && (r.histSd ?? 0) > 0.5).sort((a, b) => (b.histSd ?? 0) - (a.histSd ?? 0));
+  const biasRows = rows.filter(r => r.verdict === 'bias').sort((a, b) => Math.abs(b.mean ?? 0) - Math.abs(a.mean ?? 0));
+  const noiseRows = rows.filter(r => r.verdict === 'noise').sort((a, b) => (b.sd ?? 0) - (a.sd ?? 0));
   const top = biasRows[0] ?? noiseRows[0] ?? null;
-  const ok = top && Math.abs(top.histMean ?? 0) + (top.histSd ?? 0) >= 1;
+  const ok = top && Math.abs(top.mean ?? 0) + (top.sd ?? 0) >= 1;
   return { rows, tip: ok ? top.fix : null, topType: ok ? top.type : null, errors };
 }
 /**

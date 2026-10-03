@@ -7,7 +7,8 @@ import { prepare, themeFromCss } from '../render/common.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
 import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
-import { nextDrill } from '../viewmodels/curriculum.js';
+import { fmtMMSS } from '../viewmodels/book.js';
+import { nextDrill, unlockBest } from '../viewmodels/curriculum.js';
 
 const BUCKET_COLOR: Record<Bucket, string> = { cruise: '#4fd1c5', stop: '#f0b35b', speedChange: '#9b8cff', timedChange: '#ff8fab', hazard: '#ef5a5a', offCourse: '#c0392b', turn: '#e67e22', start: '#7f8c8d', ta: '#4cc38a' };
 
@@ -30,7 +31,7 @@ export function renderDebrief(root: HTMLElement): void {
   const tb = el('tbody', {});
   for (const r of vm.rows) tb.append(el('tr', { class: r.ace ? 'ace' : '' }, el('td', {}, `${r.legIndex} (${r.cpId})`), el('td', { class: 'mono' }, r.perfect), el('td', { class: 'mono' }, r.actual), el('td', { class: 'num' }, r.errorText), el('td', { class: 'num' }, String(r.penalty)), el('td', {}, r.ace ? 'ACE' : r.missed ? 'missed' : r.sightZone ? 'sight-zone penalty' : r.taCredit ? `TA credit ${r.taCredit}` : '')));
   table.append(tb);
-  head.append(headline, el('div', { class: 'panel' }, el('h3', {}, 'Checkpoints'), table, el('div', { class: 'tip', id: 'tip', style: 'margin-top:10px' }, el('b', {}, 'Fix this next: '), vm.tip), ...vm.tips.slice(1).map(t => el('div', { class: 'tip', style: 'margin-top:6px' }, el('b', {}, 'Also: '), t))));
+  head.append(headline, el('div', { class: 'panel' }, el('h3', {}, 'Checkpoints'), table, el('div', { class: 'tip', id: 'tip', style: 'margin-top:10px' }, el('b', {}, vm.tip.startsWith('Clean run') ? 'Verdict: ' : 'Fix this next: '), vm.tip), ...vm.tips.slice(1).map(t => el('div', { class: 'tip', style: 'margin-top:6px' }, el('b', {}, 'Also: '), t))));
   page.append(head);
   // actions
   const actions = el('div', { style: 'display:flex;gap:8px;margin:14px 0' });
@@ -40,7 +41,7 @@ export function renderDebrief(root: HTMLElement): void {
   actions.append(retry, next, home);
   if (run.source.kind === 'drill') {
     try {
-      const ds = allDrills(); const prog = app.progress.load(); const best: Record<string, number> = {}; for (const [id, p] of Object.entries(prog.drills)) best[id] = p.stars;
+      const ds = allDrills(); const prog = app.progress.load(); const best = unlockBest(ds, prog);
       const nd = nextDrill(run.source.drillId, ds, best);
       if (nd) {
         const b = el('button', { id: 'nextdrill', class: nd.locked ? 'locked-btn' : '' }, nd.locked ? `🔒 Next drill: ${nd.drill.id} (needs ${nd.needs})` : `Next drill: ${nd.drill.id}`);
@@ -68,7 +69,7 @@ export function renderDebrief(root: HTMLElement): void {
   // worked arithmetic
   const worked = el('div', { class: 'panel worked', id: 'worked', style: 'margin-top:14px' }, el('h3', {}, 'Worked arithmetic per maneuver'));
   const ul = el('ul', {});
-  for (const s of vm.stops) ul.append(el('li', {}, `Stop, line ${s.line ?? '?'}: entry ${s.entrySpeed ?? '?'} / exit ${s.exitSpeed ?? '?'}; pause ${s.pause}; car loss ${s.cardLoss?.toFixed(1) ?? '?'} s; ideal dwell ${s.correctDwell?.toFixed(1) ?? '?'} s; your dwell ${s.yourDwell.toFixed(1)} s → ${sgn(s.delta)} s`));
+  for (const s of vm.stops) ul.append(el('li', {}, `Stop, line ${s.line ?? '?'}: entry ${s.entrySpeed ?? '?'} / exit ${s.exitSpeed ?? '?'}; pause ${s.pause}; car loss ${s.cardLoss?.toFixed(1) ?? '?'} s; ideal dwell ${s.correctDwell?.toFixed(1) ?? '?'} s; you called go at ${s.yourDwell.toFixed(1)} s → ${sgn(s.delta)} s${s.trafficWait > 0.5 ? `; traffic held the car ${s.trafficWait.toFixed(1)} s (ledger)` : ''}`));
   for (const r of vm.restarts) ul.append(el('li', {}, r.text));
   for (const t of vm.timed) ul.append(el('li', {}, t.text));
   for (const t of vm.landmarks) ul.append(el('li', {}, t.text));
@@ -83,11 +84,13 @@ export function renderDebrief(root: HTMLElement): void {
   const three = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1fr;margin-top:14px;align-items:start' });
   const ledger = el('div', { class: 'panel' }, el('h3', {}, 'Your ledger vs the truth'), el('p', {}, vm.ledger.text));
   if (vm.ledger.rows.length) { const t = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Time'), el('th', { class: 'num' }, 'You said'), el('th', { class: 'num' }, 'Truth'), el('th', { class: 'num' }, 'Off by')))); const b = el('tbody', {}); for (const r of vm.ledger.rows) b.append(el('tr', {}, el('td', { class: 'mono' }, formatClock(r.tod)), el('td', { class: 'num' }, sgn(r.believed)), el('td', { class: 'num' }, sgn(r.truth)), el('td', { class: `num ${Math.abs(r.diff) > 3 ? 'danger' : 'ok'}` }, sgn(r.diff)))); t.append(b); ledger.append(t); }
-  const bias = el('div', { class: 'panel' }, el('h3', {}, 'Bias or noise?'), el('p', { class: 'muted' }, 'Bias (|mean| > sd) is fixed by a number on the card; noise only by practice. History: your last 10 runs.'));
+  const bias = el('div', { class: 'panel' }, el('h3', {}, 'Bias or noise?'), el('p', { class: 'muted' }, 'Judged on THIS run (needs at least 2 of a kind): bias (|mean| > sd) is fixed by a number on the card; noise only by practice. The history columns (your last 10 runs plus this one) are for context only.'));
   const bt = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'Maneuver'), el('th', { class: 'num' }, 'n'), el('th', { class: 'num' }, 'mean'), el('th', { class: 'num' }, 'sd'), el('th', { class: 'num' }, 'hist n'), el('th', { class: 'num' }, 'hist mean'), el('th', {}, 'verdict'))));
   const bb = el('tbody', {});
-  for (const r of vm.bias.rows) bb.append(el('tr', {}, el('td', {}, r.label), el('td', { class: 'num' }, String(r.n)), el('td', { class: 'num' }, r.mean === null ? '-' : sgn(r.mean)), el('td', { class: 'num' }, r.sd === null ? '-' : r.sd.toFixed(1)), el('td', { class: 'num' }, String(r.histN)), el('td', { class: 'num' }, r.histMean === null ? '-' : sgn(r.histMean)), el('td', {}, r.verdict === 'none' ? el('span', { class: 'muted' }, '-') : el('span', { class: `pill ${r.verdict}` }, r.verdict), r.fix ? el('div', { class: 'muted', style: 'font-size:12px' }, r.fix) : null)));
-  bt.append(bb); bias.append(bt);
+  const shownBias = vm.bias.rows.filter(r => r.n >= 2);
+  if (!shownBias.length) bias.append(el('p', { class: 'muted', id: 'bias-empty' }, 'Not enough maneuvers of one kind in this run (need at least 2) for a bias or noise verdict.'));
+  for (const r of shownBias) bb.append(el('tr', {}, el('td', {}, r.label), el('td', { class: 'num' }, String(r.n)), el('td', { class: 'num' }, r.mean === null ? '-' : sgn(r.mean)), el('td', { class: 'num' }, r.sd === null ? '-' : r.sd.toFixed(1)), el('td', { class: 'num' }, String(r.histN)), el('td', { class: 'num' }, r.histMean === null ? '-' : sgn(r.histMean)), el('td', {}, r.verdict === 'none' ? el('span', { class: 'muted' }, '-') : el('span', { class: `pill ${r.verdict}` }, r.verdict), r.fix ? el('div', { class: 'muted', style: 'font-size:12px' }, r.fix) : null)));
+  bt.append(bb); if (shownBias.length) bias.append(bt);
   three.append(ledger, bias); page.append(three);
   // driver transcript
   const transcript = el('details', { class: 'panel', style: 'margin-top:14px' }, el('summary', {}, 'Driver transcript and event log'));
@@ -109,4 +112,4 @@ export function renderDebrief(root: HTMLElement): void {
   }, 30);
 }
 const sgn = (x: number): string => (x > 0 ? `+${x.toFixed(1)}` : x.toFixed(1));
-function formatMin(sec: number): string { const m = Math.floor(sec / 60), s = Math.round(sec % 60); return `${m}:${s < 10 ? '0' : ''}${s}`; }
+const formatMin = fmtMMSS;

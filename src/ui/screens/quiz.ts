@@ -77,6 +77,9 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
     const c = cards[i];
     buttons.length = 0; nextBtn = null; answered = false;
     if (!c) {
+      // N3: the last card's digit handler must not survive onto the result screen
+      if (onKey) { document.removeEventListener('keydown', onKey); onKey = null; }
+      answered = true;
       const stars = correct >= 19 ? 3 : correct >= 16 ? 2 : correct >= 12 ? 1 : 0;
       app.progress.recordRun(drillId, { stars, aces: 0, score: 20 - correct, tier: 0, unit: 'wrong' });
       const cats = [...new Set(missed)];
@@ -93,7 +96,7 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
     const fb = el('p', {});
     const answer = (k: number): void => {
       if (answered) return; answered = true;
-      const b = buttons[k]!;
+      const b = buttons[k]; if (!b) { answered = false; return; }
       if (k === c.answer) { correct++; b.classList.add('right'); fb.textContent = `Right. ${c.tip}`; fb.className = 'ok'; }
       else { b.classList.add('wrong'); buttons[c.answer]?.classList.add('reveal'); if (c.category) missed.push(c.category); fb.textContent = `No: ${c.options[c.answer]}. ${c.tip}`; fb.className = 'danger'; }
       const next = el('button', { class: 'primary', id: 'quiz-next' }, 'Next'); next.onclick = () => { i++; show(); }; box.append(next); nextBtn = next;

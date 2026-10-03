@@ -17,7 +17,8 @@ import type { Observation } from '../src/core/sim.js';
 import { createProgressStore, type StorageLike } from '../src/ui/viewmodels/progress.js';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
 import { Simulator } from '../src/core/sim.js';
-import type { Instruction } from '../src/core/course.js';
+import { DRIVER_EXPERT } from '../src/core/course.js';
+import type { Instruction, Scenario } from '../src/core/course.js';
 import { runToEnd, startAtOfficialTime, stepUntil } from './helpers.js';
 import '../src/core/drills/index.js';
 import { drillById, allDrills } from '../src/core/drills/registry.js';
@@ -469,7 +470,7 @@ describe('DEBRIEF-002 counterfactual replays', () => {
 describe('DEBRIEF-003 bias vs noise', () => {
   it('DEBRIEF-003 labels a consistent late "go" as bias with one tip, scattered errors as noise, and merges the last-10-run history', () => {
     const mk = (deltas: number[]) => ({
-      stops: deltas.map((d, i) => ({ legIndex: 1, nodeId: `n${i}`, line: i, vIn: 35, vOut: 35, entrySpeed: 35, exitSpeed: 35, pause: 15, carLoss: 7.5, cardLoss: 7.5, idealDwell: 7.5, correctDwell: 7.5, yourDwell: 7.5 + d, goAt: null, net: d, delta: d, waitTod: 0, releaseTod: null, text: '', formulaText: '' })),
+      stops: deltas.map((d, i) => ({ legIndex: 1, nodeId: `n${i}`, line: i, vIn: 35, vOut: 35, entrySpeed: 35, exitSpeed: 35, pause: 15, carLoss: 7.5, cardLoss: 7.5, idealDwell: 7.5, correctDwell: 7.5, yourDwell: 7.5 + d, trafficWait: 0, goAt: null, net: d, delta: d, waitTod: 0, releaseTod: null, text: '', formulaText: '' })),
       timed: [], landmarks: [], turns: [], cruise: [],
     });
     const bias = biasNoise(mk([2.0, 2.4, 1.8, 2.2]), null);
@@ -480,10 +481,20 @@ describe('DEBRIEF-003 bias vs noise', () => {
     const noise = biasNoise(mk([-3, 3, -2.5, 2.5]), null);
     expect(noise.rows.find(r => r.type === 'stop')!.verdict).toBe('noise');
     expect(noise.tip).toMatch(/rhythm/);
-    // history: this run alone looks like noise, but with ten late runs behind it the verdict is bias
-    const withHist = biasNoise(mk([0.2]), { stop: [2, 2.5, 1.8, 2.2, 2.1, 1.9, 2.3, 2.0, 2.4, 2.2] });
-    expect(withHist.rows.find(r => r.type === 'stop')!.verdict).toBe('bias');
+    // N1: the verdict judges THIS run. One row (n < 2) has no verdict even with ten late runs behind it; the history is context only
+    const hist = { stop: [2, 2.5, 1.8, 2.2, 2.1, 1.9, 2.3, 2.0, 2.4, 2.2] };
+    const withHist = biasNoise(mk([0.2]), hist);
+    expect(withHist.rows.find(r => r.type === 'stop')!.verdict).toBe('none');
     expect(withHist.rows.find(r => r.type === 'stop')!.histN).toBe(11);
+    expect(withHist.tip).toBeNull();
+    // this run's two rows decide: scattered this run stays noise even over a late history; a steady +1.1 s, SD 0.1 is bias
+    expect(biasNoise(mk([-3, 3]), hist).rows.find(r => r.type === 'stop')!.verdict).toBe('noise');
+    const steady = biasNoise(mk([1.0, 1.1, 1.2, 1.1, 1.0, 1.2]), null).rows.find(r => r.type === 'stop')!;
+    expect(steady.verdict).toBe('bias'); expect(Math.abs(steady.mean!)).toBeGreaterThan(steady.sd!);
+    // the printed rule |mean| > sd always agrees with the verdict shown
+    for (const d of [[0.6, -0.2, 0.4], [4, -4, 4.4], [1, 1], [0.1, -0.1]]) { const r = biasNoise(mk(d), null).rows.find(x => x.type === 'stop')!; if (r.verdict !== 'none') expect(r.verdict).toBe(Math.abs(r.mean!) > r.sd! ? 'bias' : 'noise'); }
+    // nothing to say when both the mean and the SD are negligible, or with 0 or 1 maneuvers
+    expect(biasNoise(mk([0.1, -0.1, 0.2]), null).rows.find(r => r.type === 'stop')!.verdict).toBe('none');
     expect(biasNoise(mk([]), null).tip).toBeNull();
     // the debrief carries exactly one tip
     const sc = stopLeg();
@@ -556,7 +567,7 @@ describe('UI-014 one turn-capped stop loss for the book strip, the perf card and
     const att = r.attribution.flatMap(a => a.stops);
     const rows = workedStops(r.events, sc, r.attribution);
     expect(att.length).toBeGreaterThan(3);
-    for (const a of att) { const row = rows.find(x => x.nodeId === a.nodeId)!; expect(row.line).toBe(a.line); expect(row.pause).toBe(a.pause); expect(row.yourDwell).toBeCloseTo(Math.round(a.dwell * 10) / 10, 1); }
+    for (const a of att) { const row = rows.find(x => x.nodeId === a.nodeId)!; expect(row.line).toBe(a.line); expect(row.pause).toBe(a.pause); expect(row.yourDwell).toBeCloseTo(Math.round(a.goDwell * 10) / 10, 1); expect(row.trafficWait).toBeCloseTo(Math.round(a.trafficWait * 10) / 10, 1); }
   });
 });
 
@@ -720,5 +731,131 @@ describe('UI-021 quizzes: distinct cards, distinct options, no printed answers',
     for (let seed = 1; seed <= 300; seed++) for (const c of mathCards(seed)) { expect(new Set(c.options).size).toBe(c.options.length); expect(c.options.length).toBe(4); }
     const c = mathCards(5).find(x => x.prompt.includes('hold +5 mph'))!;
     expect(c.tip).toContain('E x v / d');
+  });
+});
+
+import { formatElapsed } from '../src/core/units.js';
+import { Stopwatch, RallyClock } from '../src/core/stopwatch.js';
+import { fmtMMSS } from '../src/ui/viewmodels/book.js';
+import { unlockStars, unlockBest } from '../src/ui/viewmodels/curriculum.js';
+import { scenarioMinutes, drillMinutes, formatMinutes } from '../src/ui/viewmodels/estimate.js';
+import { gateFor } from '../src/ui/viewmodels/campaign-gate.js';
+import { finishPrompt, turnLossBlock } from '../src/ui/viewmodels/cockpitinfo.js';
+import { scaleHintText } from '../src/ui/viewmodels/hints.js';
+import { sameDrillSource } from '../src/ui/viewmodels/resume.js';
+import { isUnlocked } from '../src/core/drills/index.js';
+
+describe('DEBRIEF-008 this-run verdicts and traffic holds', () => {
+  it('DEBRIEF-008 a steady +1.1 s (SD 0.1) over 6 stops is bias, the printed rule agrees, rows with n < 2 have no verdict or advice', () => {
+    const mk = (deltas: number[]) => ({
+      stops: deltas.map((d, i) => ({ legIndex: 1, nodeId: `n${i}`, line: i, vIn: 35, vOut: 35, entrySpeed: 35, exitSpeed: 35, pause: 15, carLoss: 7.5, cardLoss: 7.5, idealDwell: 7.5, correctDwell: 7.5, yourDwell: 7.5 + d, trafficWait: 0, goAt: null, net: d, delta: d, waitTod: 0, releaseTod: null, text: '', formulaText: '' })),
+      timed: [], landmarks: [], turns: [], cruise: [],
+    });
+    const b = biasNoise(mk([1.0, 1.1, 1.2, 1.1, 1.0, 1.2]), { stop: [3, -3, 3, -3] });   // a scattered history must not change this run's verdict
+    const stop = b.rows.find(r => r.type === 'stop')!;
+    expect(stop.verdict).toBe('bias'); expect(b.tip).toMatch(/late/);
+    for (const r of b.rows.filter(x => x.n < 2)) { expect(r.verdict).toBe('none'); expect(r.fix).toBe(''); }
+    const one = biasNoise(mk([4]), null); expect(one.rows.find(r => r.type === 'stop')!.verdict).toBe('none'); expect(one.tip).toBeNull();
+  });
+  it('DEBRIEF-008 stop rows carry goDwell as the navigator dwell and trafficWait as a ledger note (traffic forced on every seed)', () => {
+    const quietDriver = { ...DRIVER_EXPERT, inconsistency: 0 };
+    let seen = 0;
+    for (let seed = 1; seed <= 8 && !seen; seed++) {
+      const sc: Scenario = new ScenarioBuilder({ startTime: 8 * 3600, seed, driver: quietDriver, trafficWaitProbability: 1 }).start(35).advanceMiles(0.5).stop('S', 35, { pause: 15 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+      const sim = new Simulator(sc); sim.act({ type: 'skipPreread', secondsBefore: 3 }); sim.act({ type: 'start' });
+      for (let i = 0; i < 6000 && sim.phase !== 'finished'; i++) { sim.step(0.5); if (sim.waitingForGo) { sim.step(8); sim.act({ type: 'call.go' }); sim.step(30); } }
+      const r = sim.result(); const att = r.attribution.flatMap(a => a.stops);
+      const rows = workedStops(r.events, sc, r.attribution);
+      expect(rows.length).toBe(att.length);
+      rows.forEach((row, i) => { expect(row.yourDwell).toBeCloseTo(Math.round(att[i]!.goDwell * 10) / 10, 1); expect(row.trafficWait).toBeCloseTo(Math.round(att[i]!.trafficWait * 10) / 10, 1); });
+      const held = rows.find(x => x.trafficWait > 0.5);
+      if (held) { seen++; expect(held.text).toMatch(/Traffic held the car/); expect(held.formulaText).toMatch(/traffic held the car/); expect(held.yourDwell).toBeLessThan(att[0]!.dwell); }
+    }
+    expect(seen).toBe(1);
+  });
+});
+
+describe('UI-021 formatters and the bezel index', () => {
+  it('UI-021 119.97 s prints 2:00.0 and 0:59.96 prints 1:00.0; fmtMMSS rounds before splitting', () => {
+    expect(formatElapsed(119.97)).toBe('2:00.0'); expect(formatElapsed(59.96)).toBe('1:00.0'); expect(formatElapsed(119.97, 0)).toBe('2:00');
+    expect(formatElapsed(65.04, 2)).toBe('1:05.04'); expect(formatElapsed(-0.04)).toBe('0:00.0'); expect(formatElapsed(-5.5)).toBe('-0:05.5');
+    expect(fmtMMSS(119.6)).toBe('2:00'); expect(fmtMMSS(59.5)).toBe('1:00'); expect(fmtMMSS(61)).toBe('1:01');
+  });
+  it('UI-021 bezelRemaining is 0.0 at the index (float noise must not wrap to the dial length)', () => {
+    const w = new Stopwatch('analog'); w.start(0); w.bezel = 20.200000000000003;
+    expect(w.bezelRemaining(20.2)).toBe(0); expect(w.bezelRemaining(20.0)).toBeCloseTo(0.2, 6);
+    const c = new RallyClock(); c.setBezel(20); expect(c.bezelRemaining(28800 + 20 + 1e-9)).toBe(0); expect(c.bezelRemaining(28800 + 20)).toBe(0);
+    expect(clockViewModel(28800 + 20 + 1e-9, 20).bezelRemaining).toBe(0); expect(clockViewModel(28800 + 19.8, 20).bezelRemaining).toBeCloseTo(0.2, 3);
+    const vm = stopwatchViewModel(20.2, 'analog', { dialSeconds: 60, bezel: 20.200000000000003 }); expect(vm.bezelRemaining).toBe(0);
+  });
+});
+
+describe('DRILL-004 unlocks count Silver or Gold stars only', () => {
+  it('DRILL-004 Bronze stars never unlock; Silver or Gold do; single-tier decks count their only tier; legacy progress falls back to best stars', () => {
+    const ds = allDrills(); const d03 = ds.find(d => d.id === 'D03')!; const d09 = ds.find(d => d.id === 'D09')!;
+    expect(unlockStars(d03, { stars: 3, tierStars: [3, 0, 0] })).toBe(0);
+    expect(unlockStars(d03, { stars: 3, tierStars: [3, 2, 0] })).toBe(2);
+    expect(unlockStars(d03, { stars: 3, tierStars: [1, 0, 3] })).toBe(3);
+    expect(unlockStars(d09, { stars: 2, tierStars: [2, 0, 0] })).toBe(2);
+    expect(unlockStars(d03, { stars: 2 })).toBe(2);
+    const bronze = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10'].map(id => [id, { stars: 3, tierStars: [3, 0, 0] }]));
+    expect(isUnlocked(drillById('D18')!, unlockBest(ds, { drills: bronze }))).toBe(false);
+    const silver = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10'].map(id => [id, { stars: 2, tierStars: [0, 2, 0] }]));
+    expect(isUnlocked(drillById('D18')!, unlockBest(ds, { drills: silver }))).toBe(true);
+  });
+});
+
+describe('UI-024 card minutes come from the 1x ghost time', () => {
+  it('UI-024 D07 reads about 45 min, not 12; a quiz keeps its own figure; formatting handles hours', () => {
+    const d07 = drillById('D07')!;
+    expect(drillMinutes(d07)).toBeGreaterThan(40); expect(drillMinutes(d07)).toBeLessThan(55);
+    expect(drillMinutes(drillById('D09')!)).toBe(drillById('D09')!.minutes);
+    expect(scenarioMinutes(drillById('D01')!.scenario(1, 0))).toBeGreaterThanOrEqual(4);
+    expect(formatMinutes(9)).toBe('~9 min'); expect(formatMinutes(60)).toBe('~1 h'); expect(formatMinutes(293)).toBe('~4 h 53 min');
+  });
+});
+
+describe('UI-025 campaign gate', () => {
+  it('UI-025 D13 is locked until D12 has a Silver/Gold star; the note names what is needed', () => {
+    const d13 = drillById('D13')!;
+    const locked = gateFor(d13, {}); expect(locked.open).toBe(false); expect(locked.note).toMatch(/D12/);
+    expect(gateFor(d13, { D12: 1 }).open).toBe(true);
+    expect(gateFor(undefined, {}).open).toBe(false);
+  });
+});
+
+describe('UI-022 saved run on the pre-read and UI-023 scale hints', () => {
+  it('UI-022 a saved run counts as "the same drill" for any tier and seed, never for another drill', () => {
+    expect(sameDrillSource({ kind: 'drill', drillId: 'D03', tier: 0, seed: 1 }, { kind: 'drill', drillId: 'D03', tier: 2, seed: 9 })).toBe(true);
+    expect(sameDrillSource({ kind: 'drill', drillId: 'D03', tier: 0, seed: 1 }, { kind: 'drill', drillId: 'D04', tier: 0, seed: 1 })).toBe(false);
+    expect(sameDrillSource({ kind: 'builtin', name: 'varied', seed: 1 }, { kind: 'builtin', name: 'varied', seed: 4 })).toBe(true);
+    expect(sameDrillSource({ kind: 'builtin', name: 'varied', seed: 1 }, { kind: 'drill', drillId: 'D03', tier: 0, seed: 1 })).toBe(false);
+  });
+  it('UI-023 the hint bar names the real scale keys; the keys exist and a locked drill says so', () => {
+    expect(scaleHintText(false)).toMatch(/>.*faster/); expect(scaleHintText(false)).toMatch(/<.*slower/); expect(scaleHintText(true)).toMatch(/locked at 1x/);
+    const k = new KeyMapper(); expect(k.keydown({ key: '>' })).toEqual({ type: 'scale', delta: 1 }); expect(k.keydown({ key: '<' })).toEqual({ type: 'scale', delta: -1 });
+  });
+});
+
+describe('UI-026 S at the finish and the turn-loss block', () => {
+  it('UI-026 the finish prompt appears when the finish or observation checkpoint is in sight and disappears after S', () => {
+    const sc = drillById('D03')!.scenario(1, 0);
+    const ahead = [{ kind: 'finish', approxDistanceFt: 300 }, { kind: 'checkpoint', approxDistanceFt: 150, label: 'OBSERVATION CHECKPOINT' }];
+    const needs = { ...sc, checkpoints: [...sc.checkpoints, { ...sc.checkpoints[0]!, kind: 'observation' as const }] };
+    expect(finishPrompt(ahead, needs, false)).toMatch(/S: stop/);
+    expect(finishPrompt(ahead, needs, true)).toBeNull();
+    expect(finishPrompt([{ kind: 'intersection', approxDistanceFt: 200 }], needs, false)).toBeNull();
+    expect(finishPrompt(ahead, { book: [], checkpoints: [] }, false)).toBeNull();
+  });
+  it('UI-026 the perf card of a turning line carries 90 and 45 degree turn-loss rows from the performance table', () => {
+    const sc = drillById('D11')!.scenario(1, 0);
+    const line = sc.book.findIndex(i => i.turn === 'L' || i.turn === 'R') + 1;
+    expect(line).toBeGreaterThan(0);
+    const card = perfCardFor(sc, line, instrumentPolicy(aidsForRung(3)))!;
+    expect(card.turnLoss).toBeDefined();
+    const t = card.turnLoss!; expect(t.rows.map(r => r.angle)).toEqual([90, 45]); expect(t.rows[0]!.losses.length).toBe(t.speeds.length);
+    expect(t.rows[0]!.losses[2]!).toBeGreaterThan(t.rows[1]!.losses[2]!);   // a 90 costs more than a 45
+    expect(t.here?.angle).toBe(90); expect(t.here!.loss).toBeGreaterThan(0);
+    expect(turnLossBlock(sc, 1).here).toBeNull();
   });
 });

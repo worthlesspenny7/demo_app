@@ -34,7 +34,26 @@ export function nextDrill(id: string, drills: Drill[], best: Record<string, numb
     const d = drills.find(x => x.id === CURRICULUM[k]);
     if (!d || d.kind !== 'drive') continue;
     const missing = d.unlock.filter(u => (best[u.drill] ?? 0) < u.stars);
-    return { drill: d, locked: missing.length > 0, needs: missing.map(u => `${u.drill} ${'★'.repeat(u.stars)}`).join(', ') };
+    return { drill: d, locked: missing.length > 0, needs: `${missing.map(u => `${u.drill} ${'★'.repeat(u.stars)}`).join(', ')} at Silver or Gold` };
   }
   return null;
+}
+
+/**
+ * Stars that count toward unlocks (DRILL-004): the best at Silver or Gold only, so Bronze (live answer aids) never opens
+ * more content. Single-tier drills (quiz and math decks) count their only tier; progress saved before per-tier stars were
+ * tracked falls back to the old best-of-any-tier number.
+ */
+export function unlockStars(drill: Pick<Drill, 'tiers'> | undefined, p: { stars: number; tierStars?: number[] } | undefined): number {
+  if (!p) return 0;
+  const tiers = drill?.tiers.length ?? 3;
+  if (tiers <= 1) return p.stars;
+  if (!Array.isArray(p.tierStars)) return p.stars;
+  return Math.max(p.tierStars[1] ?? 0, p.tierStars[2] ?? 0);
+}
+/** Best unlock stars per drill id from stored progress. */
+export function unlockBest(drills: Pick<Drill, 'id' | 'tiers'>[], prog: { drills: Record<string, { stars: number; tierStars?: number[] }> }): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, p] of Object.entries(prog.drills)) out[id] = unlockStars(drills.find(d => d.id === id), p);
+  return out;
 }
