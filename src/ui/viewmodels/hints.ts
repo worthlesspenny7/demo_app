@@ -1,0 +1,14 @@
+/** Per-drill objective restatement and the keys that matter (UI-019): shown in the pre-read overlay and as a one-line hint bar. */
+export interface DrillHint { keys: [string, string][]; preread: string | null }
+
+const GENERIC: DrillHint = { keys: [['Space', 'start / stop the watch'], ['arrows (B/A/J)', 'call the turn'], ['G', 'go on the count']], preread: null };
+
+const HINTS: Record<string, DrillHint> = {
+  D01: { keys: [['D', 'depart'], ['Space', 'start the watch'], ['L', 'lap as the front bumper passes each sign']], preread: 'D01 is a reaction drill. The "book" is just signs. Depart with D, start the watch with Space, then press L the instant the front bumper passes each sign. Consistency matters more than being perfect: a steady 0.3 s late can be calibrated out.' },
+  D03: { keys: [['G', 'go when the bezel hits the card dwell'], ['[ ]', 'set the bezel (Shift = 0.2 s)'], ['Space', 'start the watch at "Stopped"']], preread: null },
+  D04: { keys: [['L', 'lap at the landmark'], ['digits + Enter', 'call the new speed on the count'], ['Space', 'watch']], preread: null },
+  D05: { keys: [['digits + Enter', 'call the speed half a ramp early'], ['L', 'lap at the sign'], ['Space', 'watch']], preread: null },
+  D07: { keys: [['L', 'lap at each calibration mark'], ['digits + Enter', 'hold 50 on the speedo'], ['Calibration box', 'set the Timewise factor or card']], preread: null },
+};
+export function drillHint(drillId: string | null | undefined): DrillHint { return (drillId && HINTS[drillId]) || GENERIC; }
+export function hintBarText(objective: string, h: DrillHint): string { return `${objective}  ·  ${h.keys.map(([k, d]) => `${k}: ${d}`).join('  ·  ')}`; }
