@@ -205,8 +205,10 @@ describe('stops and pauses end to end', () => {
     const dwell = 15 - stopLoss(35, 35, sc.car);
     sim.step(dwell); sim.act({ type: 'call.go' });
     runToEnd(sim);
-    const leg = sim.result().score.legs[0]!;
+    const res = sim.result(); const leg = res.score.legs[0]!;
     expect(Math.abs(leg.error!)).toBeLessThanOrEqual(1);
+    // per-stop record exists with the dwell we held (UI-REQUESTS #1)
+    expect(res.attribution[0]!.stops.length).toBe(1); expect(res.attribution[0]!.stops[0]!.dwell).toBeCloseTo(dwell, 0); expect(res.attribution[0]!.stops[0]!.vIn).toBe(35);
   });
   it('forgetting the dwell arithmetic (full 15 s) makes you late by the stop loss', () => {
     const sc = new ScenarioBuilder({ startTime: T0, driver: quiet }).start(35).advanceMiles(0.5).stop('S', 35).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();

@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "spec:check": "tsx scripts/spec-check.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "vite build && playwright test",
     "sim": "tsx src/agent/cli.ts"
   },
   "repository": {

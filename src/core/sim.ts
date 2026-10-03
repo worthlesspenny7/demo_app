@@ -22,7 +22,7 @@ export type Action =
   | { type: 'line.set'; n: number } | { type: 'line.annotate'; n: number; text: string } | { type: 'note'; text: string } | { type: 'abort' }
   | { type: 'ta.declare'; seconds: number }
   | { type: 'speedo.setFactor'; k: number } | { type: 'card.set'; card: Record<string, number> }
-  | { type: 'start' } | { type: 'skipPreread' };
+  | { type: 'start' } | { type: 'skipPreread'; secondsBefore?: number };
 
 export interface VisibleExit { angle: number; surface: string; kind: string; name?: string; controlOnExit?: string }
 export interface VisibleFeature {
@@ -37,7 +37,7 @@ export interface VisibleFeature {
   gateDown?: boolean;
 }
 
-export interface DriverMessage { tod: number; text: string; kind: 'readback' | 'question' | 'info' }
+export interface DriverMessage { id: number; tod: number; text: string; kind: 'readback' | 'question' | 'info' }
 
 export interface Observation {
   phase: 'preread' | 'running' | 'finished';
@@ -65,7 +65,7 @@ export interface Observation {
 export interface SimEvent { tod: number; s: number; type: string; detail?: Record<string, unknown> }
 
 export type Bucket = 'cruise' | 'stop' | 'speedChange' | 'timedChange' | 'hazard' | 'offCourse' | 'turn' | 'start' | 'ta';
-export interface LegAttribution { legIndex: number; buckets: Record<Bucket, number>; cruiseSeconds: number; meanSpeedRatio: number; stops: { nodeId: string; pause: number; actualCost: number; dwell: number }[] }
+export interface LegAttribution { legIndex: number; buckets: Record<Bucket, number>; cruiseSeconds: number; meanSpeedRatio: number; stops: { nodeId: string; line: number | null; pause: number; actualCost: number; dwell: number; vIn: number; vOut: number; turn: string | null }[] }
 
 export interface StageResult {
   scenarioId: string;
@@ -91,7 +91,7 @@ interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 
 const TICK = 0.1;
 const TURN_ZONE_FT = 60;
 
-export interface SimOptions { watch?: WatchKind; useCard?: boolean; mainRoadRule?: 'pavement-first' | 'straight-as-possible'; navigatorLatency?: number }
+export interface SimOptions { watch?: WatchKind; dialSeconds?: 30 | 60; useCard?: boolean; mainRoadRule?: 'pavement-first' | 'straight-as-possible'; navigatorLatency?: number }
 
 export class Simulator {
   readonly sc: Scenario;
@@ -104,7 +104,8 @@ export class Simulator {
   tod: number;
   phase: Observation['phase'] = 'preread';
   readonly events: SimEvent[] = [];
-  private driverMsgs: DriverMessage[] = [];
+  /** Full transcript (observe() only returns messages since the previous observe). */
+  driverMsgs: DriverMessage[] = [];
   private pendingMsgs: DriverMessage[] = [];
   // navigator state
   currentLine = 1;
@@ -142,7 +143,7 @@ export class Simulator {
   private cruiseDt = 0; private cruiseDs = 0; private cruiseGhostDs = 0;
   private legStops: LegAttribution['stops'] = [];
   attribution: LegAttribution[] = [];
-  private curStop: { nodeId: string; pause: number; startTod: number; dwellStart: number | null; dwell: number } | null = null;
+  private curStop: { nodeId: string; line: number | null; pause: number; startTod: number; dwellStart: number | null; dwell: number; vIn: number; vOut: number; turn: string | null } | null = null;
   private rampTarget: number | null = null; private rampKind: 'speedChange' | 'timedChange' | null = null;
   private lastSpeedChangeWasTimed = false;
   private timedChange: { atS: number; atTod: number } | null = null;
@@ -160,7 +161,7 @@ export class Simulator {
     this.rnd = rng(sc.seed);
     this.car = new Car(sc.car);
     this.speedo = new Speedometer(sc.speedo, this.rnd.fork('speedo'));
-    this.watch = new Stopwatch(opts.watch ?? 'analog');
+    this.watch = new Stopwatch(opts.watch ?? 'analog', opts.dialSeconds ?? 60);
     this.useCard = opts.useCard ?? false;
     this.mainRoadRule = opts.mainRoadRule ?? 'pavement-first';
     this.tod = sc.startTime - sc.prereadSeconds;
@@ -179,6 +180,7 @@ export class Simulator {
   act(a: Action): void {
     const now = this.tod;
     this.actions.push({ tick: this.tick, action: a });
+    if (a.type.startsWith('watch.') || a.type.startsWith('line.') || a.type === 'note' || a.type === 'bezel.set') this.log(a.type, { ...(a as unknown as Record<string, unknown>) });
     switch (a.type) {
       case 'watch.start': this.watch.start(now); break;
       case 'watch.stop': this.watch.stop(now); break;
@@ -196,7 +198,7 @@ export class Simulator {
       case 'ta.declare': this.taDeclared[this.legIndex] = Math.max(0, a.seconds); this.log('ta.declare', { legIndex: this.legIndex, seconds: a.seconds }); break;
       case 'speedo.setFactor': this.speedo.setFactor(a.k); this.log('speedo.setFactor', { k: a.k }); break;
       case 'card.set': this.card = { ...a.card }; break;
-      case 'skipPreread': if (this.phase === 'preread') { this.tod = Math.max(this.tod, this.sc.startTime); } break;
+      case 'skipPreread': if (this.phase === 'preread') { const target = this.sc.startTime - Math.max(0, a.secondsBefore ?? 0); if (target > this.tod) { const ticks = Math.round((target - this.tod) / TICK); this.tick += ticks; this.tod = this.tod0 + this.tick * TICK; } } break;
       case 'start': this.depart(); break;
       case 'call.speed': {
         let mph = a.mph;
@@ -351,7 +353,8 @@ export class Simulator {
     return bps[lo]!.v;
   }
   private log(type: string, detail?: Record<string, unknown>): void { this.events.push({ tod: this.tod, s: this.car.s, type, detail }); }
-  private say(text: string, kind: DriverMessage['kind']): void { const m = { tod: this.tod, text, kind }; this.driverMsgs.push(m); this.pendingMsgs.push(m); this.log('driver', { text, kind }); }
+  private msgSeq = 0;
+  private say(text: string, kind: DriverMessage['kind']): void { const m = { id: ++this.msgSeq, tod: this.tod, text, kind }; this.driverMsgs.push(m); this.pendingMsgs.push(m); this.log('driver', { text, kind }); }
   private driverState(): string {
     if (this.phase !== 'running') return this.phase;
     if (this.off) { if (!this.sc.aids.offCourseAlert) return this.off.phase === 'turning' ? 'uturn' : 'cruise'; return this.off.phase === 'out' ? 'offcourse' : this.off.phase === 'turning' ? 'uturn' : 'returning'; }
@@ -519,7 +522,7 @@ export class Simulator {
     const node = this.nextNode();
     if (node && !this.curStop && node.control === 'STOP' && this.car.mode === 'stopping' && !this.releasedNodeId) {
       const ins = this.sc.book.find(i => i.nodeId === node.id);
-      this.curStop = { nodeId: node.id, pause: ins?.pause ?? 0, startTod: this.tod, dwellStart: null, dwell: 0 };
+      this.curStop = { nodeId: node.id, line: ins?.n ?? null, pause: ins?.pause ?? 0, startTod: this.tod, dwellStart: null, dwell: 0, vIn: Math.round(this.car.mph()), vOut: ins?.timed ? ins.timed.holdSpeed : ins?.speed ?? Math.round(this.car.mph()), turn: ins?.turn ?? null };
       this.log('stop.begin', { nodeId: node.id });
     }
     // checkpoints
@@ -543,9 +546,11 @@ export class Simulator {
       this.nextNodeIdx++;
       if (this.off) break;
     }
-    // speed-ramp end after a stop: when back up to target, close the stop record
-    if (this.curStop && this.releasedNodeId && this.car.mode === 'cruise' && this.targetIndicated !== null && Math.abs(this.car.v - mphToFps(this.speedo.inverse(this.targetIndicated))) < 0.5) {
-      this.closeStop();
+    // speed-ramp end after a stop: when back up to target (or well past the node), close the stop record
+    if (this.curStop && this.curStop.dwellStart !== null && !this.waitingForGo && this.car.v > 0 && this.targetIndicated !== null) {
+      const atSpeed = Math.abs(this.car.v - mphToFps(this.speedo.inverse(this.targetIndicated))) < mphToFps(0.5);
+      const stopNode = this.sc.course.nodes.find(x => x.id === this.curStop!.nodeId);
+      if (atSpeed || (stopNode && this.car.s > stopNode.s + 2500)) this.closeStop();
     }
     if (this.releasedNodeId) { const rn = this.sc.course.nodes.find(x => x.id === this.releasedNodeId); if (rn && s > rn.s + 5) this.releasedNodeId = null; }
     // timed change due?
@@ -555,7 +560,7 @@ export class Simulator {
   private closeStop(): void {
     if (!this.curStop) return;
     const cost = this.buckets.stop; // bucket since leg start; approximate per-stop by delta
-    this.legStops.push({ nodeId: this.curStop.nodeId, pause: this.curStop.pause, actualCost: cost - this.stopBucketAtStopStart, dwell: this.curStop.dwell });
+    this.legStops.push({ nodeId: this.curStop.nodeId, line: this.curStop.line, pause: this.curStop.pause, actualCost: cost - this.stopBucketAtStopStart, dwell: this.curStop.dwell, vIn: this.curStop.vIn, vOut: this.curStop.vOut, turn: this.curStop.turn });
     this.log('stop.end', { nodeId: this.curStop.nodeId, dwell: this.curStop.dwell });
     this.curStop = null;
   }

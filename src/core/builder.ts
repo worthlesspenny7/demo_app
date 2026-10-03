@@ -153,8 +153,8 @@ export class ScenarioBuilder {
   }
 
   /** Lunch/restart: a stop node with an official restart time. */
-  restart(speed: number, restartTime: number): this {
-    return this.instruction({ kind: 'landmark', control: 'none', sightDistance: 300, label: 'Restart' }, { section: 'restart', speed, restartTime });
+  restart(speed: number, restartTime: number, opts: { text?: string } = {}): this {
+    return this.instruction({ kind: 'landmark', control: 'none', sightDistance: 300, label: 'Restart' }, { section: 'restart', speed, restartTime, text: opts.text });
   }
 
   finish(): this {

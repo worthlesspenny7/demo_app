@@ -319,7 +319,7 @@ describe('UI-012 audio cues', () => {
   }
   it('UI-012 clicks on start/stop/lap, speaks driver lines, beeps 3-2-1 only with the aid, train and signal sounds, silent when muted', () => {
     const a = obs({});
-    const b = obs({ stopwatch: { kind: 'analog', running: true, reading: 0, laps: [], bezel: 0, bezelRemaining: 0, dialSeconds: 60 }, driver: { messages: [{ tod: 1, text: 'Holding 35', kind: 'readback' }], state: 'cruise', targetIndicated: 35, pendingTurn: null, waitingForGo: false, lastExecutedLine: null } });
+    const b = obs({ stopwatch: { kind: 'analog', running: true, reading: 0, laps: [], bezel: 0, bezelRemaining: 0, dialSeconds: 60 }, driver: { messages: [{ id: 1, tod: 1, text: 'Holding 35', kind: 'readback' }], state: 'cruise', targetIndicated: 35, pendingTurn: null, waitingForGo: false, lastExecutedLine: null } });
     const cues = audioCues(a, b);
     expect(cues).toContainEqual({ kind: 'click' });
     expect(cues).toContainEqual({ kind: 'speech', text: 'Holding 35' });

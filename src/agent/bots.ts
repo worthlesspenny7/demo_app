@@ -72,6 +72,7 @@ export class OracleBot implements Bot {
       if (p.ins.section === 'start') continue;
       const d = p.s - s;
       if (d < -30 && p.crossedTod === null) p.crossedTod = sim.tod;
+      if (d < -100) continue; // already passed: nothing below applies (keeps a 250-line stage O(active lines) per tick)
       if (d > 900) break;
       const node = nodeById(sc.course, p.ins.nodeId);
       const isStop = node.control === 'STOP' || p.ins.section === 'restart' || (p.ins.section === 'finish');

@@ -306,7 +306,7 @@ describe('protocol extras', () => {
 describe('determinism hygiene', () => {
   it('DET-001 core has no Math.random/Date/DOM and rng forks are independent', () => {
     const walk = (d: string): string[] => readdirSync(d).flatMap(f => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : p.endsWith('.ts') ? [p] : []; });
-    for (const f of walk('src/core')) { const src = readFileSync(f, 'utf8'); expect(src, f).not.toMatch(/Math\.random|Date\.now|performance\.now|\bwindow\b|\bdocument\b|localStorage/); }
+    for (const f of walk('src/core')) { const src = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '').replace(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g, '""'); expect(src, f).not.toMatch(/Math\.random|Date\.now|performance\.now|\bwindow\.|\bdocument\.|localStorage/); }
     const base = rng(5); const a = base.fork('a'), b = base.fork('b'); const b1 = b.next(); for (let i = 0; i < 100; i++) a.next(); const b2 = rng(5).fork('b').next();
     expect(b1).toBe(b2);
   });

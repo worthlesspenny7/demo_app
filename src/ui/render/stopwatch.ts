@@ -53,5 +53,5 @@ export function drawStopwatch(ctx: CanvasRenderingContext2D, vm: StopwatchVm, si
   ctx.beginPath(); ctx.arc(cx, cy, Math.max(1.5, rd * 0.015), 0, Math.PI * 2); ctx.fillStyle = th.dial; ctx.fill();
   // crown (start/stop at 12) and the digital readout under the dial
   ctx.fillStyle = vm.running ? th.ok : th.muted; ctx.fillRect(cx - 6, 0, 12, 6);
-  if (opts.bezelOn !== false) label(ctx, `bezel ${vm.bezelRemaining.toFixed(1)}s`, cx, cy + rd * 0.3, Math.max(8, rd * 0.07), th.accent, '600');
+  if (opts.bezelOn !== false) label(ctx, `bezel ${vm.bezelRemaining.toFixed(1)}s`, cx, cy - rd * 0.45, Math.max(8, rd * 0.07), th.accent, '600');
 }
