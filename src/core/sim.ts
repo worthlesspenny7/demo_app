@@ -294,6 +294,7 @@ export class Simulator {
       book: this.sc.book, currentLine: this.currentLine, ahead,
       driver: { messages: msgs, state: this.driverState(), targetIndicated: this.targetIndicated, pendingTurn: this.pendingTurn, waitingForGo: this.waitingForGo, lastExecutedLine: this.sc.aids.checkOff ? this.lastExecutedLine : null },
       annotations: { ...this.annotations },
+      stoppedAtLine: this.waitingForGo && this.waitNodeId ? (this.sc.book.find(i => i.nodeId === this.waitNodeId)?.n ?? null) : null,
       carStopped: this.car.v === 0, offCourseHint: this.sc.aids.offCourseAlert && this.off !== null && this.off.branchDist > this.sc.excursionFt! * 0.5,
       aids, notes: [...this.notes], legIndex: this.sc.aids.rung >= 2 ? this.legIndex : null, startTime: this.sc.startTime, rules: this.sc.rules,
     };
