@@ -634,7 +634,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
           else stars = result.score.raw <= 3 ? 3 : result.score.raw <= 13 ? 2 : result.score.raw <= 25 ? 1 : 0;
           const id = drill ? drill.id : `builtin:${src.kind === 'builtin' ? src.name : ''}`;
           app.progress.recordRun(id, { stars, aces: result.score.aces, score, scale: run.scaleMax, errors: vm.bias.errors, raw: result.score.raw, tier: src.kind === 'drill' ? src.tier : undefined, unit: 'raw' });
-          if (src.kind === 'drill' && src.drillId === 'D13') recordCampaignStage({ stage: src.seed, tier: src.tier, raw: result.score.raw, score: result.score.score, aces: result.score.aces });
+          if (src.kind === 'drill' && src.drillId === 'D13') recordCampaignStage({ stage: src.seed, tier: src.tier, raw: result.score.raw, score: result.score.score, aces: result.score.aces, penaltyItems: result.score.penaltyItems, dnf: result.score.dnf });
         } catch { /* progress is best effort */ }
       }
     }

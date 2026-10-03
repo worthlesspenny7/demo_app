@@ -10,7 +10,7 @@ export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'goCount' |
 
 export interface Bot { name: string; onTick(sim: Simulator): void }
 
-interface Plan { ins: Instruction; s: number; vIn: number; vOut: number; turnCalled: boolean; speedCalled: boolean; stopHandled: boolean; crossedTod: number | null; /** speed to drive through a transit begun on this line */ transitMph: number | null }
+interface Plan { ins: Instruction; s: number; vIn: number; vOut: number; turnCalled: boolean; speedCalled: boolean; stopHandled: boolean; clockRead?: boolean; crossedTod: number | null; /** speed to drive through a transit begun on this line */ transitMph: number | null }
 
 /** Speed that covers a transit's approximate miles in its allowed time, rounded UP to a multiple of 5 so the car arrives early and waits (HB p.11). */
 function transitSpeedFor(ins: Instruction): number | null {
@@ -122,6 +122,7 @@ export class OracleBot implements Bot {
         if (isHoldIns(p.ins)) {
           // restart: leave at the time-of-day; exact transit: at IN + interval; promoted stop: at the scheduled departure (never 5 minutes early)
           const goTod = sim.holdGoTod(node);
+          if (!p.clockRead) { p.clockRead = true; sim.act({ type: 'clock.read' }); } // a navigator takes time of day from the clock, not the chrono (WATCH-009)
           const lead = this.o.ignoreLosses || p.ins.promotedStop ? 0 : accelLoss(p.vOut, sc.car);
           if (goTod === null || sim.tod >= goTod - lead) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); }
         } else if (sim.waitReason === 'stop' || sim.waitReason === 'hold') {

@@ -24,12 +24,14 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [x] SPECS.md 'V2' section (REG, TA, GRIID, STAGE, CHART, LESSON, DRILL-021..025, CAMP, UI-029..034)
 - [x] Core engine V2 (commit 283af32): scoring caps/age table/discards, TA at TA points in 10 s multiples, Column C/B data (src/core/griid.ts), stage skeleton with ASP restarts, exact transits, free zones, handbook charts + Packard, digital lap/split stopwatch + instrument discipline; 294 unit tests
 - [x] Lessons + reference pages (aafc36a, 98da6c2): Four S's, Which timer when, team protocol (Dad's card), notations, transits/restarts, regs tables
-- [ ] UI V2 agent running (GRIID book, charts, TA screen, restart/transit cards, scorecard, digital watch UI, e2e C9 fix) and Drills V2 agent running (D16 ASP + exact transit, D08b TA point, D06 charts, D15 notations, D18/D11 skeleton, D01/D07 digital, campaign division/ASP)
-- [ ] Re-validate realism against the new sources; STATUS/LOG; push
+- [x] UI V2 (d7dec78): five-column GRIID book + printable #/book view, Column B icons, stacked Column C, charts overlay (C key), TA point form, restart/transit/promoted-stop cards, official-style scorecard with instrument discipline, digital lap/split watch display, built-in generated day stage
+- [x] Drills V2: D16 (ASP restarts, exact transit, lunch, rollovers), D08b at a TA point with committee credit, D06 builds the three charts (Bronze = Packard), D15 grades the six notations over 3+ pages, D18/D11/D12/D13 on the STAGE-001 skeleton, D01/D07 on the digital watch, campaign division/ASP/discards/standings vs benchmark teams; oracle 3 stars, naive 0 on every rebuilt drill
+- [x] Verification: typecheck clean, 340 unit, 34 e2e, build clean, 232/232 specs
+- [ ] Re-validate realism and education against the two documents (agent), fold findings, push
 - Josh's standing instruction: the organizers' documents win over his own preferences. Hence: digital stopwatch with lap/split + TOD by default (HB p.5 'a necessity'), analog dash clock; teach which device for which purpose (LESSON-006, WATCH-008/009, DRILL-026). Dad has no protocol yet: teach best practices. YouTube transcripts (.vtt) may arrive
 
 ## Current step
-Phase IV in progress (see above). Previous state: ready for Josh. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
+Phase IV built and green. Next: re-validation pass against the handbook/regulations, then fold findings. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
 Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)

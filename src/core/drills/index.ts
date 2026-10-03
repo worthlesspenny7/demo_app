@@ -1,62 +1,28 @@
-/** Drill curriculum D01-D20 (DESIGN §14, DRILL-* specs). Generator-backed drills fall back to the builder when the generator is unavailable. */
-import { ScenarioBuilder, EXITS, PERFECT_TIMEWISE, STOCK_1939_SPEEDO, describeInstruction } from '../builder.js';
-import { aidsForRung, DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE, FORD_1939, type Scenario, type DriverSpec, type AidsConfig } from '../course.js';
-import { hms } from '../units.js';
+/** Drill curriculum D01-D20 (DESIGN §14, DRILL-* specs). V2 drills live in d01/d06/d07/d08b/d15/d16/staged.ts; this file registers them with the older ones. */
+import { EXITS, describeInstruction } from '../builder.js';
+import { aidsForRung, DRIVER_EXPERT } from '../course.js';
 import { rng } from '../rng.js';
-import { annotatePerfectTimes } from '../ghost.js';
 import { registerDrill, allDrills } from './registry.js';
-import type { Drill, DrillTier, Rubric } from './types.js';
-import { basicRubric, headlineTip, legErrors, meanAbs, starsFromMeanAbs } from './rubrics.js';
-import { stopLoss, dwellFor } from '../perf-table.js';
-import type { StageResult } from '../sim.js';
-import * as generator from '../generator/generate.js';
+import { T0, tiers, tierOf, base } from './common.js';
+import { D16 } from './d16.js';
+import { D08b } from './d08b.js';
+import { D06 } from './d06.js';
+import { D15 } from './d15.js';
+import { D07 } from './d07.js';
+import { D01 } from './d01.js';
+import { D18, D11, D12, D13, setDayFallback } from './staged.js';
+import type { Drill, Rubric } from './types.js';
+import { basicRubric, legErrors, meanAbs } from './rubrics.js';
 
-const T0 = hms(8, 0, 0);
-type GenHook = { generateLeg?: (seed: number, profile: unknown) => Scenario; generateStage?: (seed: number, profile: unknown) => Scenario; PROFILES?: Record<string, unknown> } | null;
-let gen: GenHook = generator as unknown as GenHook;
-/** The generator module registers itself here (keeps drills free of a hard dependency). */
-export function setGenerator(g: GenHook): void { gen = g; }
-
-/** Gold tier: a hidden car variant (ramps +-15%) so the printed Ford table is only approximately right and the player must measure. */
-function goldCar(seed: number, base = FORD_1939): typeof FORD_1939 { const r = rng(seed * 7919 + 13); return { ...base, name: `${base.name} (this one)`, a0: base.a0 * (0.85 + 0.3 * r.next()), aDec: base.aDec * (0.85 + 0.3 * r.next()) }; }
-function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3, 2, 1]): DrillTier[] {
-  const drivers: DriverSpec[] = [DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE];
-  const names = ['Bronze', 'Silver', 'Gold'];
-  return names.map((name, i) => ({ name, aids: aidsForRung(rungs[i]!), driver: drivers[i]!, description: `${name}: aids rung ${rungs[i]}, ${drivers[i]!.skill} driver` }));
-}
-function legalTiers(): DrillTier[] { return [{ name: 'Rookie', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Great Race legal, sportsman driver' }, { name: 'Sportsman', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Great Race legal, stock speedometer' }, { name: 'Expert', aids: aidsForRung(0), driver: DRIVER_DAD_ROOKIE, description: 'Great Race legal, rookie driver, stock speedometer' }]; }
-function tierOf(d: Pick<Drill, 'tiers'>, t: number): DrillTier { return d.tiers[Math.max(0, Math.min(d.tiers.length - 1, t))]!; }
-function base(id: string, name: string, seed: number, tier: DrillTier, extra: Partial<ConstructorParameters<typeof ScenarioBuilder>[0]> = {}): ScenarioBuilder {
-  const car = tier.name === 'Gold' && ['D03', 'D04', 'D05', 'D18'].includes(id) ? goldCar(seed) : FORD_1939;
-  return new ScenarioBuilder({ id: `${id}-${seed}-${tier.name}`, name, seed, startTime: T0, driver: tier.driver, aids: tier.aids, speedo: PERFECT_TIMEWISE, car, prereadSeconds: 60, ...extra });
-}
-
-// ---------- D01 stopwatch reaction ----------
-const D01: Drill = {
-  id: 'D01', title: 'Stopwatch on the landmark', objective: 'Lap the watch exactly as the front bumper passes each sign; consistency beats bias.', skills: ['P1'], minutes: 3, kind: 'drive',
-  tiers: tiers(), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D01, t); const r = rng(seed); const b = base('D01', 'Stopwatch reaction', seed, tier).start(35);
-    for (let i = 0; i < 8; i++) { b.advanceMiles(0.15 + r.next() * 0.25); b.instruction({ sign: { text: `MARKER ${i + 1}`, shape: 'rect', side: r.chance(0.5) ? 'L' : 'R' }, sightDistance: 400 }, { text: `Lap at "MARKER ${i + 1}"`, speed: 35 }); }
-    return b.advanceMiles(0.2).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) {
-    // compare each lap time with the moment the car passed each marker node
-    const nodeEvents = r.events.filter(e => e.type === 'node' && String(e.detail?.kind) === 'sign');
-    const laps = r.actions.filter(a => a.action.type === 'watch.lap').map(a => sc.startTime - sc.prereadSeconds + a.tick * 0.1);
-    const errs: number[] = []; for (const ne of nodeEvents) { const nearest = laps.reduce((best, t) => Math.abs(t - ne.tod) < Math.abs(best - ne.tod) ? t : best, Infinity); if (isFinite(nearest)) errs.push(nearest - ne.tod); }
-    const mean = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : 0; const sd = errs.length ? Math.sqrt(errs.reduce((a, b) => a + (b - mean) ** 2, 0) / errs.length) : 99;
-    const stars = errs.length < nodeEvents.length * 0.75 ? 0 : sd <= 0.3 ? 3 : sd <= 0.6 ? 2 : sd <= 1.0 ? 1 : 0;
-    return { score: Math.round(sd * 100) / 100, stars, headline: `${errs.length}/${nodeEvents.length} markers lapped, bias ${mean.toFixed(2)} s, jitter ${sd.toFixed(2)} s`, feedback: [sd > 0.6 ? 'Watch the sign, not the dial: lap by feel as the post passes the A-pillar.' : 'Good hands. A constant bias calibrates out; jitter does not.'] };
-  },
-};
-
+export { setGenerator } from './common.js';
 // ---------- D03 pause arithmetic ----------
 const D03: Drill = {
-  id: 'D03', title: 'Pause arithmetic at the stop sign', objective: 'At each STOP wait only pause minus your car\'s stop/start loss, then call go.', skills: ['P2', 'P12'], minutes: 6, kind: 'drive',
+  id: 'D03', title: 'Pause arithmetic at the stop sign', objective: 'At each STOP wait only the chart pause time (the printed pause minus your car\'s stop/start loss for this IN/OUT pair), then call go. Bronze hands you the 1936 Packard charts and drives the Packard.', skills: ['P2', 'P12'], minutes: 6, kind: 'drive',
   tiers: tiers(), unlock: [],
   scenario(seed, t) { const tier = tierOf(D03, t); const r = rng(seed); const b = base('D03', 'Pause drill', seed, tier, { trafficWaitProbability: t >= 2 ? 0.25 : 0 }).start(r.pick([30, 35, 40]));
     for (let i = 0; i < 6; i++) { b.advanceMiles(0.35 + r.next() * 0.4); b.stop(r.pick(['S', 'S', 'L', 'R']), r.pick([30, 35, 40]), { pause: r.pick([15, 15, 15, 20, 30]) }); if (i % 2 === 1) { b.advanceMiles(0.2 + r.next() * 0.3); b.checkpoint(); } }
     return b.advanceMiles(0.3).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [1, 3, 6], ['Pause arithmetic: dwell = printed pause - stop/start loss for the entry/exit speeds on your card.'], sc.driver.skill, sc); },
+  rubric(r, sc) { return basicRubric(r, [1, 3, 6], ['Chart pause time: dwell = printed pause - stop/start loss for the entry/exit speeds on your card (for a 15 s pause it is the stop & go chart value; for any other pause keep the printed pause and scale only the chart loss).'], sc.driver.skill, sc); },
 };
 
 // ---------- D04 timed speed changes ----------
@@ -84,7 +50,7 @@ const D04: Drill = {
 
 // ---------- D05 landmark speed changes ----------
 const D05: Drill = {
-  id: 'D05', title: 'Speed changes at landmarks', objective: 'Be mid-ramp as the bumper passes the sign: call the change half a ramp early.', skills: ['P4'], minutes: 6, kind: 'drive',
+  id: 'D05', title: 'Speed changes at landmarks', objective: 'Split the change at the sign: be at the midpoint speed as the bumper passes it, which means calling the change half a ramp early.', skills: ['P4'], minutes: 6, kind: 'drive',
   tiers: tiers(), unlock: [],
   scenario(seed, t) { const tier = tierOf(D05, t); const r = rng(seed); const b = base('D05', 'Landmark speed changes', seed, tier).start(35); let v = 35;
     for (let i = 0; i < 8; i++) { b.advanceMiles(0.3 + r.next() * 0.4); const nv = r.pick([25, 30, 40, 45, 50].filter(x => Math.abs(x - v) >= 10)); b.speedAtSign(r.pick([`SPEED LIMIT ${nv}`, 'CURVE', 'END ROAD WORK', 'BRIDGE']), nv, { side: r.chance(0.3) ? 'L' : 'R', shape: r.chance(0.5) ? 'rect' : 'diamond' }); v = nv; if (i === 3) { b.advanceMiles(0.4); b.checkpoint(); } }
@@ -92,53 +58,16 @@ const D05: Drill = {
   rubric(r, sc) {
     const changes = sc.book.filter(i => i.speed !== undefined && !i.pause && !i.timed && !i.turn && i.section !== 'start').length || 1;
     const perChange = r.attribution.reduce((a, x) => a + Math.abs(x.buckets.speedChange), 0) / changes;
-    const rb = basicRubric(r, [1, 2, 4], ['Lead time = half the ramp time for that pair of speeds; it is on your performance card.'], sc.driver.skill, sc);
+    const rb = basicRubric(r, [1, 2, 4], ['Split at the sign: lead time = half the ramp time for that pair of speeds (it is on your performance card), so you cross the sign at the midpoint speed.'], sc.driver.skill, sc);
     const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.35 ? 3 : perChange <= 0.7 ? 2 : perChange <= 1.2 ? 1 : 0;
     rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · landmark changes ${perChange.toFixed(2)} s off each`;
     return rb;
   },
 };
 
-// ---------- D06 build your performance table ----------
-const D06: Drill = {
-  id: 'D06', title: 'Build your performance table', objective: 'Measure the car: stop/start losses and ramp times per speed. Enter them as notes; the debrief compares to truth.', skills: ['P12'], minutes: 8, kind: 'drive',
-  tiers: tiers([3, 3, 2]), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D06, t); const b = base('D06', 'Performance runs', seed, tier).start(30);
-    for (const v of [25, 35, 45]) { b.advanceMiles(0.5).stop('S', v, { pause: 0 }); b.advanceMiles(0.5).speedAtSign('MARKER', v); }
-    return b.advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) {
-    const notes = r.actions.filter(a => a.action.type === 'note').map(a => (a.action as { text: string }).text);
-    const graded: string[] = []; let good = 0;
-    for (const v of [25, 35, 45]) {
-      const truth = stopLoss(v, v, sc.car);
-      const m = notes.map(t => t.match(new RegExp(`${v}\\D+(\\d+(?:\\.\\d+)?)`))).find(x => x);
-      if (!m) { graded.push(`${v} mph: not measured (true stop/start loss ${truth.toFixed(1)} s)`); continue; }
-      const err = Math.abs(Number(m[1]) - truth); if (err <= 1) good++; graded.push(`${v} mph: you noted ${m[1]} s, true ${truth.toFixed(1)} s (${err <= 1 ? 'good' : 'off by ' + err.toFixed(1) + ' s'})`);
-    }
-    const stars: 0 | 1 | 2 | 3 = good >= 3 ? 3 : good >= 2 ? 2 : good >= 1 ? 1 : 0;
-    return { score: good, stars, headline: `${good}/3 stop/start losses measured within 1 s`, feedback: ['Note each measurement as "35 = 7.6" (speed = seconds). Four runs per speed in the real car; a wrong card is worse than no card.', ...graded] };
-  },
-};
-
-// ---------- D07 calibration run ----------
-const D07: Drill = {
-  id: 'D07', title: 'Morning calibration run', objective: 'Hold 50 on the speedo; compare your splits with Column C; set the Timewise factor or build a cheat card, then run a leg.', skills: ['P5'], minutes: 12, kind: 'drive',
-  tiers: tiers([3, 2, 1]), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D07, t); const r = rng(seed); const hiddenGain = 1 + (r.chance(0.5) ? 1 : -1) * (0.015 + r.next() * 0.02); // +-1.5..3.5%: uncorrected = 15-30 s over the 15-minute leg
-    const b = base('D07', 'Calibration run', seed, tier, { speedo: t >= 2 ? { ...STOCK_1939_SPEEDO, gain: 1.02 + (r.next() - 0.5) * 0.03 } : { ...PERFECT_TIMEWISE, gain: hiddenGain } }).start(50);
-    b.advanceMiles(0.5).instruction({ sign: { text: 'CALIBRATION START', shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', text: 'Begin calibration run. Speed 50', speed: 50 });
-    let n = 1; for (let d = 0; d < 15; d += 2.5) { b.advanceMiles(2.5); b.instruction({ sign: { text: `MILE ${n}`, shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'calibration', text: `"MILE ${n}" (Column C gives the perfect split)`, speed: 50 }); n++; }
-    // the calibration run is a transit: an official restart follows it, then a 15-minute leg where the correction matters
-    const calEnd = T0 + 0.5 * 5280 / (50 * 1.4667) + 15 * 5280 / (50 * 1.4667) + 30; const restartAt = Math.ceil((calEnd + 180) / 60) * 60;
-    b.advanceMiles(0.3).restart(40, restartAt, { text: `Calibration done. RESTART at your out-time. Speed 40` });
-    b.advanceMiles(3).speedAtSign('SPEED LIMIT 35', 35).advanceMiles(2.5).stop('S', 45).advanceMiles(3).speedAtSign('SPEED LIMIT 40', 40).advanceMiles(2).checkpoint().advanceMiles(1.5).speedAtSign('SPEED LIMIT 45', 45).advanceMiles(3).checkpoint().advanceFt(300).finish();
-    const sc = b.build(); annotatePerfectTimes(sc); return sc; },
-  rubric(r, sc) { return basicRubric(r, [3, 8, 15], ['k = sum(perfect)/sum(actual); indicated to hold = assigned / k. Apply it to every speed all day. 1% uncorrected = ~9 s per 15 minutes.'], sc.driver.skill, sc); },
-};
-
 // ---------- D08 early/late recovery ----------
 const D08: Drill = {
-  id: 'D08', title: 'Running early or late', objective: 'Absorb a slow truck and a red light: time each loss, then recover by holding +5 mph for (speed/5) x the seconds lost, or declare the light as a Time Allowance (never both), without overshooting early.', skills: ['P6'], minutes: 8, kind: 'drive',
+  id: 'D08', title: 'Running early or late', objective: 'Absorb a slow truck and a red light: time each loss, then recover with the 10 % rule (10 % faster for 10 x the seconds lost) without overshooting early. A Time Allowance is for the train or accident, never for seconds you also made up.', skills: ['P6'], minutes: 8, kind: 'drive',
   tiers: tiers(), unlock: [],
   scenario(seed, t) { const tier = tierOf(D08, t); const r = rng(seed); const b = base('D08', 'Recovery', seed, tier).start(40);
     b.advanceMiles(0.4); b.hazard({ kind: 'slow', speedMph: 28, lengthFt: 1500 + r.int(0, 1000), passWindowAfterFt: 900 });
@@ -147,26 +76,7 @@ const D08: Drill = {
     b.hazard({ kind: 'signal', redSeconds: 20 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 60) });
     b.advanceMiles(2.0).checkpoint().advanceMiles(1.2).checkpoint().advanceFt(300).finish();
     return b.build(); },
-  rubric(r, sc) { return basicRubric(r, [2, 5, 10], ['Recovery: hold +5 mph for (v/5) x the seconds lost (+2 mph for 2.5x that). The 10%-over-for-10x rule is exact on the stopwatch. Finish before likely checkpoint spots.'], sc.driver.skill, sc); },
-};
-
-// ---------- D08b time allowance ----------
-const D08b: Drill = {
-  id: 'D08b', title: 'Time Allowance: the train', objective: 'Gates down. Time the stop, keep the ledger, and declare a Time Allowance at the checkpoint for the train (lights only if the rules allow). Never TA and make up the same seconds.', skills: ['P6'], minutes: 9, kind: 'drive',
-  tiers: tiers(), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D08b, t); const r = rng(seed); const b = base('D08b', 'Time allowance', seed, tier).start(35);
-    b.advanceMiles(0.6).instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 30, greenSeconds: 45, offset: T0 + 20 });
-    b.advanceMiles(0.7).instruction({ control: 'RR', sightDistance: 700, label: 'RR crossing', sign: { text: 'RAILROAD CROSSING', shape: 'rr', side: 'R' } }, { text: 'RR crossing (gates may be down)', speed: 35 });
-    const arrival = T0 + (0.6 + 0.7) * 5280 / (35 * 1.4667); b.hazard({ kind: 'train', startTod: arrival - 25, durationSeconds: 60 + r.int(0, 60) });
-    b.advanceMiles(0.9).instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 25, greenSeconds: 60, offset: T0 + 5 });
-    b.advanceMiles(0.8).checkpoint().advanceFt(300).finish();
-    return b.build(); },
-  rubric(r) { const leg = r.score.legs[0]; const declared = r.actions.filter(a => a.action.type === 'ta.declare').length;
-    const credit = leg?.taCredit ?? 0; const qualifying = r.events.filter(e => e.type === 'wait' && (e.detail?.reason === 'train' || e.detail?.reason === 'signal')).length;
-    const declaredSeconds = (() => { const a = r.actions.filter(x => x.action.type === 'ta.declare').pop(); return a && a.action.type === 'ta.declare' ? a.action.seconds : 0; })();
-    const trueQualifying = r.attribution[0] ? Math.max(0, r.attribution[0].buckets.hazard) : 0; const diff = Math.abs(declaredSeconds - trueQualifying);
-    const stars: 0 | 1 | 2 | 3 = declared === 0 ? 0 : (diff <= 5 && !leg?.taOverDeclared && Math.abs(leg?.error ?? 99) <= 5) ? 3 : diff <= 15 ? 2 : 1;
-    return { score: Math.round(diff), stars, headline: `declared ${declaredSeconds} s, qualifying delay ~${Math.round(trueQualifying)} s, credited ${credit} s, leg error ${leg?.error ?? 'missed'} s (${qualifying} stops)`, feedback: [headlineTip(r), 'Time every forced stop on the watch; declare the sum, or make it up, never both.'] }; },
+  rubric(r, sc) { return basicRubric(r, [2, 5, 10], ['10 % rule (HB p.10): 10 % faster for 10 x the seconds lost (4 s lost at 35: 38.5 mph for 40 s); the same rule burns off time you are ahead. Finish before likely checkpoint spots.'], sc.driver.skill, sc); },
 };
 
 // ---------- D09 trap quiz (static) ----------
@@ -205,57 +115,6 @@ const D14: Drill = {
   scenario(seed, t) { return D03.scenario(seed, t); }, rubric(r, sc) { return basicRubric(r, [1, 3, 6], [], sc.driver.skill, sc); },
 };
 
-// ---------- D15 pre-read triage (reading) ----------
-const D15: Drill = {
-  id: 'D15', title: 'Pre-read triage', objective: 'You get the book 30 minutes before the start. Annotate every pause with its dwell and mark the speed changes, then run the first 40 lines cold.', skills: ['P7'], minutes: 12, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D15, t); const r = rng(seed); const b = base('D15', 'Pre-read triage', seed, tier, { prereadSeconds: 10 * 60 }).start(r.pick([30, 35]));
-    let stops = 0;
-    for (let i = 0; i < 36; i++) {
-      b.advanceMiles(0.15 + r.next() * 0.3);
-      const k = r.int(0, 9);
-      if (k <= 2 || (i > 30 && stops < 8)) { b.stop(r.pick(['S', 'S', 'L', 'R']), r.pick([30, 35, 40]), { pause: r.pick([15, 15, 15, 20, 30]) }); stops++; }
-      else if (k === 3) { const secs = 15 + r.int(0, 25); b.timedAt(r.pick(['bridge', 'RR crossing', 'water tower']), { holdSpeed: 30, seconds: secs, thenSpeed: 40 }); b.advanceFt(30 * 1.4667 * secs + 300); }
-      else if (k === 4) b.speedAtSign(`SPEED LIMIT ${r.pick([35, 45])}`, r.pick([35, 45]));
-      else if (k === 5) b.instruction({ exits: EXITS.sideRoad(r.pick(['L', 'R']), { route: 'turn' }), sightDistance: 600 }, { turn: 'L', speed: 35, hint: r.chance(0.5) ? 'Comes quick' : undefined });
-      else b.instruction({ label: r.pick(['church on R', 'grain elevator', 'overpass', 'cemetery on L', 'bridge']), sightDistance: 500 }, { text: `At ${r.pick(['church on R', 'grain elevator', 'overpass', 'cemetery on L', 'bridge'])}. Continue`, speed: undefined });
-      if (i === 17) { b.advanceMiles(0.3); b.checkpoint(); }
-    }
-    const sc = b.advanceMiles(0.3).checkpoint().advanceFt(300).finish().build();
-    for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; if (n.exits && ins.turn) { const route = n.exits.find(e => e.isRoute)!; const nt = Math.abs(route.angle) < 20 ? 'S' : Math.abs(route.angle) < 60 ? (route.angle < 0 ? 'BL' : 'BR') : route.angle < 0 ? 'L' : 'R'; if (nt !== ins.turn) { ins.turn = nt; ins.text = describeInstruction({ turn: nt, speed: ins.speed, pause: ins.pause, hint: ins.hint }, { control: n.control, exits: n.exits, sign: n.sign, label: n.label }); } } }
-    return sc; },
-  rubric(r, sc) {
-    const startTick = r.actions.find(a => a.action.type === 'start')?.tick ?? Infinity;
-    let v = sc.book[0]!.speed ?? 35; let total = 0, marked = 0, accurate = 0; const lines: string[] = [];
-    for (const ins of sc.book) {
-      const vIn = v; const vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? v;
-      if (ins.pause) {
-        total++;
-        const ann = r.actions.filter(a => a.action.type === 'line.annotate' && a.action.n === ins.n && a.tick <= startTick).pop();
-        const ideal = dwellFor(ins.pause, vIn || vOut, vOut, sc.car, ins.turn && ins.turn !== 'S' ? (['BL', 'BR'].includes(ins.turn) ? sc.car.turnSpeedMph.bear : ['AL', 'AR'].includes(ins.turn) ? sc.car.turnSpeedMph.acute : sc.car.turnSpeedMph.turn) : undefined);
-        const numIn = (t: string): number => { const m = t.match(/-?\d+(?:\.\d+)?/); return m ? parseFloat(m[0]) : NaN; };
-        if (ann && ann.action.type === 'line.annotate' && ann.action.text.trim() !== '') { marked++; const num = numIn(ann.action.text); if (Number.isFinite(num) && Math.abs(num - ideal) <= 2) accurate++; else lines.push(`Line ${ins.n}: you wrote "${ann.action.text}", ideal dwell ${ideal.toFixed(1)} s`); }
-        else lines.push(`Line ${ins.n}: pause not marked before the start (ideal dwell ${ideal.toFixed(1)} s)`);
-      }
-      v = ins.timed ? ins.timed.thenSpeed : vOut;
-    }
-    const cov = total ? marked / total : 1, acc = total ? accurate / total : 1;
-    const stars: 0 | 1 | 2 | 3 = cov >= 1 && acc >= 1 && meanAbs(legErrors(r)) <= 3 ? 3 : acc >= 0.75 ? 2 : cov >= 0.5 ? 1 : 0;
-    return { score: Math.round(acc * 100), stars, headline: `${marked}/${total} pauses marked before the start, ${accurate} with a dwell within 2 s`, feedback: ['Triage order: pauses and stops first (write the dwell), speed changes second, hints third.', ...lines.slice(0, 6), headlineTip(r, sc)] };
-  },
-};
-
-// ---------- D16 time-of-day discipline ----------
-const D16: Drill = {
-  id: 'D16', title: 'Start on the second', objective: 'Depart exactly on your out-time (minute rollover, hour rollover, lunch restart). A whole-minute error fails the drill.', skills: ['P9'], minutes: 8, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D16, t); const r = rng(seed); const start = hms(8, 58, 40) + r.int(0, 50); const b = new ScenarioBuilder({ id: `D16-${seed}`, name: 'Time of day', seed, startTime: start, driver: tier.driver, aids: tier.aids, prereadSeconds: 120 }).start(35);
-    const arrival = start + 1.2 * 5280 / (35 * 1.4667); const restartAt = Math.ceil((arrival + 180) / 60) * 60 + r.int(5, 55); // a few minutes at the lunch stop, odd seconds
-    b.advanceMiles(0.8).checkpoint().advanceMiles(0.4).restart(35, restartAt);
-    b.advanceMiles(0.8).checkpoint().advanceFt(300).finish(); return b.build(); },
-  rubric(r) { const errs = legErrors(r); const minuteFail = errs.some(e => Math.abs(e) >= 55); const mean = meanAbs(errs); const stars: 0 | 1 | 2 | 3 = minuteFail ? 0 : starsFromMeanAbs(mean, [1.5, 4, 10]); return { score: Math.round(mean), stars, headline: minuteFail ? 'Whole-minute error at a start or restart' : `${errs.map(e => `${e > 0 ? '+' : ''}${e}`).join(', ')} s`, feedback: [minuteFail ? 'Read the minute hand twice; use the stopwatch started on the official minute as your time-of-day.' : 'Lead each departure by the acceleration loss only.'] }; },
-};
-
 // ---------- D17 stopwatch loss recovery ----------
 const D17: Drill = {
   id: 'D17', title: 'Lost the watch', objective: 'The watch gets reset mid-leg. Re-establish elapsed time from the clock and Column C and finish the leg.', skills: ['P1', 'P9'], minutes: 8, kind: 'drive',
@@ -264,49 +123,7 @@ const D17: Drill = {
   rubric(r, sc) { return basicRubric(r, [3, 8, 15], ['Your time-of-day clock is the source of truth: elapsed = clock - official start.'], sc.driver.skill, sc); },
 };
 
-// ---------- D18 miniature combo leg (gate for D11) ----------
-const D18: Drill = {
-  id: 'D18', title: 'Miniature leg: everything once', objective: 'One stop with pause, one timed segment, one landmark speed change, one trap, one hazard (a light you may declare as a Time Allowance, or a slow truck you must make up), one hidden checkpoint, in about five minutes.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8'], minutes: 6, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D03', stars: 2 }, { drill: 'D04', stars: 2 }, { drill: 'D05', stars: 2 }, { drill: 'D08', stars: 2 }, { drill: 'D10', stars: 2 }],
-  scenario(seed, t) { const tier = tierOf(D18, t); const r = rng(seed); const b = base('D18', 'Miniature leg', seed, tier, { trafficWaitProbability: 0.2 }).start(r.pick([30, 35]));
-    const order = r.pick([[4, 0, 1, 2, 3], [1, 4, 0, 3, 2], [4, 2, 3, 0, 1], [3, 4, 2, 1, 0]]);
-    for (const k of order) {
-      b.advanceMiles(0.3 + r.next() * 0.3);
-      if (k === 0) b.stop(r.pick(['L', 'R', 'S']), r.pick([30, 35, 40]));
-      else if (k === 1) { const secs = 20 + r.int(0, 25); b.timedAt(r.pick(['bridge', 'RR crossing', 'water tower']), { holdSpeed: 30, seconds: secs, thenSpeed: 40 }); b.advanceFt(30 * 1.4667 * secs + 300); }
-      else if (k === 2) b.speedAtSign(`SPEED LIMIT ${r.pick([35, 45])}`, r.pick([35, 45]));
-      else if (k === 3) { b.node({ exits: EXITS.sideRoad('R', { kind: 'driveway' }), sightDistance: 400, label: 'driveway' }); b.advanceFt(450); b.instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 600 }, { turn: 'R', speed: 35, hint: '1st paved road' }); }
-      else { if (r.chance(0.5)) { b.instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 15 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 55) }); } else { b.hazard({ kind: 'slow', speedMph: 28, lengthFt: 1500, passWindowAfterFt: 900 }); b.advanceMiles(0.4); } }
-    }
-    return b.advanceMiles(0.25 + r.next() * 0.3).checkpoint().advanceFt(300).finish().build(); },
-  rubric(r, sc) { return basicRubric(r, [3, 6, 12], [], sc.driver.skill, sc); },
-};
-
-// ---------- D11 / D12 / D13 generator-backed ----------
-function genOr(profileKey: string, fallback: () => Scenario, seed: number, stage = false): Scenario {
-  const p = gen?.PROFILES?.[profileKey];
-  if (gen && p) { const fn = stage ? gen.generateStage : (gen.generateLeg ?? gen.generateStage); if (fn) return fn(seed, p); }
-  return fallback();
-}
-const D11: Drill = {
-  id: 'D11', title: 'Full leg', objective: 'A real leg: 25-40 instructions, one hidden checkpoint, Great Race legal aids. Stay on course, stay on time.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8', 'P10'], minutes: 15, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D18', stars: 1 }, { drill: 'D07', stars: 2 }],
-  scenario(seed, t) { const tier = tierOf(D11, t); const sc = genOr('fullLeg', () => { const s = D18.scenario(seed, t); s.id = `D11-${seed}`; s.name = 'Full leg (fallback)'; return s; }, seed); return { ...sc, driver: tier.driver, aids: tier.aids, id: `D11-${seed}-${tier.name}` }; },
-  rubric(r, sc) { return basicRubric(r, [2, 6, 13], [], sc.driver.skill, sc); },
-};
-const D12: Drill = {
-  id: 'D12', title: 'Full stage', objective: 'Calibration run, 4-7 hidden checkpoints, lunch restart, observation checkpoint. 150-250 instructions.', skills: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P11'], minutes: 150, kind: 'drive',
-  tiers: legalTiers(), unlock: [{ drill: 'D11', stars: 1 }, { drill: 'D15', stars: 1 }, { drill: 'D16', stars: 1 }],
-  scenario(seed, t) { const tier = tierOf(D12, t); const sc = genOr('fullStage', () => D07.scenario(seed, 2), seed, true); return { ...sc, driver: tier.driver, aids: tier.aids, speedo: t >= 1 ? STOCK_1939_SPEEDO : sc.speedo, id: `D12-${seed}-${tier.name}`, prereadSeconds: 30 * 60 }; },
-  rubric(r, sc) { const rb = basicRubric(r, [13, 25, 46], [`Benchmark: ${r.score.benchmark}. Champions ~1 s per leg; a good rookie day is 13-21 s; 20-46 s is a normal rookie day.`], undefined, sc); const raw = r.score.raw; rb.stars = r.offCourseCount > 1 ? 0 : raw <= 13 ? 3 : raw <= 25 ? 2 : raw <= 46 ? 1 : 0; return rb; },
-};
-const D13: Drill = {
-  id: 'D13', title: 'Campaign: the Great Race', objective: 'Trophy Run plus nine stages in the 1939 Ford with age factor 0.845. Division ladder by cumulative score.', skills: ['P11'], minutes: 1500, kind: 'drive',
-  tiers: legalTiers(), unlock: [{ drill: 'D12', stars: 1 }],
-  scenario(seed, t) { return D12.scenario(seed * 100 + 1, t); },
-  rubric(r, sc) { return D12.rubric(r, sc); },
-};
-
+setDayFallback(seed => D07.scenario(seed, 2));
 for (const d of [D01, D03, D04, D05, D06, D07, D08, D08b, D09, D10, D11, D12, D13, D14, D15, D16, D17, D18]) registerDrill(d);
 
 /** Unlock check against a progress map of best stars per drill (any tier). */

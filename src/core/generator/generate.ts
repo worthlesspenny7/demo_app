@@ -62,6 +62,8 @@ export interface GenProfile {
   freeZoneProbability?: number;
   /** End the (last) timed portion with "End timed portion", its end-of-stage TA point and a transit to the finish (DRILL-025). */
   endTimed?: boolean;
+  /** DRILL-025: a one-leg timed portion begins with an advisory transit (the way in) ending at a time-of-day restart at base + ASP, like the day skeleton's morning restart. */
+  transitIn?: boolean;
   /** Assigned starting position in minutes and the time-zone label printed on clock faces (STAGE-002). */
   asp?: number;
   timeZone?: TimeZoneLabel;
@@ -172,8 +174,9 @@ class Generator {
     const day = p.skeleton === 'day' && this.kind === 'stage';
     if (day) this.tags.push('stage:day');
     if (p.calibration || day) this.emitOpening();
+    else if (p.transitIn && this.kind === 'leg') this.emitTransitIn();
     else { this.speed = this.r.pick(RURAL_SPEEDS); this.b.start(this.speed); }
-    const afterRestart = !!(p.calibration || day);
+    const afterRestart = !!(p.calibration || day || (p.transitIn && this.kind === 'leg'));
     if (day) {
       const a = Math.ceil(this.legs / 2);
       this.emitLegs(a, { firstIsStop: false, lastOfStage: false, afterTransit: afterRestart });
@@ -242,6 +245,23 @@ class Generator {
     this.speed = r.pick(TOWN_SPEEDS);
     b.restart(this.speed, base);
     this.tags.push(`restart:base:${base}`);
+    this.freeZoneFtAfterTransit = Math.ceil(120 * mphToFps(this.speed)) + 400;
+  }
+
+  // ---------- DRILL-025: an advisory transit in, then the time-of-day restart that opens the timed portion ----------
+  private emitTransitIn(): void {
+    const b = this.b, r = this.r;
+    this.speed = r.pick(TOWN_SPEEDS); b.start(this.speed);
+    const miles = r.int(28, 42) / 10; const secs = Math.ceil(miles / 30 * 3600 / 60) * 60; // an advisory time for a 30 mph pace
+    b.advanceMiles(0.25); b.transit({ exact: false, seconds: secs, miles });
+    b.advanceMiles(miles * 0.5);
+    this.instruction({ sign: { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect', side: 'R' }, sightDistance: 500 }, {});
+    b.advanceMiles(miles * 0.5 - 0.25);
+    // the printed base time = the team's start + the transit + two minutes of margin (the team adds its ASP)
+    const base = b.opts.startTime + Math.ceil((secs + 150) / 60) * 60;
+    this.speed = r.pick(TOWN_SPEEDS);
+    b.restart(this.speed, base);
+    this.tags.push(`restart:base:${base}`, 'transit:in');
     this.freeZoneFtAfterTransit = Math.ceil(120 * mphToFps(this.speed)) + 400;
   }
 

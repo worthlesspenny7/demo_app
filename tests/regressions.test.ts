@@ -11,7 +11,7 @@ import '../src/core/drills/index.js';
 import { drillById } from '../src/core/drills/registry.js';
 import { headlineTip } from '../src/core/drills/rubrics.js';
 import { dwellFor } from '../src/core/perf-table.js';
-import { FORD_1939 } from '../src/core/course.js';
+import { FORD_1939, PACKARD_1936 } from '../src/core/course.js';
 
 describe('PT-01 regressions', () => {
   it('PT01-BUG1 go scheduled on carStopped is honoured in the same tick the car stops', () => {
@@ -55,11 +55,11 @@ describe('PT-01 regressions', () => {
     for (let i = 0; i < 60; i++) { const r = s.handle({ type: 'advance', seconds: 30 }); if (r.type !== 'advanced') break; all.push(...r.events); if (s.sim.phase === 'finished') break; }
     for (const e of all) expect(e, e).not.toMatch(/^(offCourse|rejoin|checkpoint|mainRoad|turn|stop\.begin|node|sightZone)/);
   });
-  it('PT01-BUG11 a TA declared within 3 minutes after the checkpoint books to the leg that had the delay', () => {
+  it('PT01-BUG11 a TA request filed at the TA point books to the leg it names (the delayed leg), not to the current leg', () => {
     const sc = drillById('D08b')!.scenario(3, 0);
-    const sim = new Simulator(sc); const bot = new OracleBot(sim, { ignoreLosses: true }); // rookie bot never declares on its own
-    while (sim.phase !== 'finished') { bot.onTick(); if (sim.records.length === 1 && !sim.taDeclared[1] && !sim.taDeclared[2]) { sim.act({ type: 'ta.declare', seconds: 60 }); } sim.step(0.1); }
-    expect(sim.taDeclared[1]).toBe(60); expect(sim.taDeclared[2]).toBeUndefined();
+    const sim = new Simulator(sc); const bot = new OracleBot(sim, { ignoreLosses: true }); let filed = false; // the rookie bot never files on its own
+    while (sim.phase !== 'finished') { bot.onTick(); if (!filed && sim.taState().windowOpen) { filed = true; sim.act({ type: 'ta.request', legIndex: 1, seconds: 60, fromLine: 4, toLine: 5 }); } sim.step(0.1); }
+    expect(sim.taDeclared[1]).toBe(60); expect(sim.taDeclared[2]).toBeUndefined(); expect(sim.taDeclared[3]).toBeUndefined();
   });
   it('PT01-LOW15/16/17 cues and refusals: At speed after start, refused analog reset message, card.set enables the card', () => {
     const sim = new Simulator(builtinScenario('straight')); sim.act({ type: 'start' }); sim.step(30);
@@ -123,7 +123,7 @@ describe('post-validation specs', () => {
     const d = drillById('D04')!;
     for (let seed = 1; seed <= 10; seed++) { const sc = d.scenario(seed, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim)); expect(d.rubric(r, sc).stars, `seed ${seed}`).toBe(3); }
     const b = drillById('D08b')!; const sc = b.scenario(2, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
-    expect(r.actions.some(a => a.action.type === 'ta.declare')).toBe(true); expect(b.rubric(r, sc).stars).toBeGreaterThanOrEqual(2);
+    expect(r.actions.some(a => a.action.type === 'ta.request')).toBe(true); expect(b.rubric(r, sc).stars).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -145,12 +145,17 @@ describe('re-validation specs (2026-10-03)', () => {
     const after = r.attribution.find(a => a.legIndex === sc.checkpoints.findIndex(cp => cp.s > sc.course.nodes.find(n => n.id === sc.book[restartLeg]!.nodeId)!.s));
     expect(after).toBeDefined(); expect(Math.abs(after!.buckets.start)).toBeGreaterThan(0); expect(Math.abs(after!.buckets.cruise)).toBeLessThan(2.5);
   });
-  it('DRILL-018 D15 is a 40-line triage scenario; rubric skips empty text, parses "go at 7.3s", no turn cap on straight STOPs', () => {
+  it('DRILL-018 D15 is a 48-line, 8-page triage book; the rubric skips empty text, parses "go at 7.3s" style pause notes and applies no turn cap on straight STOPs', async () => {
+    const { idealNotes } = await import('../src/core/drills/d15.js');
     const d = drillById('D15')!; const sc = d.scenario(1, 0);
-    expect(sc.book.length).toBeGreaterThanOrEqual(36); expect(sc.book.filter(i => i.pause).length).toBeGreaterThanOrEqual(8); expect(sc.book.filter(i => i.timed).length).toBeGreaterThanOrEqual(2);
-    const sim = new Simulator(sc); let v = sc.book[0]!.speed ?? 35; let n = 0;
-    for (const ins of sc.book) { const vIn = v, vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? v; if (ins.pause) { const cap = ins.turn && ins.turn !== 'S' ? (['BL', 'BR'].includes(ins.turn) ? sc.car.turnSpeedMph.bear : sc.car.turnSpeedMph.turn) : undefined; const ideal = dwellFor(ins.pause, vIn || vOut, vOut, sc.car, cap); sim.act({ type: 'line.annotate', n: ins.n, text: n++ % 2 ? `go at ${ideal.toFixed(1)}s` : ideal.toFixed(1) }); } else if (ins.n === 2) sim.act({ type: 'line.annotate', n: ins.n, text: '   ' }); v = ins.timed ? ins.timed.thenSpeed : vOut; }
-    const r = runBot(sim, new OracleBot(sim)); const rb = d.rubric(r, sc);
+    expect(sc.book.length).toBeGreaterThanOrEqual(40); expect(sc.book.filter(i => i.pause).length).toBeGreaterThanOrEqual(8); expect(sc.book.some(i => i.transit?.exact)).toBe(true);
+    const sim = new Simulator(sc);
+    for (const a of idealNotes(sc)) sim.act({ type: 'line.annotate', n: a.n, text: a.text.replace(/pause ([\d.]+) s/, 'go at $1s') });   // "go at 7.3s"
+    sim.act({ type: 'line.annotate', n: 2, text: '   ' });                                                                      // empty text never counts
+    let out = false; const begin = sc.book.find(i => i.transit && !i.transit.end && i.transit.exact)!; const end = sc.book.find(i => i.transit?.end && i.transit.exact)!;
+    const bot = new OracleBot(sim);
+    while (sim.phase !== 'finished') { bot.onTick(); if (!out && sim.transitIn[begin.n] !== undefined) { out = true; const o = sim.transitIn[begin.n]! + begin.transit!.seconds; sim.act({ type: 'line.annotate', n: end.n, text: `OUT ${Math.floor(o / 3600) % 12}:${String(Math.floor(o / 60) % 60).padStart(2, '0')}:${String(o % 60).padStart(2, '0')}` }); } sim.step(0.1); }
+    const r = sim.result(); const rb = d.rubric(r, sc);
     expect(rb.stars).toBeGreaterThanOrEqual(2); expect(rb.feedback.join(' ')).not.toMatch(/you wrote "/);
   });
   it('DRILL-019 D04/D05 stars are capped by per-change error; a lucky net-zero run with bad changes does not get 3 stars', () => {
@@ -159,8 +164,10 @@ describe('re-validation specs (2026-10-03)', () => {
       const lucky = { ...r, attribution: r.attribution.map(a => ({ ...a, buckets: { ...a.buckets, [bucket]: 6, cruise: -6 } })) } as typeof r;
       expect(d.rubric(lucky, sc).stars, id).toBeLessThanOrEqual(1); }
   });
-  it('DRILL-020 Gold on D03/D04/D05/D18 drives a hidden car variant; Bronze and Silver drive the preset', () => {
-    for (const id of ['D03', 'D04', 'D05', 'D18']) { const d = drillById(id)!; expect(d.scenario(1, 0).car.a0, id).toBe(FORD_1939.a0); expect(d.scenario(1, 1).car.a0, id).toBe(FORD_1939.a0); const g = d.scenario(1, 2).car; expect(g.a0, id).not.toBe(FORD_1939.a0); expect(Math.abs(g.a0 / FORD_1939.a0 - 1)).toBeLessThanOrEqual(0.15); expect(d.scenario(1, 2).car.a0).toBe(d.scenario(1, 2).car.a0); expect(d.scenario(2, 2).car.a0).not.toBe(g.a0); }
+  it('DRILL-020 Gold on D03/D04/D05/D18 drives a hidden car variant; Bronze and Silver drive the preset (D03 Bronze: the Packard with its printed chart, CHART-002)', () => {
+    for (const id of ['D03', 'D04', 'D05', 'D18']) { const d = drillById(id)!;
+      if (id === 'D03') { expect(d.scenario(1, 0).car).toBe(PACKARD_1936); } else expect(d.scenario(1, 0).car.a0, id).toBe(FORD_1939.a0);
+      expect(d.scenario(1, 1).car.a0, id).toBe(FORD_1939.a0); const g = d.scenario(1, 2).car; expect(g.a0, id).not.toBe(FORD_1939.a0); expect(Math.abs(g.a0 / FORD_1939.a0 - 1)).toBeLessThanOrEqual(0.15); expect(d.scenario(1, 2).car.name, id).toMatch(/this one/); }
     expect(drillById('D07')!.scenario(1, 2).car.a0).toBe(FORD_1939.a0);
   });
 });
