@@ -1,0 +1,16 @@
+import { chromium } from 'playwright';
+process.env.PLAYWRIGHT_BROWSERS_PATH ??= '/opt/pw-browsers';
+const BASE = 'http://127.0.0.1:4176'; const OUT = '/home/user/demo_app/docs/playtest/screenshots';
+const browser = await chromium.launch({ headless: true, executablePath: '/opt/pw-browsers/chromium' });
+const page = await (await browser.newContext({ viewport: { width: 1366, height: 900 } })).newPage(); const errs: string[] = []; page.on('pageerror', e => errs.push(String(e)));
+await page.goto(`${BASE}/#/school`); await page.waitForTimeout(300);
+await page.screenshot({ path: `${OUT}/v2-30-school.png` });
+const cards = await page.locator('[data-lesson], .lesson-card, .lesson').count(); console.log('lesson cards', cards);
+const links = await page.locator('a[href*="lesson"], button:has-text("Start"), button:has-text("Read")').allInnerTexts(); console.log(links.slice(0, 20).join(' | '));
+console.log((await page.locator('body').innerText()).slice(0, 1500));
+await page.goto(`${BASE}/#/reference`); await page.waitForTimeout(300);
+const t = await page.locator('body').innerText(); console.log('reference length', t.length, 'bad tokens', (t.match(/NaN|undefined|\?\? |\[object/g) ?? []).length);
+await page.screenshot({ path: `${OUT}/v2-31-reference-top.png` });
+await page.locator('#ref-packard').scrollIntoViewIfNeeded(); await page.screenshot({ path: `${OUT}/v2-32-reference-packard.png` });
+await page.locator('#ref-ta').scrollIntoViewIfNeeded(); await page.screenshot({ path: `${OUT}/v2-33-reference-ta.png` });
+console.log('errors', JSON.stringify(errs)); await browser.close();
