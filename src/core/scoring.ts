@@ -106,7 +106,9 @@ export function scoreLeg(inp: LegInputs, rules: RulesConfig): LegScore {
     if (cumLate > rules.missedCpLateMinutes * 60) { extras.missed = true; penalty = rules.missedCheckpoint; error = rawError; if (inp.taDeclared > 0) taReason = 'More than 30 minutes late: counted as missed'; }
     else {
       const g = Math.max(0.001, rules.taGranularitySeconds ?? 1);
-      taCredit = Math.round(Math.max(0, Math.min(inp.taDeclared, possible, Math.max(rawError, 0))) / g) * g;
+      // V.H.3 / V.H.6: whole multiples of 0m10s, never more than the committee finds possible: round DOWN (g = 1 only for legacy books without a TA point)
+      const rawCredit = Math.max(0, Math.min(inp.taDeclared, possible, Math.max(rawError, 0))) / g;
+      taCredit = (g > 1 ? Math.floor(rawCredit + 1e-9) : Math.round(rawCredit)) * g;
       error = rawError - taCredit;
       const cap = error >= 0 ? rules.maxLate : rules.maxEarly;
       capped = Math.abs(error) > cap;

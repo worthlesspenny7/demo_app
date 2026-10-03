@@ -4,11 +4,12 @@
  * (UI-009: previous / current / next / far) and page breaks for the printable view (6 rows per page, "Page n of m").
  */
 import type { Instruction, Scenario, Node } from '../../core/course.js';
-import { columnCLines, columnBSymbols, odometerBox, columnD, formatInterval, type ColumnBSymbol } from '../../core/griid.js';
+import { ROWS_PER_PAGE, columnCLines, columnBSymbols, columnCIcons, odometerBox, columnD, formatInterval, type ColumnBSymbol, type ColumnCIcon } from '../../core/griid.js';
 
 export type RowState = 'past' | 'prev' | 'current' | 'next' | 'far';
-/** Rows per printed page of the book (HB App. D: "6-7 rows per page"). */
-export const ROWS_PER_PAGE = 6;
+/** Rows per printed page of the book: 7 by default, 7-8 allowed in the printable view (real sheets carry 6-9). */
+export { ROWS_PER_PAGE };
+export const PAGE_ROW_CHOICES = [7, 8] as const;
 
 export interface BookRow {
   n: number;
@@ -22,6 +23,8 @@ export interface BookRow {
   odometer: string | null;
   /** Column C: one entry per stacked line ("0 MPH", "0m15s", "45 MPH"). */
   c: string[];
+  /** Column C pictograms: the restart watch face and the crossed-out watch of "End timed portion" (HB p.27, Example #17). */
+  cIcons: ColumnCIcon[];
   /** Column C text on one line, for aria labels and plain-text uses ("0 MPH / 0m15s / 45 MPH"). */
   colC: string;
   /** Index range [from, to] of the Column C lines drawn inside the calibration box (interval over cumulative), or null. */
@@ -75,7 +78,7 @@ export function griidRow(ins: Instruction, opts: BookOptions = {}): Omit<BookRow
   const d = columnD(ins, opts.style ?? 'example');
   return {
     n: ins.n, printed: ins.printed ?? String(ins.n), nodeId: ins.nodeId ?? '', text: ins.text ?? '',
-    b: columnBSymbols(ins), odometer: odometerBox(ins), c, colC: c.join(' / '), cBox: calibrationBoxRange(ins, c), asterisk: !!ins.calibrationStart,
+    b: columnBSymbols(ins), odometer: odometerBox(ins), c, cIcons: columnCIcons(ins), colC: c.join(' / '), cBox: calibrationBoxRange(ins, c), asterisk: !!ins.calibrationStart,
     d, colD: d, remark, omitted: !!ins.omitted, ta: !!ins.taPoint,
     turn: ins.turn, speed: ins.speed, pause: ins.pause, timed: ins.timed, perfectCumulative: ins.perfectCumulative,
   };

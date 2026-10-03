@@ -25,13 +25,14 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [x] Core engine V2 (commit 283af32): scoring caps/age table/discards, TA at TA points in 10 s multiples, Column C/B data (src/core/griid.ts), stage skeleton with ASP restarts, exact transits, free zones, handbook charts + Packard, digital lap/split stopwatch + instrument discipline; 294 unit tests
 - [x] Lessons + reference pages (aafc36a, 98da6c2): Four S's, Which timer when, team protocol (Dad's card), notations, transits/restarts, regs tables
 - [x] UI V2 (d7dec78): five-column GRIID book + printable #/book view, Column B icons, stacked Column C, charts overlay (C key), TA point form, restart/transit/promoted-stop cards, official-style scorecard with instrument discipline, digital lap/split watch display, built-in generated day stage
-- [x] Drills V2: D16 (ASP restarts, exact transit, lunch, rollovers), D08b at a TA point with committee credit, D06 builds the three charts (Bronze = Packard), D15 grades the six notations over 3+ pages, D18/D11/D12/D13 on the STAGE-001 skeleton, D01/D07 on the digital watch, campaign division/ASP/discards/standings vs benchmark teams; oracle 3 stars, naive 0 on every rebuilt drill
-- [x] Verification: typecheck clean, 340 unit, 34 e2e, build clean, 232/232 specs
-- [ ] Re-validate realism and education against the two documents (agent), fold findings, push
+- [x] Drills V2: D16 (ASP restarts, exact transit, lunch, rollovers), D08b at a TA point with committee credit, D06 builds the three charts (Bronze = Packard), D15 grades the six notations over 3+ pages, D18/D11/D12/D13 on the STAGE-001 skeleton, D01/D07 on the digital watch, campaign division/ASP/discards/standings vs benchmark teams; oracle 3 stars and naive 0 on D01/D03/D06/D07/D08b/D15/D16/D18; D11 2-3; D12/D13 oracle 1-3 stars on stock-speedo tiers (red lights no longer earn a TA and town recovery is limited)
+- [x] Verification: typecheck clean, 362 unit, 38 e2e, build clean, 246/246 specs (after the V2 fix sprint; was 340 / 34 / 232)
+- [x] Realism re-validation (54/70, docs/playtest/REVALIDATION-v2-realism.md) and its V2 fix sprint (clock without digital readout, TA per V.H.1/V.H.3, exact-transit flag, oracle calibration and clock glances, lesson slips, book realism, collapsed debrief): see LOG.md. 362 unit, 38 e2e, 246/246 specs, not committed
+- [ ] Re-validate education against the two documents (agent), push
 - Josh's standing instruction: the organizers' documents win over his own preferences. Hence: digital stopwatch with lap/split + TOD by default (HB p.5 'a necessity'), analog dash clock; teach which device for which purpose (LESSON-006, WATCH-008/009, DRILL-026). Dad has no protocol yet: teach best practices. YouTube transcripts (.vtt) may arrive
 
 ## Current step
-Phase IV built and green. Next: re-validation pass against the handbook/regulations, then fold findings. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
+Phase IV complete and verified. Open items: Josh's Ford measurements (Q12/Q22), YouTube transcripts (Q13), ASP + 30-min pre-read on the built-in stage route, GR emergency signs (backlog). Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
 Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)

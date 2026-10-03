@@ -4,6 +4,9 @@ import { allDrills, drillById } from '../src/core/drills/registry.js';
 import { isUnlocked } from '../src/core/drills/index.js';
 import { validateScenario, aidsForRung, LEGAL_AIDS } from '../src/core/course.js';
 import { Simulator } from '../src/core/sim.js';
+import { generateStage, PROFILES } from '../src/core/generator/generate.js';
+import { STOCK_1939_SPEEDO } from '../src/core/builder.js';
+import { DRIVER_EXPERT } from '../src/core/course.js';
 import { OracleBot, runBot } from '../src/agent/bots.js';
 import { headlineTip } from '../src/core/drills/rubrics.js';
 import { dwellFor, buildPerfTable, matrixAt } from '../src/core/perf-table.js';
@@ -133,6 +136,22 @@ describe('DRILL-021 D16 time-of-day discipline with ASP, exact transit, lunch an
       expect(r.instrumentDiscipline.filter(f => f.kind.startsWith('clock'))).toEqual([]);
     }
   });
+  it('DRILL-021 oracle 3 stars, naive 0: the shipped oracle (clock glance every 20 s inside the last 2 minutes before a start, IN, OUT, lunch or restart) earns 3 stars with no clock finding, while the wrongMinute bot (a minute late at the first restart) earns 0', () => {
+    for (let seed = 1; seed <= 3; seed++) for (const t of [0, 1, 2]) {
+      const sc = d.scenario(seed, t);
+      const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { useWatch: true })); const rb = d.rubric(r, sc);
+      expect(rb.stars, `oracle seed ${seed} tier ${t}: ${rb.headline}`).toBe(3); expect(r.instrumentDiscipline.filter(f => f.kind.startsWith('clock'))).toEqual([]);
+      expect(r.actions.some(a => a.action.type === 'clock.read')).toBe(true);                       // the glances come from the bot itself, not a test helper
+      const sim2 = new Simulator(sc); const bot2 = new OracleBot(sim2, { useWatch: true, wrongMinute: true }); expect(bot2.name).toBe('wrongMinute');
+      const naive = runBot(sim2, bot2); const nb = d.rubric(naive, sc);
+      expect(nb.stars, `naive seed ${seed} tier ${t}: ${nb.headline}`).toBe(0); expect(nb.feedback.join(' ')).toMatch(/Wrong time: the restart/);
+      const dep = departuresOf(naive, sc).find(x => x.kind === 'restart')!; expect(dep.err).toBeGreaterThan(50); expect(dep.err).toBeLessThan(70);
+    }
+  });
+  it('DRILL-021 the glances stop when the navigator does not look: noClockReads leaves a clock finding and caps D16 at 2 stars', () => {
+    const sc = d.scenario(2, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { useWatch: true, noClockReads: true }));
+    expect(r.actions.some(a => a.action.type === 'clock.read')).toBe(false); expect(r.instrumentDiscipline.some(f => f.kind === 'clockForTimeOfDay')).toBe(true); expect(d.rubric(r, sc).stars).toBe(2);
+  });
   it('DRILL-021 the OUT of the exact transit is IN + 20m00s to the second and leaving it a wrong minute late is 0 stars; WATCH-009 clock findings cap a perfect run at 2', () => {
     const sc = d.scenario(1, 0); const out = sc.book.find(i => i.transit?.end && i.transit.exact)!;
     const clean = runOracle(sc); const dep = departuresOf(clean.r, sc).find(x => x.kind === 'transitOut')!;
@@ -170,7 +189,7 @@ describe('DRILL-022 D08b Time Allowance at the printed TA point (supersedes DRIL
       const sc = d.scenario(seed, 0);
       const o = runOracle(sc); const rb = d.rubric(o.r, sc); expect(rb.stars, `seed ${seed}: ${rb.headline}`).toBe(3); oracle += rb.stars;
       expect(o.r.ta.scorecardAcked).toBe(true); expect(o.r.ta.requests.every(q => q.status === 'filed' && q.adjusted % 10 === 0)).toBe(true);
-      const view = committeeView(o.r, sc); expect(view[0]!.measured).toBeGreaterThan(30); expect(view[1]!.measured).toBe(0);   // a tractor never qualifies (TA-004)
+      const view = committeeView(o.r, sc); expect(view[0]!.measured).toBeGreaterThan(15); expect(view[1]!.measured).toBe(0);   // the train qualifies (V.H.1) but the red light does not by default (rules.taForSignals false), and a tractor never does (TA-004)
       const np = runOracle(sc, { forgetPauses: true }); nopause += d.rubric(np.r, sc).stars;
       const rk = runOracle(sc, { ignoreLosses: true }); rookie += d.rubric(rk.r, sc).stars; expect(rk.r.ta.requests.length).toBe(0);
     }
@@ -425,3 +444,45 @@ describe('CAMP-001 campaign division, ASP, discards, age factor and the Trophy R
   });
 });
 
+describe('BOT-007 the oracle works like a navigator: clock glances, a lap at every calibration point, and the measured k on a stock speedometer', () => {
+  const stock = (seed: number) => generateStage(seed, { ...PROFILES.fullStage!, speedo: STOCK_1939_SPEEDO, driver: DRIVER_EXPERT, aids: aidsForRung(0), bookStyle: 'race' });
+  it('BOT-007 after the calibration run the oracle holds assigned / k: a stock-speedo day scores tens of seconds instead of hundreds, and k matches the speedometer\'s true factor at 50 mph', () => {
+    for (const seed of [2, 3]) {
+      const sc = stock(seed);
+      const sim = new Simulator(sc); const bot = new OracleBot(sim, { useWatch: true }); const r = runBot(sim, bot);
+      const ind50 = STOCK_1939_SPEEDO.gain * 50 + STOCK_1939_SPEEDO.offset + STOCK_1939_SPEEDO.quad * 2500;
+      const k = (bot as unknown as { k: number }).k; expect(k, `seed ${seed}`).toBeGreaterThan(0); expect(Math.abs(k - 50 / ind50)).toBeLessThan(0.004);
+      expect(r.score.raw, `seed ${seed} calibrated`).toBeLessThan(45);
+      const sim2 = new Simulator(sc); const raw2 = runBot(sim2, new OracleBot(sim2, { useWatch: true, noCalibration: true })).score.raw;
+      expect(raw2, `seed ${seed} never calibrated`).toBeGreaterThan(150);
+    }
+  });
+  it('BOT-007 D12 Silver and Gold (stock speedometer): the oracle no longer scores 0 stars; the team that never calibrates still does', () => {
+    const d = drillById('D12')!;
+    for (const t of [1, 2]) {
+      const sc = d.scenario(1, t); expect(sc.speedo.kind).toBe('mechanical');
+      const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { useWatch: true })); const rb = d.rubric(r, sc);
+      expect(rb.stars, `tier ${t}: ${rb.headline}`).toBeGreaterThanOrEqual(1); expect(r.score.raw).toBeLessThan(60);
+      const sim2 = new Simulator(sc); const r2 = runBot(sim2, new OracleBot(sim2, { useWatch: true, noCalibration: true })); expect(d.rubric(r2, sc).stars).toBe(0); expect(r2.score.raw).toBeGreaterThan(150);
+    }
+  });
+  it('BOT-007 the shipped oracle leaves no clock or calibration finding on a generated day: a stopwatch restart at the asterisk, a lap at every calibration point, a clock read inside 20 s before every restart and OUT', () => {
+    const sc = generateStage(1, { ...PROFILES.fullStage!, driver: DRIVER_EXPERT });
+    const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { useWatch: true }));
+    expect(r.instrumentDiscipline.filter(f => f.kind === 'clockForTimeOfDay' || f.kind === 'calibrationWithoutLap')).toEqual([]);
+    const cal = sc.book.filter(i => i.section === 'calibration'); const laps = sim.instrumentLog.filter(e => e.kind === 'watch.lap' || e.kind === 'watch.start').length; expect(laps).toBeGreaterThanOrEqual(cal.length);
+    const reads = sim.instrumentLog.filter(e => e.kind === 'clock.read').map(e => e.tod); expect(reads.length).toBeGreaterThan(10);
+    for (const dep of departuresOf(r, sc)) if (dep.actual !== null) expect(reads.some(t => t <= dep.actual! && dep.actual! - t <= 21), `${dep.kind} line ${dep.line}`).toBe(true);
+  });
+  it('BOT-007 glances are spaced 20 s apart and only when a start, restart, exact-transit or promoted-stop departure is within 2 minutes', () => {
+    const sc = drillById('D16')!.scenario(3, 0); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { useWatch: true }));
+    const reads = sim.instrumentLog.filter(e => e.kind === 'clock.read').map(e => e.tod);
+    for (let i = 1; i < reads.length; i++) expect(reads[i]! - reads[i - 1]!).toBeGreaterThanOrEqual(19.9);
+    const deps = departuresOf(r, sc).map(d => d.actual).filter((t): t is number => t !== null);
+    const ins = r.events.filter(e => e.type === 'transit.in').map(e => e.tod);
+    const known = [sc.startTime, ...ins, ...deps];
+    expect(reads.length).toBeGreaterThan(8);
+    for (const t of reads) expect(known.some(k => k - t <= 125 && k - t >= -6), `read at ${t.toFixed(0)}`).toBe(true);   // every glance lies inside the 2 minutes before a start, IN, OUT, lunch or restart
+    for (const k of known) expect(reads.some(t => k - t <= 21 && k - t >= -1), `an event at ${k.toFixed(0)} was read within 21 s`).toBe(true);
+  });
+});

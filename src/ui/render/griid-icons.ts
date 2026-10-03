@@ -1,14 +1,18 @@
 /** Column B pictograms of the GRIID book (GRIID-003, UI-029) as small inline SVG strings. No DOM needed. */
-import type { ColumnBSymbol } from '../../core/griid.js';
+import type { ColumnBSymbol, ColumnCIcon } from '../../core/griid.js';
 
-export const SYMBOL_LABEL: Record<ColumnBSymbol, string> = {
+/** Every pictogram the book draws: Column B symbols and the two Column C watch faces. */
+export type GriidIconId = ColumnBSymbol | ColumnCIcon;
+
+export const SYMBOL_LABEL: Record<GriidIconId, string> = {
   warmup: 'Tire warm-up',
   calibration: 'Speedometer calibration run begins',
   'transit-begin': 'Transit begins (full hourglass)',
   'transit-end': 'Transit ends (empty hourglass)',
   'freezone-begin': 'Free zone begins (crossed-out camera)',
   'freezone-end': 'Free zone ends (camera)',
-  'end-timed': 'End timed portion (crossed-out clock)',
+  'end-timed': 'End timed portion (crossed-out watch, Column C)',
+  restart: 'Time-of-day restart (watch face, Column C)',
   pit: 'Hosted pit stop (cup)',
   meal: 'Meal stop (knife and fork)',
   refuel: 'Refuel (pump)',
@@ -22,7 +26,7 @@ const CROSS = '<path d="M5 27 L27 5" stroke="#d6453d" stroke-width="3" stroke-li
 
 const camera = '<rect x="4" y="10" width="24" height="15" rx="2.5" ' + S + '/><circle cx="16" cy="17.5" r="4.5" ' + S + '/><path d="M10 10 L12 6 H20 L22 10" ' + S + '/>';
 
-const BODY: Record<ColumnBSymbol, string> = {
+const BODY: Record<GriidIconId, string> = {
   // tire: heavy outer ring, hub, a few tread ticks
   warmup: '<circle cx="16" cy="16" r="12" stroke="currentColor" stroke-width="5" fill="none"/><circle cx="16" cy="16" r="4.5" ' + S + '/><path d="M16 4 V1.5 M16 30.5 V28 M4 16 H1.5 M30.5 16 H28" ' + S + '/>',
   // speedometer face: dial arc, ticks, needle
@@ -33,6 +37,8 @@ const BODY: Record<ColumnBSymbol, string> = {
   'freezone-begin': camera + CROSS,
   'freezone-end': camera,
   'end-timed': '<circle cx="16" cy="16" r="12" ' + S + '/><path d="M16 9 V16 L21 19" ' + S + '/>' + CROSS,
+  // watch face with the hands and the twelve ticks (Column C, over the time of day and the speed)
+  restart: '<circle cx="16" cy="16" r="12" ' + S + '/><path d="M16 5.5 V8 M16 24 V26.5 M5.5 16 H8 M24 16 H26.5" ' + S + '/><path d="M16 16 V9.5 M16 16 L21 19" ' + S + '/><circle cx="16" cy="16" r="1.6" fill="currentColor"/>',
   // cup and saucer
   pit: '<path d="M6 10 H21 V17 C21 21 18 24 13.5 24 C9 24 6 21 6 17 Z" ' + S + '/><path d="M21 12 H24 C26.5 12 26.5 18 23 18 H21" ' + S + '/><path d="M4 28 H24" ' + S + '/><path d="M10 4 C9 6 11 6 10 8 M15 4 C14 6 16 6 15 8" ' + S + '/>',
   // fork (left) and knife (right)
@@ -53,8 +59,8 @@ function checkers(): string {
   return s + '<rect x="8" y="4" width="21" height="16.8" fill="none" stroke="currentColor" stroke-width="1.4"/>';
 }
 
-/** One Column B pictogram, 28 px by default; `data-sym` carries the symbol id (tests and e2e look for it). */
-export function griidIcon(sym: ColumnBSymbol, size = 28): string {
+/** One pictogram (Column B symbol or Column C watch face), 28 px by default; `data-sym` carries the symbol id (tests and e2e look for it). */
+export function griidIcon(sym: GriidIconId, size = 28): string {
   return `<svg class="gicon" data-sym="${sym}" viewBox="0 0 32 32" width="${size}" height="${size}" role="img" aria-label="${SYMBOL_LABEL[sym]}"><title>${SYMBOL_LABEL[sym]}</title>${BODY[sym]}</svg>`;
 }
 

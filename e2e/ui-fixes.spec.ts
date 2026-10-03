@@ -53,9 +53,9 @@ test('C1/W1 at a STOP the book and perf card show the stopped line, with the tur
   expect(m && d && m[1] === d[1]).toBeTruthy();
 });
 
-test('legal mode (rung <= 1) hides digital readouts and the computed card; Bronze keeps them', async ({ page }) => {
+test('legal mode (rung <= 1) hides digital readouts and the computed card; Bronze keeps the card but the clock never gets a numeric time of day (REG II.H.1.d(1))', async ({ page }) => {
   await openDrill(page, 'D18', 2);   // Gold, rung 0
-  await expect(page.locator('#tod')).toBeHidden();
+  await expect(page.locator('#tod')).toHaveCount(0);
   await depart(page);
   await page.evaluate(() => window.__rally!.advance(5));
   await expect(page.locator('#perfcard')).toContainText(/Legal mode/);
@@ -65,7 +65,8 @@ test('legal mode (rung <= 1) hides digital readouts and the computed card; Bronz
   expect(caps.join(' ')).not.toMatch(/\bmph\b/);              // speedo: no number
   expect(caps.join(' ')).not.toMatch(/to go/);              // bezel countdown number
   await openDrill(page, 'D03', 0);
-  await expect(page.locator('#tod')).toBeVisible();
+  await expect(page.locator('#tod')).toHaveCount(0);
+  expect((await page.locator('.instruments .caption').allInnerTexts())[0]).toMatch(/^official start/);
 });
 
 test('digital watch renders a digital readout', async ({ page }) => {

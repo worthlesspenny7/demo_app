@@ -9,7 +9,7 @@ import type { Drill } from './types.js';
 import { tiers, tierOf, base, aspForSeed, bookStyleFor } from './common.js';
 import { driverScale, headlineTip, legErrors, meanAbs, starsFromMeanAbs, instrumentFindingLines } from './rubrics.js';
 
-/** Rows per page of the printed book (UI-029). */
+/** Rows per page of this drill's printed book (UI-029): the layout below is hand-built for six, so the scenario carries rowsPerPage = 6 (other books use 7-8). */
 export const ROWS_PER_PAGE = 6;
 export const pageOf = (n: number): number => Math.floor((n - 1) / ROWS_PER_PAGE) + 1;
 const isPageTop = (n: number): boolean => n > 1 && (n - 1) % ROWS_PER_PAGE === 0;
@@ -98,7 +98,7 @@ export const D15: Drill = {
     b.advanceMiles(0.35).checkpoint().advanceMiles(0.2);
     b.finish(); expect(48);
     const sc = b.build();
-    sc.tags = [...(sc.tags ?? []), 'd15', `asp:${asp}`, 'watch:digital'];
+    sc.tags = [...(sc.tags ?? []), 'd15', `asp:${asp}`, 'watch:digital']; sc.rowsPerPage = ROWS_PER_PAGE;
     annotatePerfectTimes(sc, true);
     return sc;
   },

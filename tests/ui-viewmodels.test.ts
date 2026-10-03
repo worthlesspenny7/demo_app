@@ -66,9 +66,9 @@ describe('UI-002 clockViewModel', () => {
     expect(vm.secondDeg).toBeCloseTo(90, 6);
     expect(vm.bezelDeg).toBeCloseTo(270, 6);
     expect(vm.bezelRemaining).toBeCloseTo(30, 6);
-    expect(vm.digital).toBe('03:30:15');
+    expect('digital' in vm).toBe(false);   // UI-033: the clock view-model has no numeric readout (REG II.H.1.d(1))
     expect(clockViewModel(13 * 3600).hourDeg).toBeCloseTo(30, 6);
-    expect(clockViewModel(Number.NaN).digital).toBe('00:00:00');
+    expect(clockViewModel(Number.NaN).hourDeg).toBe(0);
   });
 });
 
@@ -887,7 +887,7 @@ describe('UI-026 S at the finish and the turn-loss block', () => {
 
 // ---------- teaching content: LESSON-001..005, CHART-004/005 wording, UI-033 ----------
 import { LESSONS, lessonText, type Lesson } from '../content/lessons.js';
-import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, packardValue, ageFactorFor } from '../content/reference-data.js';
+import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_STEPS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, packardValue, ageFactorFor } from '../content/reference-data.js';
 import { STOPWATCH_NOTE, CLOCK_NOTE } from '../src/ui/screens/settings.js';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../src/ui/state.js';
 import { vi } from 'vitest';
@@ -980,6 +980,34 @@ describe('LESSON-005 Reference pages', () => {
   });
 });
 
+describe('LESSON-007 lessons and reference follow the documents (REG V.H.1, V.H.3, II.H.1.i, VII.B.3.c(4); HB p.7, p.27)', () => {
+  const all = LESSONS.map(l => lessonText(l)).join('\n');
+  it('LESSON-007 lights are not a Time Allowance delay: only a train blockage and assisting at an accident (V.H.1); the recovery lesson, the Four S\'s and the reference say so', () => {
+    expect(all).not.toMatch(/traffic lights may instead be declared/i); expect(all).not.toMatch(/red light may qualify/i); expect(lessonText(lesson('recovery'))).not.toMatch(/red light makes you late/i);
+    hasAll(lessonText(lesson('recovery')), ['V.H.1', 'a train blocking the route', 'A traffic light is not named in V.H.1', 'rules.taForSignals']);
+    hasAll(TA_STEPS.find(r => r.rule === 'V.H.1')!.text, ['train', 'accident', 'does not name traffic lights']);
+  });
+  it('LESSON-007 TA submission is "by the method printed in the day\'s instructions" (web page, phone, or at the Observation Checkpoint), in the Four S\'s lesson and the reference steps', () => {
+    hasAll(lessonText(lesson('four-s')), ['by the method printed in the day\'s instructions', 'a web page, a phone call, or at the Observation Checkpoint', 'within 15 minutes', 'Within 15m00s', 'cellular telephone']);
+    const v3 = TA_STEPS.find(r => r.rule === 'V.H.3')!.text; hasAll(v3, ['method printed in the day', 'web page, phone, or at the Observation Checkpoint', 'Within 15m00s', 'cellular telephone']); expect(v3).not.toContain('(the yellow box)');
+  });
+  it('LESSON-007 the GRIID lesson puts both watch faces in Column C and says a plain interval is not automatically an exact transit (only "take exactly" is); the transits lesson and the Column C reference agree', () => {
+    const g = lessonText(lesson('griid-cameo')); hasAll(g, ['restart watch-face icon', 'crossed-out watch', 'HB p.27', 'Example #17', 'not automatically an exact transit', 'take exactly', 'Example #30']);
+    expect(g).not.toContain('end of the timed portion (crossed-out clock)'); expect(lesson('griid-cameo').check.explain).toContain('does not make a transit exact'); expect(lesson('griid-cameo').check.explain).not.toMatch(/exact transit prints its interval without parentheses/);
+    hasAll(lessonText(lesson('transits')), ['Only "take exactly" makes a transit exact', '26m00s']);
+    expect(COLUMN_C_ROWS.map(r => r.shows)).toEqual(expect.arrayContaining(['(0m30s)', '26m00s'])); expect(COLUMN_C_ROWS.find(r => r.shows === '26m00s')!.means).toContain('not automatically');
+  });
+  it('LESSON-007 the T / Y / bear / acute / jog definitions and the "call turns 500-600 ft out" habit are labelled simulator convention, not the documents', () => {
+    hasAll(lessonText(lesson('griid-cameo')), ['Simulator convention, not in the documents']);
+    const p = lessonText(lesson('protocol')); hasAll(p, ['Rule 10 (simulator convention, not in the documents)', 'our own research notes, not the handbook or regulations', 'team vocabulary']);
+    expect(p).not.toContain('one recorded rookie wrong turn cost 1:05');
+  });
+  it('LESSON-007 the ghost-car lesson says every deceleration books a net time loss per chart (a): 50 to 30 mph loses 1.4 s, and no car "gets ahead of the ghost"', () => {
+    const g = lessonText(lesson('ghost-car')); hasAll(g, ['net time loss for every speed change, deceleration included', '50 to 30 mph loses 1.4 s']); expect(g).not.toContain('slightly ahead of the ghost');
+    expect(packardValue('accel', 50, 30)).toBe(1.4); expect(packardValue('accel', 40, 15)).toBe(1.4); expect(buildPerfTable(FORD_1939).accel.rows[50]![30]).toBeGreaterThan(0);   // the handbook chart and the engine agree: a deceleration costs time
+  });
+});
+
 describe('CHART-004 and CHART-005 lesson wording', () => {
   it('CHART-004 pause-arithmetic, timed-leads and recovery use the handbook rules', () => {
     hasAll(lessonText(lesson('pause-arithmetic')), ['Stop & Go chart', 'sometimes the instructed pause time may be different than 15 seconds', '13.6 s']);
@@ -1000,19 +1028,20 @@ describe('CHART-004 and CHART-005 lesson wording', () => {
 });
 
 describe('UI-033 Settings: handbook defaults (digital stopwatch, analog clock), analog stopwatch selectable', () => {
-  it('UI-033 the defaults are a digital stopwatch and an analog clock, and the notes say the analog stopwatch is not the handbook\'s recommendation', () => {
-    expect(DEFAULT_SETTINGS.watch).toBe('digital'); expect(DEFAULT_SETTINGS.clock).toBe('analog');
+  it('UI-033 REG-007 the default is a digital stopwatch, there is no clock setting at all (REG II.H.1.d(1): the clock has no digital readout), and the notes say so', () => {
+    expect(DEFAULT_SETTINGS.watch).toBe('digital'); expect('clock' in DEFAULT_SETTINGS).toBe(false);
     hasAll(STOPWATCH_NOTE, ['digital stopwatch', 'lap/split', 'time-of-day', 'HB p.5', 'analog stopwatch', 'not the handbook\'s recommendation', 'selectable']);
-    hasAll(CLOCK_NOTE, ['analog by default', 'digital readout', 'optional', 'WWV']);
+    hasAll(CLOCK_NOTE, ['always analog', 'II.H.1.d(1)', 'digital readout', 'WWV', 'II.H.1.d(3)']);
+    expect(CLOCK_NOTE).not.toMatch(/optional/i);
   });
-  it('UI-033 the clock setting persists through save and load and a missing field falls back to analog', () => {
+  it('UI-033 REG-007 the watch setting persists through save and load, and a retired clock: digital value in an old save is dropped', () => {
     const store = new Map<string, string>();
     vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } });
     try {
-      saveSettings({ ...DEFAULT_SETTINGS, clock: 'digital', watch: 'analog' });
-      expect(loadSettings().clock).toBe('digital'); expect(loadSettings().watch).toBe('analog');   // analog stays selectable
-      const [key] = [...store.keys()]; const old = JSON.parse(store.get(key!)!) as Record<string, unknown>; delete old['clock']; store.set(key!, JSON.stringify(old));
-      expect(loadSettings().clock).toBe('analog');
+      saveSettings({ ...DEFAULT_SETTINGS, watch: 'analog' });
+      expect(loadSettings().watch).toBe('analog');   // analog stopwatch stays selectable
+      const [key] = [...store.keys()]; const old = JSON.parse(store.get(key!)!) as Record<string, unknown>; old['clock'] = 'digital'; store.set(key!, JSON.stringify(old));
+      expect('clock' in loadSettings()).toBe(false);
     } finally { vi.unstubAllGlobals(); }
   });
 });
@@ -1038,12 +1067,12 @@ describe('LESSON-006 Which timer, when', () => {
 // ---------- UI V2: GRIID book, charts, TA point, restart cards, scorecard, digital watch ----------
 import { generateStage, PROFILES } from '../src/core/generator/generate.js';
 import { columnCLines, columnBSymbols, columnD, odometerBox, type ColumnBSymbol } from '../src/core/griid.js';
-import { bookPages, griidRow, calibrationBoxRange, pageOfLine, signBox, ROWS_PER_PAGE } from '../src/ui/viewmodels/book.js';
+import { bookPages, griidRow, calibrationBoxRange, pageOfLine, signBox, ROWS_PER_PAGE, PAGE_ROW_CHOICES } from '../src/ui/viewmodels/book.js';
 import { griidIcon, odometerHtml, SYMBOL_LABEL } from '../src/ui/render/griid-icons.js';
-import { columnAHtml, columnBHtml, columnCHtml, griidRowHtml } from '../src/ui/render/griid.js';
+import { columnAHtml, columnBHtml, columnCHtml, griidRowHtml, taBannerHtml, esc } from '../src/ui/render/griid.js';
 import { bookSheetsHtml } from '../src/ui/screens/book.js';
 import { chartGrids, stopChartReading, chartStopLoss, tenPercentRule } from '../src/ui/viewmodels/charts.js';
-import { holdCardFor } from '../src/ui/viewmodels/cockpitinfo.js';
+import { holdCardFor, openTransitCard } from '../src/ui/viewmodels/cockpitinfo.js';
 import { taFormVm, taRounding, taNoteText, windowClock } from '../src/ui/viewmodels/ta.js';
 import { scorecardViewModel, taRequestRows } from '../src/ui/viewmodels/scorecard.js';
 import { digitalWatchViewModel, SplitTracker, chronoText, todText } from '../src/ui/viewmodels/digitalwatch.js';
@@ -1052,7 +1081,7 @@ import { buildPerfTable } from '../src/core/perf-table.js';
 import { builtinScenario } from '../src/agent/scenarios.js';
 import { hms, formatClock } from '../src/core/units.js';
 
-const ALL_SYMBOLS: ColumnBSymbol[] = ['warmup', 'calibration', 'transit-begin', 'transit-end', 'freezone-begin', 'freezone-end', 'end-timed', 'pit', 'meal', 'refuel', 'rest', 'ta', 'finish'];
+const ALL_SYMBOLS: ColumnBSymbol[] = ['warmup', 'calibration', 'transit-begin', 'transit-end', 'freezone-begin', 'freezone-end', 'pit', 'meal', 'refuel', 'rest', 'ta', 'finish'];
 
 /** The oracle drives a generated stage to the first open TA window (seed 6 has a qualifying delay on leg 3). */
 function stageAtTaWindow(seed: number): Simulator {
@@ -1103,15 +1132,45 @@ describe('UI-029 the book as the five-column GRIID row', () => {
     expect(griidRow({ ...ins, remark: undefined }, { style: 'race' }).d).toBe('');
     expect(columnAHtml({ svg: '<svg/>', sign: signBox({ id: 'n', s: 0, kind: 'sign', control: 'none', sightDistance: 300, sign: { text: 'LEAVING ELDORA CITY LIMIT', shape: 'rect', side: 'R' } }), landmark: 'bridge' })).toMatch(/sign-box side-R[^>]*>LEAVING ELDORA CITY LIMIT.*landmark">bridge/);
   });
-  it('UI-029 page breaks every 6 rows with "Page n of m" and the stage title; the printable view prints the same pages', () => {
+  it('UI-029 page breaks every 7 rows (8 on request) with "Page n of m" and the stage title; the printable view prints the same pages', () => {
     const pages = bookPages(stage.book, 'D18 Full day', { timeZone: stage.timeZone, style: stage.bookStyle });
-    expect(ROWS_PER_PAGE).toBe(6); expect(pages.length).toBe(Math.ceil(stage.book.length / 6));
+    expect(ROWS_PER_PAGE).toBe(7); expect(pages.length).toBe(Math.ceil(stage.book.length / 7));
     expect(pages[0]!.footer).toBe(`Page 1 of ${pages.length}`); expect(pages[1]!.footer).toBe(`Page 2 of ${pages.length}`); expect(pages[0]!.title).toBe('D18 Full day');
-    expect(pages.slice(0, -1).every(p => p.rows.length === 6)).toBe(true); expect(pages.flatMap(p => p.rows).map(r => r.n)).toEqual(stage.book.map(i => i.n));
-    expect(pageOfLine(1)).toBe(1); expect(pageOfLine(6)).toBe(1); expect(pageOfLine(7)).toBe(2);
+    expect(pages.slice(0, -1).every(p => p.rows.length === 7)).toBe(true); expect(pages.flatMap(p => p.rows).map(r => r.n)).toEqual(stage.book.map(i => i.n));
+    expect(pageOfLine(1)).toBe(1); expect(pageOfLine(7)).toBe(1); expect(pageOfLine(8)).toBe(2);
     const html = bookSheetsHtml(stage, 'D18 Full day'); expect((html.match(/class="book-sheet"/g) ?? []).length).toBe(pages.length);
     expect(html).toContain(`Page 1 of ${pages.length}`); expect(html).toContain('D18 Full day'); expect(html).toContain('data-sym="transit-begin"'); expect(html).toContain('class="cbox"');
     expect(griidRowHtml(pages[0]!.rows[0]!, { svg: '' })).toMatch(/class="gn">1<.*class="gb".*class="gc".*class="gd"/);
+    expect(bookPages(stage.book, 'x', { perPage: 8 }).length).toBe(Math.ceil(stage.book.length / 8)); expect(bookPages(stage.book, 'x', { perPage: 8 })[0]!.rows.length).toBe(8);   // 7 or 8 rows a page
+  });
+  it('GRIID-010 the watch faces are drawn in Column C: the restart watch over its time and speed, the crossed-out watch of End timed portion; neither is a Column B symbol', () => {
+    const restart = bookRows(stage.book, 1, { timeZone: stage.timeZone, style: stage.bookStyle }).find(r => r.cIcons.includes('restart'))!;
+    const html = columnCHtml(restart); expect(html).toContain('class="cicons"'); expect(html).toContain('data-sym="restart"'); expect(html.indexOf('cicons')).toBeLessThan(html.indexOf('CDT'));
+    expect(columnBHtml(restart)).not.toContain('data-sym="restart"');
+    const et = bookRows(stage.book, 1, { timeZone: stage.timeZone, style: stage.bookStyle }).find(r => r.cIcons.includes('end-timed'))!;
+    expect(columnCHtml(et)).toContain('data-sym="end-timed"'); expect(columnBHtml(et)).not.toContain('data-sym="end-timed"'); expect(columnBHtml(et)).toContain('data-sym="transit-begin"');
+    expect(griidIcon('restart')).toContain(SYMBOL_LABEL['restart']); expect(griidIcon('restart')).not.toBe(griidIcon('end-timed')); expect(griidIcon('end-timed')).toContain('#d6453d');   // crossed out
+    const sheet = bookSheetsHtml(stage, 'D18 Full day'); expect(sheet).toMatch(/class="gc"><div class="cicons">.*data-sym="restart"/); expect(sheet).toMatch(/class="gc"><div class="cicons">.*data-sym="end-timed"/);
+    expect(columnCHtml({ c: ['30 MPH'], cBox: null })).not.toContain('cicons');
+  });
+  it('GRIID-013 the Time Allowance row is one full-width yellow banner with the written sentence (REG Example #18), in both book styles, in the printable view and the cockpit builder', () => {
+    for (const style of ['example', 'race'] as const) {
+      const sc = { ...generateStage(1), bookStyle: style }; const ta = bookRows(sc.book, 1, { timeZone: sc.timeZone, style }).filter(r => r.ta); expect(ta.length).toBe(2);
+      for (const r of ta) {
+        const h = griidRowHtml(r, { svg: '' }); expect(h).toContain('class="grow ta-row'); expect(h).toContain('class="tabanner"'); expect(h).toContain('data-sym="ta"'); expect(h).toContain('Within 15m00s');
+        for (const cls of ['class="gb"', 'class="gc"', 'class="ga"', 'class="gd"']) expect(h).not.toContain(cls);          // not five cells
+        expect(h).toContain(esc(r.text));
+      }
+      expect(griidRowHtml(bookRows(sc.book, 1, { style }).find(r => !r.ta && r.n > 1)!, { svg: '' })).not.toContain('tabanner');
+    }
+    const sheet = bookSheetsHtml(generateStage(1), 'D18 Full day'); expect((sheet.match(/class="tabanner"/g) ?? []).length).toBe(2);
+    expect(taBannerHtml({ text: 'Within 15m00s, go there.' })).toMatch(/^<div class="tabanner" role="note"><span class="tab-icon"><svg/);
+  });
+  it('GRIID-014 a hand-laid-out drill book keeps its own page size (D15: 6 rows), everything else prints 7 rows a page and can print 8', () => {
+    const d15 = drillById('D15')!.scenario(1, 0); expect(d15.rowsPerPage).toBe(6);
+    expect((bookSheetsHtml(d15, 'D15').match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(d15.book.length / 6));
+    const stage8 = bookSheetsHtml(stage, 'x', 8); expect((stage8.match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(stage.book.length / 8)); expect((bookSheetsHtml(stage, 'x').match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(stage.book.length / 7));
+    expect(PAGE_ROW_CHOICES).toEqual([7, 8]); expect(stage.rowsPerPage).toBeUndefined();
   });
   it('UI-029 lettered lines print their letter and omitted lines are marked (GRIID-005)', () => {
     const r = griidRow({ n: 4, nodeId: 'n', text: 'x', printed: '3a', omitted: true });
@@ -1205,6 +1264,15 @@ describe('UI-032 restart, exact-transit and promoted-stop cards', () => {
     const a = holdCardFor(ex, src, begin.n)!; expect(a.kind).toBe('transit'); expect(a.text).toBe('IN 09:14:07 + 20m00s = OUT 09:34:07'); expect(a.goTod).toBe(hms(9, 34, 7));
     const b = holdCardFor(ex, src, end.n)!; expect(b.text).toBe('IN 09:14:07 + 20m00s = OUT 09:34:07'); expect(b.title).toMatch(/End of exact transit/);
     expect(holdCardFor(ex, { transitIn: {}, transitOutFor: () => null, holdGoTod: () => null }, begin.n)!.text).toBe('IN (read the clock at the sign) + 20m00s = OUT');
+  });
+  it('UI-032 an open exact transit keeps the recorded IN time on the card wherever the book pointer is, and the card goes away once the OUT line is crossed', () => {
+    const ex = new ScenarioBuilder({ startTime: hms(8, 0, 0) }).start(30).advanceMiles(0.5).transit({ exact: true, seconds: 1200, miles: 12 }).advanceMiles(0.5).endTransit({ speed: 30 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+    const begin = ex.book.find(i => i.transit?.exact && !i.transit.end)!; const end = ex.book.find(i => i.transit?.end)!;
+    const src = { transitIn: { [begin.n]: hms(9, 55, 14) }, transitOutFor: () => hms(9, 55, 14) + 1200, holdGoTod: () => null };
+    const c = openTransitCard(ex, src, begin.n)!; expect(c.text).toBe('IN 09:55:14 + 20m00s = OUT 10:15:14'); expect(c.goTod).toBe(hms(10, 15, 14)); expect(c.line).toBe(end.n);
+    expect(openTransitCard(ex, src, end.n)).toBeNull();                                            // OUT crossed
+    expect(openTransitCard(ex, { ...src, transitIn: {} }, begin.n)).toBeNull();                      // IN not crossed yet: nothing recorded to show
+    expect(openTransitCard(ex, null, begin.n)).toBeNull();
   });
   it('UI-032 promoted-stop card: leave by HH:MM:SS (45m00s prior to end of transit); the live sim supplies the time through holdGoTod', () => {
     const meal = sc.book.find(i => i.promotedStop?.kind === 'meal')!;

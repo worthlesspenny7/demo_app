@@ -6,7 +6,7 @@ import { accelLoss, stopLoss, rampLead } from '../core/perf-table.js';
 import { mphToFps } from '../core/units.js';
 import { rng, type Rng } from '../core/rng.js';
 
-export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'goCount' | 'random' | 'none';
+export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'goCount' | 'wrongMinute' | 'random' | 'none';
 
 export interface Bot { name: string; onTick(sim: Simulator): void }
 
@@ -45,6 +45,12 @@ export interface OracleOptions {
   noRecovery?: boolean;
   /** Start timed-segment counts at our own 'go' instead of the ghost's departure (BOT-005). */
   goCount?: boolean;
+  /** The naive team of D16: leaves the first time-of-day restart one minute late (the wrong minute). */
+  wrongMinute?: boolean;
+  /** Skip the morning calibration: hold the assigned speeds as indicated (the team that never calibrates its stock speedometer). */
+  noCalibration?: boolean;
+  /** Never glance at the clock (the navigator keeps time of day off the running chrono): WATCH-009 findings. */
+  noClockReads?: boolean;
 }
 
 export class OracleBot implements Bot {
@@ -55,12 +61,64 @@ export class OracleBot implements Bot {
   private timedPending: { plan: Plan; thenSpeed: number; called: boolean } | null = null;
   private stopWaitSince: number | null = null;
   private restartHandled = new Set<number>();
+  /** Plans the navigator must read the clock for: restarts, exact-transit ends, promoted stops, and the IN line of an exact transit. */
+  private readonly holdPlans: Plan[];
+  private readonly calPlans: Plan[];
+  private readonly firstRestart: Plan | null;
+  private lastGlance = -1e9;
+  private calStart: number | null = null;
+  private calSeen = new Set<number>();
+  /** Calibration factor measured on the morning run (true = k x indicated, CAL-001); applied to every held speed on a stock speedometer. */
+  private k: number | null = null;
   constructor(private readonly sim: Simulator, private readonly o: OracleOptions = {}) {
     this.plans = planBook(sim.sc);
+    this.holdPlans = this.plans.filter(p => isHoldIns(p.ins) || (p.ins.transit?.exact === true && !p.ins.transit.end));
+    this.calPlans = this.plans.filter(p => p.ins.section === 'calibration');
+    this.firstRestart = this.plans.find(p => p.ins.section === 'restart' && p.ins.restartTime !== undefined) ?? null;
     if (o.ignoreLosses) this.name = 'rookie';
     if (o.forgetPauses) this.name = 'noPause';
     if (o.latency) this.name = 'lateCall';
     if (o.goCount) this.name = 'goCount';
+    if (o.wrongMinute) this.name = 'wrongMinute';
+  }
+  /** Indicated speed to call for an assigned (true) speed: assigned / k once the calibration run has measured k on a stock speedometer (CAL-002). */
+  private ind(assigned: number): number {
+    if (this.k === null || this.sim.sc.speedo.kind === 'timewise') return assigned;
+    return Math.round(assigned / this.k * 2) / 2;
+  }
+  /** A navigator takes time of day from the clock: a glance every 20 s while a start, restart, exact-transit IN or OUT, or promoted-stop departure is within 2 minutes (WATCH-009). */
+  private glance(): void {
+    if (this.o.noClockReads) return;
+    const sim = this.sim;
+    if (sim.tod - this.lastGlance < 20 - 1e-6) return;
+    let near = false;
+    if (sim.phase === 'preread') near = sim.sc.startTime - sim.tod <= 120;
+    else if (sim.phase === 'running') {
+      const s = sim.car.s; const v = Math.max(sim.car.v, mphToFps(10));
+      for (const p of this.holdPlans) {
+        const d = p.s - s; if (d < -100) continue;
+        const goTod = isHoldIns(p.ins) ? sim.holdGoTod(nodeById(sim.sc.course, p.ins.nodeId)) : null;   // the departure time itself, once it is known
+        near = goTod !== null ? goTod - sim.tod <= 120 : d / v <= 120; break;
+      }
+    }
+    if (near) { this.lastGlance = sim.tod; sim.act({ type: 'clock.read' }); }
+  }
+  /** The calibration run: restart the stopwatch at the asterisk, lap at every calibration point, and work out k from the printed cumulative time (CAL-001). */
+  private calibrate(): void {
+    const sim = this.sim; const car = sim.car;
+    for (const p of this.calPlans) {
+      if (this.calSeen.has(p.ins.n)) continue;
+      if (car.s < p.s) break;
+      this.calSeen.add(p.ins.n);
+      const crossed = sim.tod - (car.s - p.s) / Math.max(car.v, 1);
+      if (p.ins.calibrationStart) {
+        this.calStart = crossed;
+        if (this.o.useWatch) { sim.act({ type: 'watch.stop' }); sim.act({ type: 'watch.reset' }); sim.act({ type: 'watch.start' }); }
+      } else {
+        if (this.o.useWatch) sim.act({ type: 'watch.lap' });
+        if (!this.o.noCalibration && this.calStart !== null && p.ins.perfectCumulative !== undefined && crossed > this.calStart + 1) this.k = p.ins.perfectCumulative / (crossed - this.calStart);
+      }
+    }
   }
   private act(a: Action): void { if (this.o.latency) this.queue.push({ at: this.sim.tod + this.o.latency, a }); else this.sim.act(a); }
   private flush(): void { const now = this.sim.tod; const due = this.queue.filter(q => q.at <= now); this.queue = this.queue.filter(q => q.at > now); for (const q of due) this.sim.act(q.a); }
@@ -68,17 +126,19 @@ export class OracleBot implements Bot {
   onTick(): void {
     const sim = this.sim; const sc = sim.sc; const car = sim.car;
     this.flush();
+    this.glance();
     if (sim.phase === 'preread') {
       const v0 = sc.book[0]!.speed ?? this.plans[0]!.transitMph ?? 30;
       const lead = this.o.ignoreLosses ? 0 : accelLoss(v0, sc.car);
       if (!this.departed && sim.tod >= sc.startTime - lead - 1e-6) {
         this.departed = true; sim.act({ type: 'start' }); if (this.o.useWatch) sim.act({ type: 'watch.start' });
-        if (sc.book[0]!.speed === undefined && this.plans[0]!.transitMph !== null) this.act({ type: 'call.speed', mph: this.plans[0]!.transitMph });
+        if (sc.book[0]!.speed === undefined && this.plans[0]!.transitMph !== null) this.act({ type: 'call.speed', mph: this.ind(this.plans[0]!.transitMph) });
       }
       return;
     }
     if (sim.phase !== 'running') return;
     const s = car.s;
+    this.calibrate();
     for (const p of this.plans) {
       if (p.ins.section === 'start') continue;
       const d = p.s - s;
@@ -100,14 +160,14 @@ export class OracleBot implements Bot {
       if (!isStop && p.ins.speed !== undefined && !p.ins.timed && !p.speedCalled && p.vIn > 0 && p.ins.speed !== p.vIn) {
         const lead = this.o.ignoreLosses ? 0 : rampLead(p.vIn, p.ins.speed, sc.car);
         const dLead = mphToFps(p.vIn) * lead;
-        if (d <= dLead + 1) { p.speedCalled = true; this.act({ type: 'call.speed', mph: p.ins.speed }); }
+        if (d <= dLead + 1) { p.speedCalled = true; this.act({ type: 'call.speed', mph: this.ind(p.ins.speed) }); }
       }
       // a transit has no assigned speed: drive its pace (rounded up) so the car arrives early and waits
-      if (p.transitMph !== null && !p.speedCalled && d <= 0 && sim.targetIndicated !== p.transitMph) { p.speedCalled = true; this.act({ type: 'call.speed', mph: p.transitMph }); }
+      if (p.transitMph !== null && !p.speedCalled && d <= 0 && sim.targetIndicated !== this.ind(p.transitMph)) { p.speedCalled = true; this.act({ type: 'call.speed', mph: this.ind(p.transitMph) }); }
       // timed segment anchor: arm when crossing
       if (p.ins.timed && !p.speedCalled && d <= 0) {
         p.speedCalled = true;
-        if (!isStop) this.act({ type: 'call.speed', mph: p.ins.timed.holdSpeed });
+        if (!isStop) this.act({ type: 'call.speed', mph: this.ind(p.ins.timed.holdSpeed) });
         this.timedPending = { plan: p, thenSpeed: p.ins.timed.thenSpeed, called: false };
       }
       // stop handling
@@ -116,15 +176,16 @@ export class OracleBot implements Bot {
           this.stopWaitSince = sim.tod;
           // set the exit speed so the driver accelerates to it after go
           const out = p.ins.timed ? p.ins.timed.holdSpeed : p.ins.speed ?? p.vIn;
-          if (out !== (sim.targetIndicated ?? -1)) this.act({ type: 'call.speed', mph: out });
+          if (this.ind(out) !== (sim.targetIndicated ?? -1)) this.act({ type: 'call.speed', mph: this.ind(out) });
           if (this.o.useWatch) sim.act({ type: 'watch.lap' });
         }
         if (isHoldIns(p.ins)) {
           // restart: leave at the time-of-day; exact transit: at IN + interval; promoted stop: at the scheduled departure (never 5 minutes early)
           const goTod = sim.holdGoTod(node);
-          if (!p.clockRead) { p.clockRead = true; sim.act({ type: 'clock.read' }); } // a navigator takes time of day from the clock, not the chrono (WATCH-009)
+          // the clock glances (glance(): every 20 s inside the last 2 minutes) are what keep the departure off the chrono (WATCH-009)
           const lead = this.o.ignoreLosses || p.ins.promotedStop ? 0 : accelLoss(p.vOut, sc.car);
-          if (goTod === null || sim.tod >= goTod - lead) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); }
+          const late = this.o.wrongMinute && p === this.firstRestart ? 60 : 0;   // D16's naive team: the wrong minute at the first restart
+          if (goTod === null || sim.tod >= goTod + late - lead) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); }
         } else if (sim.waitReason === 'stop' || sim.waitReason === 'hold') {
           const pause = p.ins.pause ?? 0;
           const turnAng = p.ins.turn ? turnAngle(p.ins.turn) : 0;
@@ -143,7 +204,7 @@ export class OracleBot implements Bot {
       let due: boolean;
       if (this.o.ignoreLosses || this.o.goCount) { if (tp.plan.crossedTod === null && car.s > tp.plan.s) tp.plan.crossedTod = sim.tod; due = tp.plan.crossedTod !== null && sim.tod >= tp.plan.crossedTod + seg.seconds - (this.o.goCount ? lead : 0); }
       else due = ghostTod !== null && sim.tod >= ghostTod - lead;
-      if (due) { tp.called = true; this.act({ type: 'call.speed', mph: tp.thenSpeed }); }
+      if (due) { tp.called = true; this.act({ type: 'call.speed', mph: this.ind(tp.thenSpeed) }); }
     }
     if (this.timedPending?.called && car.s > this.timedPending.plan.s + 3 * 5280) this.timedPending = null;
     this.recover();
@@ -194,14 +255,14 @@ export class OracleBot implements Bot {
     if (this.recovering !== null) {
       // done when the lateness (or earliness) he was working off is gone, including when a checkpoint has just reset the clock
       const done = this.recovering > assigned ? pace < 0.3 : pace > -0.3;
-      if (done || nearEvent) { this.recovering = null; this.act({ type: 'call.speed', mph: assigned }); }
+      if (done || nearEvent) { this.recovering = null; this.act({ type: 'call.speed', mph: this.ind(assigned) }); }
       return;
     }
     if (!nearEvent && Math.abs(pace) > 0.8 && Math.abs(car.mph() - assigned) < 1.5) {
       // the 10 % rule (HB p.10): the bigger the lateness the harder he drives, up to +20 %; a small error gets +2 mph
       const big = Math.abs(pace); const d = big > 25 ? Math.ceil(assigned * 0.2) : big > 6 ? Math.max(5, Math.ceil(assigned * 0.1)) : 2;
       this.recovering = pace > 0 ? assigned + d : Math.max(15, assigned - d);
-      this.act({ type: 'call.speed', mph: this.recovering });
+      this.act({ type: 'call.speed', mph: this.ind(this.recovering) });
     }
   }
 }
@@ -239,6 +300,7 @@ export function makeBot(name: BotName, sim: Simulator, seed = 1): Bot | null {
     case 'noPause': return new OracleBot(sim, { forgetPauses: true });
     case 'lateCall': return new OracleBot(sim, { latency: 1.5 });
     case 'goCount': return new OracleBot(sim, { goCount: true });
+    case 'wrongMinute': return new OracleBot(sim, { useWatch: true, wrongMinute: true });
     case 'random': return new RandomBot(sim, seed);
     case 'none': return null;
   }

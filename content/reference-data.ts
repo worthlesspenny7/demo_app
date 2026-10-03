@@ -84,9 +84,9 @@ export const PENALTY_ROWS: PenaltyRow[] = [
 
 /** REG V.H Time Allowance procedure, in plain words. */
 export const TA_STEPS: { rule: string; text: string }[] = [
-  { rule: 'V.H.1', text: 'Qualifies: a delay on the route beyond your control, such as a train blocking the route or stopping to help at an accident. Never qualifies: mechanical failure (flat tire), inability to hold the assigned speed, personal failure; the handbook adds navigation errors and wrong turns.' },
+  { rule: 'V.H.1', text: 'Qualifies: a delay on the route beyond your control, such as a train blocking the route or stopping to help at an accident (V.H.1 names those two; it does not name traffic lights). Never qualifies: mechanical failure (flat tire), inability to hold the assigned speed, personal failure; the handbook adds navigation errors and wrong turns.' },
   { rule: 'V.H.2', text: 'Emergency reduced speeds (fog, weather, poor road, two-wheel brakes on a grade): you may slow to travel safely, then request the extra time, one request per leg. The request must be verifiable and in good faith.' },
-  { rule: 'V.H.3', text: 'File at the TA point printed in the book (the yellow box), within 15m00s. Give Stage number, car number, leg number, the instruction numbers on or between which the delay happened, and a short description. Amount: multiples of 10 s, not more than 29m30s.' },
+  { rule: 'V.H.3', text: 'Submit it by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint) at the TA point printed in the book (a full-width yellow row), within the time it gives (the 2026 Example Rally #18: "Within 15m00s"). V.H.3 names the cellular telephone and the Great Race Scoring Crew. Give Stage number, car number, leg number, the instruction numbers on or between which the delay happened, and a short description. Amount: multiples of 10 s, not more than 29m30s.' },
   { rule: 'V.H.4', text: 'The Time Allowance Committee reviews it and, if allowed, subtracts the time from the leg in which the delay occurred.' },
   { rule: 'V.H.5', text: 'You are expected to try to make the time up. The committee considers the distance from the delay to the checkpoint and denies time you could have made up. List witnesses, especially for delays over 1m00s.' },
   { rule: 'V.H.6', text: 'Wrong car number: not allowed. Wrong leg number: usually not corrected. An amount that is not a multiple of 10 s is rounded up or down to the contestant\'s possible detriment (1m17s becomes 1m10s or 1m20s).' },
@@ -100,6 +100,8 @@ export const COLUMN_C_ROWS: { shows: string; means: string }[] = [
   { shows: '3h15m00s', means: 'An interval of 3 hours 15 minutes (tire warm-up, calibration run, transit, pause, timed speed change).' },
   { shows: '0m45s', means: 'An interval of 45 seconds.' },
   { shows: '(35m00s)', means: 'An interval in parentheses is advisory, not official.' },
+  { shows: '(0m30s)', means: 'On the row before the end of a transit: the time left to the end of the transit, a guide (HB p.26, #11).' },
+  { shows: '26m00s', means: 'A plain interval is not automatically an exact transit: the Example prints 9m00s and 30m00s plain for ordinary transits. Only Column D saying "take exactly" (Example #30) makes it exact: IN + interval = OUT.' },
   { shows: '45 MPH', means: 'Any other number is an assigned average speed in miles per hour.' },
   { shows: '0 MPH / 0m15s / 45 MPH', means: 'A pause: stop, wait the printed seconds, then go at 45.' },
   { shows: '30 MPH / 0m36s / 45 MPH / 1m12s / 50 MPH', means: 'Timed speed changes: 30 for 36 s, then 45 for 1m12s, then 50.' },

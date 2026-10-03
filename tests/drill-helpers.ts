@@ -7,7 +7,7 @@ export interface RunOpts { clock?: boolean; hook?: (sim: Simulator, bot: OracleB
 
 /** Run the oracle to the end. `clock` (default true) reads the clock every 20 s like a navigator who keeps the time of day on the dash clock (WATCH-009). */
 export function runOracle(sc: Scenario, o: OracleOptions = { useWatch: true }, ro: RunOpts = {}): { sim: Simulator; r: ReturnType<Simulator['result']> } {
-  const sim = ro.sim ?? new Simulator(sc); const bot = new OracleBot(sim, o); let last = -1e9;
+  const sim = ro.sim ?? new Simulator(sc); const bot = new OracleBot(sim, ro.clock === false ? { ...o, noClockReads: true } : o); let last = -1e9;
   while (sim.phase !== 'finished' && sim.tod < (ro.maxTod ?? 86400)) {
     if ((ro.clock ?? true) && sim.tod - last >= 20) { sim.act({ type: 'clock.read' }); last = sim.tod; }
     bot.onTick(); ro.hook?.(sim, bot); sim.step(0.1);

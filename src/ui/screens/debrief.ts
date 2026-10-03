@@ -65,9 +65,12 @@ export function renderDebrief(root: HTMLElement): void {
   const legend = el('div', { class: 'legend' }); for (const b of Object.keys(BUCKET_LABEL) as Bucket[]) if (Math.abs(vm.totals[b]) >= 0.05) legend.append(el('span', {}, el('i', { style: `background:${BUCKET_COLOR[b]}` }), `${BUCKET_LABEL[b]} ${formatSigned(vm.totals[b])}`)); bars.append(legend);
   const tl = el('div', { class: 'panel timeline-wrap' }, el('h3', {}, 'Actual vs ghost'));
   const canvas = el('canvas', { id: 'timeline' }); tl.append(canvas);
-  two.append(bars, tl); page.append(two);
+  two.append(bars, tl);
+  // UI-035: the page opens on the summary, the scorecard and the headline tip; the per-leg attribution, the stop detail and the replays are one click away
+  const attribution = el('details', { class: 'panel fold', id: 'attribution', style: 'margin-top:14px' }, el('summary', {}, `Seconds lost by cause, per leg (${vm.legs.length} legs) and the timeline`), two);
+  page.append(attribution);
   // worked arithmetic
-  const worked = el('div', { class: 'panel worked', id: 'worked', style: 'margin-top:14px' }, el('h3', {}, 'Worked arithmetic per maneuver'));
+  const worked = el('details', { class: 'panel worked fold', id: 'worked', style: 'margin-top:14px' }, el('summary', {}, 'Worked arithmetic per maneuver (stops, restarts, timed changes, turns)'));
   const ul = el('ul', {});
   for (const s of vm.stops) ul.append(el('li', {}, `Stop, line ${s.line ?? '?'}: entry ${s.entrySpeed ?? '?'} / exit ${s.exitSpeed ?? '?'}; pause ${s.pause}; car loss ${s.cardLoss?.toFixed(1) ?? '?'} s; ideal dwell ${s.correctDwell?.toFixed(1) ?? '?'} s; you called go at ${s.yourDwell.toFixed(1)} s → ${sgn(s.delta)} s${s.trafficWait > 0.5 ? `; traffic held the car ${s.trafficWait.toFixed(1)} s (ledger)` : ''}`));
   for (const r of vm.restarts) ul.append(el('li', {}, r.text));
@@ -78,7 +81,7 @@ export function renderDebrief(root: HTMLElement): void {
   if (!ul.childElementCount) ul.append(el('li', { class: 'muted' }, 'No stops, timed changes or speed changes were executed.'));
   worked.append(ul); page.append(worked);
   // counterfactuals
-  const cf = el('div', { class: 'panel', id: 'counterfactuals', style: 'margin-top:14px' }, el('h3', {}, 'What if'), el('p', { class: 'muted' }, 'Each row re-runs your action log through the simulator with one thing changed.'));
+  const cf = el('details', { class: 'panel fold', id: 'counterfactuals', style: 'margin-top:14px' }, el('summary', {}, 'What if: replays of your action log'), el('p', { class: 'muted' }, 'Each row re-runs your action log through the simulator with one thing changed.'));
   const cfBody = el('div', {}, el('div', { class: 'muted' }, 'Replaying…')); cf.append(cfBody); page.append(cf);
   // ledger + bias/noise
   const three = el('div', { class: 'grid', style: 'grid-template-columns:1fr 1fr;margin-top:14px;align-items:start' });
@@ -98,7 +101,8 @@ export function renderDebrief(root: HTMLElement): void {
   transcript.append(pre); page.append(transcript);
   root.replaceChildren(page);
   // draw the timeline once laid out
-  requestAnimationFrame(() => { const w = tl.clientWidth - 34; const ctx = prepare(canvas, Math.max(300, w), 260); if (ctx) drawTimeline(ctx, vm.timeline, vm.ledger.rows, Math.max(300, w), 260, themeFromCss()); });
+  const drawTl = (): void => { const w = tl.clientWidth - 34; const ctx = prepare(canvas, Math.max(300, w), 260); if (ctx) drawTimeline(ctx, vm.timeline, vm.ledger.rows, Math.max(300, w), 260, themeFromCss()); };
+  requestAnimationFrame(drawTl); attribution.addEventListener('toggle', () => { if (attribution.open) requestAnimationFrame(drawTl); });   // the timeline is measured once its fold is open
   // counterfactuals off the main thread tick
   setTimeout(() => {
     let rows: CounterfactualRow[] = [];

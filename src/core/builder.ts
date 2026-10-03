@@ -35,6 +35,7 @@ export interface InsSpec {
   restartTime?: number;
   baseTime?: number;
   transit?: TransitSpec;
+  transitGuide?: number;
   freeZone?: 'begin' | 'end';
   endTimed?: boolean;
   taPoint?: { windowSeconds: number; endOfStage: boolean };
@@ -269,7 +270,7 @@ export class ScenarioBuilder {
     const text = ins.text ?? describeInstruction(spec, node, ctx);
     this.book.push({
       n, nodeId: id, text, section, turn: ins.turn, speed: ins.speed, pause: ins.pause, timed: ins.timed, hint: remark, remark, restartTime: ins.restartTime, baseTime: ins.baseTime,
-      transit: ins.transit, freeZone: ins.freeZone, endTimed: ins.endTimed, taPoint: ins.taPoint, promotedStop: ins.promotedStop, calibrationStart: ins.calibrationStart,
+      transit: ins.transit, ...(ins.transitGuide !== undefined ? { transitGuide: ins.transitGuide } : {}), freeZone: ins.freeZone, endTimed: ins.endTimed, taPoint: ins.taPoint, promotedStop: ins.promotedStop, calibrationStart: ins.calibrationStart,
       ...(ins.printed ? { printed: ins.printed } : {}), ...(ins.omitted ? { omitted: true } : {}),
     });
     this.meta.push({ spec, node, ctx, customText: ins.text !== undefined });
@@ -301,6 +302,19 @@ export class ScenarioBuilder {
 
   // ---------- STAGE-001 skeleton ----------
 
+  /**
+   * HB p.26 #11: the row before the end of an advisory transit prints "(0m30s)", the time left to the end of the transit. Set on the previous row,
+   * computed from the transit's own pace (course distance / printed seconds), in whole 5 s; skipped when that row is the transit's own begin line.
+   */
+  private markTransitGuide(endS: number): void {
+    const o = this.openTransit; if (!o) return;
+    const begin = this.book[o.idx]!; const t = begin.transit; if (!t || t.exact || t.end || !(t.seconds > 0)) return;
+    const prev = this.book[this.book.length - 1]!; if (!prev || prev.n <= begin.n || prev.transitGuide !== undefined || prev.restartTime !== undefined || prev.promotedStop) return;
+    const prevS = this.nodes.find(n => n.id === prev.nodeId)?.s; if (prevS === undefined || !(endS > prevS) || !(endS > o.s)) return;
+    const left = Math.round(t.seconds * (endS - prevS) / (endS - o.s) / 5) * 5;
+    if (left >= 5 && left < t.seconds) prev.transitGuide = left;
+  }
+
   /** Close the open transit: record its approximate length on the begin line (the odometer box) and refresh its sentence. */
   private closeTransit(atS: number): void {
     if (!this.openTransit) return;
@@ -319,7 +333,7 @@ export class ScenarioBuilder {
   warmup(o: { seconds?: number; miles?: number } = {}): this {
     const first = this.book[0]; if (!first || first.section !== 'start') throw new Error('warmup() needs the start line first');
     // the start line keeps section 'start'; the warm-up is its transit, and the lines that follow default to section 'warmup'
-    first.transit = { exact: true, seconds: o.seconds ?? 1200, miles: o.miles ?? 8 };
+    first.transit = { exact: false, plain: true, seconds: o.seconds ?? 1200, miles: o.miles ?? 8 };
     const m = this.meta[0]!; m.spec = { ...m.spec, transit: first.transit };
     if (!m.customText) first.text = describeInstruction(m.spec, m.node, m.ctx);
     this.sectionDefault = 'warmup';
@@ -341,7 +355,7 @@ export class ScenarioBuilder {
     this.calibrationInfo = { officialSeconds: official, allowanceSeconds: official + (o.allowanceExtraSeconds ?? 120) };
     this.sectionDefault = 'calibration';
     this.instruction({ sign: { text: 'CALIBRATION START', shape: 'rect', side: 'R' }, sightDistance: 500 },
-      { section: 'calibration', speed, calibrationStart: true, transit: { exact: true, seconds: official + (o.allowanceExtraSeconds ?? 120), miles: Math.round(total * 10) / 10 } });
+      { section: 'calibration', speed, calibrationStart: true, transit: { exact: false, plain: true, seconds: official + (o.allowanceExtraSeconds ?? 120), miles: Math.round(total * 10) / 10 } });
     for (let k = 0; k < n; k++) {
       this.advanceMiles(gaps[k]!);
       const last = k === n - 1;
@@ -370,6 +384,7 @@ export class ScenarioBuilder {
   endTransit(o: { speed?: number; text?: string } = {}): this {
     const open = this.openTransit; const begin = open ? this.book[open.idx]!.transit : undefined;
     if (!open || !begin) throw new Error('endTransit() without a transit');
+    this.markTransitGuide(this.s);
     const end = { exact: begin.exact, seconds: begin.seconds, end: true as const };
     this.instruction({ sign: { text: 'END TRANSIT', shape: 'rect', side: 'R' }, sightDistance: 500 }, { section: 'transit', transit: end, speed: o.speed, text: o.text });
     this.closeTransit(this.s);
@@ -379,6 +394,7 @@ export class ScenarioBuilder {
   /** Time-of-day restart at base + ASP minutes (STAGE-002); it ends an open transit. */
   restart(speed: number, baseTod: number, opts: { text?: string } = {}): this {
     const ending = !!this.openTransit;
+    if (ending) this.markTransitGuide(this.s);
     const restartTime = this.restartTimeFor(baseTod);
     this.instruction({ kind: 'landmark', control: 'none', sightDistance: 300, label: 'Restart' }, { section: 'restart', speed, restartTime, baseTime: baseTod, text: opts.text, transit: ending ? { exact: false, seconds: 0, end: true } : undefined });
     if (ending) this.closeTransit(this.s);
@@ -398,9 +414,9 @@ export class ScenarioBuilder {
    * "End timed portion" (crossed clock) and the TA point after it (TA-002): a yellow box instruction, 100 ft on, whose
    * `taPoint.windowSeconds` (default 15m00s) is how long requests are accepted. `transit` begins the transit on the end-timed line.
    */
-  endTimedPortion(o: { endOfStage?: boolean; windowSeconds?: number; transit?: { exact?: boolean; seconds: number; miles?: number } } = {}): this {
+  endTimedPortion(o: { endOfStage?: boolean; windowSeconds?: number; transit?: { exact?: boolean; plain?: boolean; seconds: number; miles?: number } } = {}): this {
     this.closeTransit(this.s);
-    this.instruction({ sign: { text: 'END TIMED', shape: 'rect', side: 'R' }, sightDistance: 500 }, { endTimed: true, transit: o.transit ? { exact: o.transit.exact ?? false, seconds: o.transit.seconds, miles: o.transit.miles } : undefined });
+    this.instruction({ sign: { text: 'END TIMED', shape: 'rect', side: 'R' }, sightDistance: 500 }, { endTimed: true, transit: o.transit ? { exact: o.transit.exact ?? false, ...(o.transit.plain ? { plain: true } : {}), seconds: o.transit.seconds, miles: o.transit.miles } : undefined });
     if (o.transit) { this.markTransitOpen(); this.sectionDefault = 'transit'; }
     this.advanceFt(100);
     this.instruction({ kind: 'landmark', control: 'none', sightDistance: 300, label: 'Time Allowance point' }, { taPoint: { windowSeconds: o.windowSeconds ?? 900, endOfStage: o.endOfStage ?? false } });
@@ -416,6 +432,7 @@ export class ScenarioBuilder {
   /** Finish line with the Observation Checkpoint stop (STAGE-001). */
   observationFinish(): this {
     this.checkpoint('observation', 400);
+    this.markTransitGuide(this.s);
     this.instruction({ kind: 'finish', control: 'none', sightDistance: 400, label: 'Finish banner' }, { section: 'finish' });
     this.closeTransit(this.s);
     return this;

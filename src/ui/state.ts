@@ -10,12 +10,12 @@ import { allDrills } from '../core/drills/index.js';
 import { scenarioMinutes } from './viewmodels/estimate.js';
 import { loadStored, replayFinished, LAST_KEY, type StoredSource } from './viewmodels/resume.js';
 
-export interface Settings { watch: 'analog' | 'digital'; /** UI-033: the time-of-day clock; analog by default, a digital readout is optional. The stopwatch defaults to digital (HB p.5); analog stays selectable. */ clock: 'analog' | 'digital'; timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
-export const DEFAULT_SETTINGS: Settings = { watch: 'digital', clock: 'analog', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };
+export interface Settings { watch: 'analog' | 'digital'; /** UI-033: the stopwatch defaults to digital (HB p.5, REG II.H.1.d(3)); analog stays selectable. The dash clock is always analog (REG II.H.1.d(1): no digital readout), so there is no clock setting. */ timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
+export const DEFAULT_SETTINGS: Settings = { watch: 'digital', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };
 const SETTINGS_KEY = 'rally-trainer.settings.v1';
 
 export function loadSettings(): Settings {
-  try { const raw = localStorage.getItem(SETTINGS_KEY); if (raw) { const p = JSON.parse(raw) as Partial<Settings>; return { ...DEFAULT_SETTINGS, ...p }; } } catch { /* blocked */ }
+  try { const raw = localStorage.getItem(SETTINGS_KEY); if (raw) { const p = JSON.parse(raw) as Partial<Settings> & { clock?: unknown }; delete p.clock; /* retired: the clock is always analog (REG II.H.1.d(1)) */ return { ...DEFAULT_SETTINGS, ...p }; } } catch { /* blocked */ }
   return { ...DEFAULT_SETTINGS };
 }
 export function saveSettings(s: Settings): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* ignore */ } applyTheme(s); }

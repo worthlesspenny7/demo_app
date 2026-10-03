@@ -107,6 +107,13 @@ tr.ace td { color: var(--ok); }
 .gb { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .bsym { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
 .gicon { width: 24px; height: 24px; color: var(--accent2); display: block; }
+.gc .cicons { display: flex; gap: 4px; margin-bottom: 1px; } .gc .csym .gicon { width: 22px; height: 22px; }
+/* the Time Allowance row: one full-width yellow banner (REG Example #18) */
+.row.ta-row { background: #f5d90a; color: #2b2500; opacity: 1; }
+.row.ta-row .gn { color: #5b4f00; } .row.ta-row .tabanner-cell { grid-column: 2 / -1; }
+.tabanner { display: flex; align-items: center; gap: 10px; background: #f5d90a; color: #2b2500; font-weight: 700; padding: 4px 8px; line-height: 1.3; }
+.tabanner .tab-text { min-width: 0; overflow-wrap: anywhere; } .tabanner .gicon { color: #2b2500; width: 28px; height: 28px; flex: none; }
+.row.ta-row .ann { background: #f5d90a; color: #2b2500; } .row.ta-row .ann .muted { color: #5b4f00; }
 .row.current .gicon { width: 30px; height: 30px; }
 .odo { display: inline-flex; border: 1px solid var(--text); background: #fff; line-height: 1; }
 .odo i { font-style: normal; font-family: var(--mono); font-size: 10px; font-weight: 700; width: 8px; text-align: center; color: #111; background: #fff; padding: 1px 0; border-right: 1px solid #999; }
@@ -253,10 +260,9 @@ html.print-card-only .printcard .noprint { display: none; }
 .modechip.tod { border-color: var(--accent); color: var(--accent); }
 .dw-ind { font-family: var(--mono); font-size: 11px; color: var(--muted); }
 .dw-ind.frozen { color: var(--accent); font-weight: 700; }
-.dw-lcd, .dclock { font-family: var(--mono); font-weight: 700; text-align: center; letter-spacing: 0.04em; background: #0b0f15; color: #7dffb2; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); line-height: 1.15; white-space: nowrap; }
+.dw-lcd { font-family: var(--mono); font-weight: 700; text-align: center; letter-spacing: 0.04em; background: #0b0f15; color: #7dffb2; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); line-height: 1.15; white-space: nowrap; }
 .dw-lcd.frozen { color: var(--accent); }
 .dw-lcd.tod { color: #8cc8ff; }
-.dclock { cursor: pointer; }
 .dw-btns { display: flex; gap: 4px; justify-content: center; }
 .dw-btns button, button.mini { padding: 2px 8px; font-size: 12px; min-height: 24px; }
 .dw-laps { display: flex; flex-wrap: wrap; gap: 4px 8px; overflow: auto; max-height: 70px; min-height: 0; font-family: var(--mono); font-size: 11px; }
@@ -285,6 +291,12 @@ html.print-card-only .printcard .noprint { display: none; }
 .ta-panel.collapsed .ta-body { display: none; }
 .ta-panel .ta-help { margin: 4px 0; } .ta-panel .muted { color: #99a5b8; }
 .ta-panel table { font-size: 12px; } .ta-panel th, .ta-panel td { padding: 2px 5px; border-bottom: 1px solid #2f3b4d; }
+/* the leg list fits the 410 px panel at 1366 x 800: fixed layout, compact cells, the Use button never clipped */
+.ta-panel { overflow-x: hidden; }
+.ta-panel table.ta-legs { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.ta-panel .ta-legs th, .ta-panel .ta-legs td { padding: 2px 3px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.ta-panel .ta-legs th:nth-child(1), .ta-panel .ta-legs td:nth-child(1) { width: 30px; } .ta-panel .ta-legs th:nth-child(5), .ta-panel .ta-legs td:nth-child(5) { width: 54px; } .ta-panel .ta-legs th:nth-child(6), .ta-panel .ta-legs td:nth-child(6) { width: 52px; overflow: visible; }
+.ta-panel .ta-legs button.mini { padding: 1px 6px; }
 .ta-form { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; margin-top: 6px; }
 .ta-form label { display: flex; align-items: center; gap: 6px; justify-content: space-between; font-size: 12px; }
 .ta-form label.wide { grid-column: 1 / 3; }
@@ -301,15 +313,19 @@ html.print-card-only .printcard .noprint { display: none; }
 .book-sheet .sheet-head { display: flex; justify-content: space-between; font-weight: 800; border-bottom: 2px solid #111; padding-bottom: 4px; margin-bottom: 0; }
 .book-sheet .colheads, .book-sheet .grow { display: grid; grid-template-columns: 44px 150px 130px 150px minmax(0, 1fr); gap: 0; }
 .book-sheet .colheads { font-weight: 800; text-align: center; border-bottom: 1px solid #111; }
-.book-sheet .grow { min-height: 108px; border-bottom: 1px solid #333; }
+.book-sheet .grow { min-height: 84px; border-bottom: 1px solid #333; }
+.book-sheet .grow.ta-row { grid-template-columns: 44px minmax(0, 1fr); min-height: 44px; background: #f5d90a; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.book-sheet .grow.ta-row .tabanner { font-size: 14px; }
+.book-sheet .gc .cicons { justify-content: center; }
 .book-sheet .grow > div { border-right: 1px solid #bbb; padding: 4px 6px; min-width: 0; }
 .book-sheet .grow > div:last-child { border-right: 0; }
 .book-sheet .grow.omitted { opacity: 0.55; }
 .book-sheet .gn { font-family: var(--mono); font-size: 12px; align-self: end; }
 .book-sheet .ga { display: flex; flex-direction: column; align-items: center; gap: 2px; color: #111; }
-.book-sheet .ga svg.cameo { width: 92px; height: 92px; }
+.book-sheet .ga svg.cameo { width: 72px; height: 72px; }
 .book-sheet .gb { display: flex; flex-direction: column; align-items: center; gap: 6px; justify-content: center; }
-.book-sheet .gicon { width: 34px; height: 34px; color: #111; }
+.book-sheet .gicon { width: 30px; height: 30px; color: #111; }
+.book-sheet .tabanner .gicon { width: 28px; height: 28px; }
 .book-sheet .gc { font-family: var(--mono); font-size: 15px; background: #fff; border: 0; border-radius: 0; color: #111; display: flex; flex-direction: column; justify-content: center; }
 .book-sheet .gc .cl.speed, .book-sheet .gc .cl.time, .book-sheet .gc .cl.tod { color: #111; }
 .book-sheet .gc .cl.approx { color: #555; }
@@ -335,3 +351,7 @@ html.print-card-only .printcard .noprint { display: none; }
 .scorecard .banner.dnf { border-left-color: var(--danger); font-weight: 700; }
 .scorecard .findings li { margin: 4px 0; }
 .scorecard .findings .kind { font-family: var(--mono); font-size: 11px; color: var(--accent2); margin-right: 6px; }
+
+/* UI-035 collapsed debrief sections */
+details.fold > summary { cursor: pointer; font-weight: 700; font-size: 15px; padding: 2px 0; list-style-position: inside; }
+details.fold[open] > summary { margin-bottom: 8px; }

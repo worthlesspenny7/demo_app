@@ -9,9 +9,9 @@ import { clockViewModel } from '../viewmodels/clock.js';
 import { speedoViewModel } from '../viewmodels/speedo.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
 import { bookRows, signBox, landmarkLabel, ROWS_PER_PAGE } from '../viewmodels/book.js';
-import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, esc } from '../render/griid.js';
+import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, esc } from '../render/griid.js';
 import { chartGrids, type ChartGrid } from '../viewmodels/charts.js';
-import { holdCardFor, type HoldCard } from '../viewmodels/cockpitinfo.js';
+import { holdCardFor, openTransitCard, type HoldCard } from '../viewmodels/cockpitinfo.js';
 import { digitalWatchViewModel, SplitTracker } from '../viewmodels/digitalwatch.js';
 import { taFormVm, taNoteText, taRounding } from '../viewmodels/ta.js';
 import { formatInterval } from '../../core/griid.js';
@@ -86,8 +86,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   sizeCockpit();
   const roadCanvas = el('canvas', { id: 'road' }); const roadWrap = el('div', { class: 'road' }, roadCanvas);
   const hud = el('div', { class: 'hud' }); roadWrap.append(hud);
-  const chipPhase = el('span', { class: 'chip', id: 'phase' }); const chipScale = el('span', { class: 'chip', id: 'scale' }); const chipClock = el('span', { class: 'chip mono', id: 'tod' }); const chipLeg = el('span', { class: 'chip' }); const chipMsg = el('span', { class: 'chip alert', id: 'alert' }); chipMsg.style.display = 'none';
-  if (!policy.digitalReadouts) chipClock.style.display = 'none';
+  const chipPhase = el('span', { class: 'chip', id: 'phase' }); const chipScale = el('span', { class: 'chip', id: 'scale' }); const chipLeg = el('span', { class: 'chip' }); const chipMsg = el('span', { class: 'chip alert', id: 'alert' }); chipMsg.style.display = 'none';
   const scaleBtns = el('span', { class: 'chip btns' });
   for (const s of SCALE_STEPS) {
     const b = el('button', { 'data-scale': String(s), title: lockedTo1x ? 'This drill is locked to 1x' : `run at ${s}x` }, `${s}x`);
@@ -98,7 +97,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const helpBtn = el('button', { id: 'keys-btn' }, 'Keys'); helpBtn.onclick = () => setHelp(!showHelp); scaleBtns.append(helpBtn);
   const muteBtn = el('button', {}, app.settings.muted ? 'Unmute' : 'Mute'); muteBtn.onclick = () => { audio.muted = !audio.muted; muteBtn.textContent = audio.muted ? 'Unmute' : 'Mute'; }; scaleBtns.append(muteBtn);
   const abortBtn = el('button', { class: 'danger', id: 'abort' }, 'End run'); abortBtn.onclick = () => { if (confirm('End this run now and go to the debrief? An ended run is not recorded.')) { try { sim.act({ type: 'abort' } as Action); } catch { /* older engine */ } finish(); } }; scaleBtns.append(abortBtn);
-  hud.append(chipPhase, chipClock, chipLeg, chipScale, scaleBtns, chipMsg);
+  hud.append(chipPhase, chipLeg, chipScale, scaleBtns, chipMsg);
   // Keys overlay: a centered, scrollable modal above the HUD; closes on Esc, on a click outside the panel, or on its Close button
   const helpPanel = el('div', { class: 'help', id: 'keys-panel', role: 'dialog', 'aria-label': 'Keyboard shortcuts' });
   helpPanel.append(el('h3', {}, 'Keyboard shortcuts'));
@@ -138,11 +137,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const cpCardBox = el('div', { class: 'cpcard', id: 'cpcard' }); cpCardBox.style.display = 'none'; roadWrap.append(cpCardBox);
   const preread = el('div', { class: 'preread', id: 'preread' });
 
-  // UI-033: the stopwatch follows Settings.watch (digital lap/split by default), the dash clock follows Settings.clock (analog by default)
-  const digitalSw = watch === 'digital'; const digitalClock = app.settings.clock === 'digital';
-  const clockCanvas = el('canvas', { id: digitalClock ? 'clock-dial' : 'clock' }); const swCanvas = el('canvas', { id: digitalSw ? 'stopwatch-dial' : 'stopwatch' }); const spCanvas = el('canvas', { id: 'speedo' });
-  const clockDigital = el('div', { class: 'dclock lcd', id: 'clock', title: 'Click (or K) to note a clock read' }, '00:00:00');
-  clockDigital.onclick = () => { act({ type: 'clock.read' }); flash('Clock read noted'); };
+  // UI-033: the stopwatch follows Settings.watch (digital lap/split by default), the dash clock is always analog with no numeric time of day (REG II.H.1.d(1))
+  const digitalSw = watch === 'digital';
+  const clockCanvas = el('canvas', { id: 'clock' }); const swCanvas = el('canvas', { id: digitalSw ? 'stopwatch-dial' : 'stopwatch' }); const spCanvas = el('canvas', { id: 'speedo' });
   const clockCap = el('div', { class: 'caption' }); const swCap = el('div', { class: 'caption' }); const spCap = el('div', { class: 'caption' }); const laps = el('div', { class: 'laps', id: 'laps' });
   // WATCH-008: digital lap/split watch: big 1/100 s display, CHRONO / TOD chip, lap table of interval-over-cumulative boxes, split-frozen indicator
   const noFocus = (b: HTMLElement): void => { b.onmousedown = e => e.preventDefault(); };
@@ -157,10 +154,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const dwatch = el('div', { class: 'dwatch', id: 'stopwatch' }, el('div', { class: 'dw-top' }, dwMode, dwInd), lcdEl, el('div', { class: 'dw-btns' }, dwStart, dwLap, dwRecall, dwReset), dwLaps);
   const splitTracker = new SplitTracker();
   const instruments = el('div', { class: 'instruments' },
-    el('div', { class: 'instrument' }, digitalClock ? clockDigital : clockCanvas, clockCap),
+    el('div', { class: 'instrument' }, clockCanvas, clockCap),
     el('div', { class: 'instrument' }, ...(digitalSw ? [dwatch, swCap] : [swCanvas, swCap, laps])),
     el('div', { class: 'instrument' }, spCanvas, spCap));
-  if (!digitalClock) clockCanvas.onclick = () => { act({ type: 'clock.read' }); flash('Clock read noted'); };
+  clockCanvas.onclick = () => { act({ type: 'clock.read' }); flash('Clock read noted'); };
   const left = el('div', { class: 'left' }, roadWrap, instruments, preread, taPanel);   // the TA form floats over the road and the clock; its header collapses it
   const hintScale = el('span', { class: 'chip', id: 'hint-scale' }, '1x');
   const hintBar = el('div', { class: 'hintbar', id: 'hintbar', title: 'objective and the keys that matter' },
@@ -321,9 +318,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const key = `${o.currentLine}|${o.stoppedAtLine ?? ''}|${o.driver.lastExecutedLine ?? ''}|${o.phase}|${ann.serialize().length}|${Object.keys(o.annotations ?? {}).length}`;
     if (key === lastBookKey) return; lastBookKey = key; lastExecuted = o.driver.lastExecutedLine ?? lastExecuted;
     const frag = document.createDocumentFragment();
-    const pages = Math.max(1, Math.ceil(bookLen / ROWS_PER_PAGE));
+    const per = scenario.rowsPerPage ?? ROWS_PER_PAGE;
+    const pages = Math.max(1, Math.ceil(bookLen / per));
     for (const r of bookRows(scenario.book, o.currentLine, { timeZone: scenario.timeZone, style: scenario.bookStyle })) {
-      if (r.n > 1 && (r.n - 1) % ROWS_PER_PAGE === 0) frag.append(el('div', { class: 'page-break' }, el('span', {}, scenario.name), el('span', {}, `Page ${(r.n - 1) / ROWS_PER_PAGE + 1} of ${pages}`)));
+      if (r.n > 1 && (r.n - 1) % per === 0) frag.append(el('div', { class: 'page-break' }, el('span', {}, scenario.name), el('span', {}, `Page ${(r.n - 1) / per + 1} of ${pages}`)));
       const ins = scenario.book[r.n - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined;
       const hls = ann.highlights(r.n);
       const stopped = o.stoppedAtLine === r.n;
@@ -331,7 +329,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       const svg = node?.exits ? cameoSvg(node.exits, node.control, ins?.turn ?? null, 64) : node?.sign || node?.control && node.control !== 'none' ? cameoSvg([{ angle: 0, kind: 'road', isRoute: true }], node.control, 'S', 64) : '';
       const dCell = el('div', { class: 'gd' });
       dCell.innerHTML = `${stopped ? '<span class="stoptag">STOPPED HERE </span>' : ''}${columnDHtml(r)}${r.omitted ? ' <em>(omitted)</em>' : ''}${o.aids.cumulativePerfectAtNextLine !== undefined && r.isCurrent ? `<span class="cold accent">perfect cumulative ${esc(formatElapsed(o.aids.cumulativePerfectAtNextLine, 0))}</span>` : ''}`;
-      row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg, sign: signBox(node), landmark: landmarkLabel(node) }) }),
+      if (r.ta) { row.classList.add('ta-row'); row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'tabanner-cell', html: taBannerHtml(r) })); }   // REG Example #18: a full-width yellow row
+      else row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg, sign: signBox(node), landmark: landmarkLabel(node) }) }),
         el('div', { class: 'gb', html: columnBHtml(r) }), el('div', { class: 'gc', html: columnCHtml(r), title: r.colC }), dCell);
       // annotation strip: highlighters + GO-time for pause lines (UI-013)
       const strip = el('div', { class: 'ann' });
@@ -414,7 +413,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const count = taPanel.querySelector('#ta-count'); if (count) count.textContent = `window ${vm.countdown} left`;
     const sig = JSON.stringify([vm.legs.map(l => [l.measured, l.recoverable, l.suggested, l.fromLine, l.toLine, l.filed?.adjusted ?? null]), vm.requests.length, vm.ackAvailable, vm.acked]);
     if (sig === taSig) return; taSig = sig;
-    const legsEl = taPanel.querySelector('#ta-legs'); if (legsEl) legsEl.innerHTML = `<thead><tr><th>Leg</th><th>Measured delay</th><th>Recoverable</th><th>Suggested</th><th>Lines</th><th></th></tr></thead><tbody>${vm.legs.map(l => `<tr data-leg="${l.legIndex}"><td>${l.legIndex}</td><td class="mono">${formatInterval(l.measured)}</td><td class="mono">${formatInterval(l.recoverable)}</td><td class="mono"><b>${formatInterval(l.suggested)}</b></td><td>${l.fromLine !== null ? `${l.fromLine}-${l.toLine}` : '-'}</td><td><button class="mini" data-leg="${l.legIndex}">Use</button></td></tr>`).join('')}</tbody>`;
+    const legsEl = taPanel.querySelector('#ta-legs'); if (legsEl) legsEl.innerHTML = `<thead><tr><th>Leg</th><th title="measured delay">Delay</th><th title="time you could have made up">Made up</th><th title="suggested request">Suggest</th><th>Lines</th><th></th></tr></thead><tbody>${vm.legs.map(l => `<tr data-leg="${l.legIndex}"><td>${l.legIndex}</td><td class="mono">${formatInterval(l.measured)}</td><td class="mono">${formatInterval(l.recoverable)}</td><td class="mono"><b>${formatInterval(l.suggested)}</b></td><td>${l.fromLine !== null ? `${l.fromLine}-${l.toLine}` : '-'}</td><td><button class="mini" data-leg="${l.legIndex}">Use</button></td></tr>`).join('')}</tbody>`;
     const filed = taPanel.querySelector('#ta-filed'); if (filed) filed.innerHTML = vm.requests.length ? `<b>Filed</b>${vm.requests.map(r => `<div class="${r.status === 'refused' ? 'danger' : ''}">Leg ${r.legIndex}: ${formatInterval(r.requested)}${r.adjustment ? ` (${esc(r.adjustment)})` : ''} ${r.status === 'refused' ? `refused: ${esc(r.reason ?? '')}` : 'filed'}</div>`).join('')}` : '';
     const ack = taPanel.querySelector('#ta-ack') as HTMLElement | null;
     if (ack) {
@@ -478,16 +477,14 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       laps.replaceChildren(...swVm.lapRows.flatMap((r, i) => [el('span', { class: i === 0 ? 'cur' : '' }, `L${r.n}`), el('span', { class: i === 0 ? 'cur' : '' }, r.text), el('span', {}, `+${r.split}`)]));
     }
     const cvm = clockViewModel(o.tod, o.bezel);
-    if (digitalClock) { clockDigital.textContent = cvm.digital; clockDigital.style.fontSize = `${Math.round(clamp(clSize / 3.2, 22, 56))}px`; }
-    else { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme); }
-    clockCap.innerHTML = policy.digitalReadouts || digitalClock ? `<b>${digitalClock ? '' : escapeHtml(cvm.digital)}</b> ${digitalClock ? '' : '· '}start ${escapeHtml(formatClock(o.startTime))}` : `official start ${escapeHtml(formatClock(o.startTime))}`;
+    { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme); }
+    clockCap.innerHTML = `official start ${escapeHtml(formatClock(o.startTime))}`;   // no numeric time of day at any aids rung (REG II.H.1.d(1))
     const svm = speedoViewModel(o.speedo.reading, 100);
     const pctx = prepare(spCanvas, spSize, spSize); if (pctx) drawSpeedo(pctx, svm, spSize, theme, o.driver.targetIndicated);
     spCap.innerHTML = `${policy.digitalReadouts ? `<b>${escapeHtml(svm.text)}</b> mph · ` : ''}${o.driver.targetIndicated !== null ? `holding ${escapeHtml(String(o.driver.targetIndicated))}` : 'no speed called'}`;
     // HUD
     chipPhase.textContent = o.phase === 'preread' ? (policy.digitalReadouts ? `PRE-READ · start in ${formatElapsed(Math.max(0, o.secondsToStart), 0)}` : 'PRE-READ') : o.phase === 'running' ? `${o.stoppedAtLine ? 'stopped' : o.driver.state}` : 'FINISHED';
     chipPhase.className = `chip ${o.driver.waitingForGo ? 'warn' : o.phase === 'running' ? 'live' : ''}`;
-    if (policy.digitalReadouts) chipClock.textContent = cvm.digital;
     chipLeg.textContent = o.legIndex === null ? 'leg ?' : `leg ${o.legIndex}`;
     const scale = currentScale(o);
     chipScale.textContent = paused ? 'PAUSED' : `${scale}x${scale !== requested && !paused ? ` (asked ${requested}x)` : ''}${lockedTo1x ? ' locked' : ''}`;
@@ -569,7 +566,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     cardTitle.textContent = o.stoppedAtLine ? `Stopped: line ${line}` : policy.computedCard ? 'Perf card for the next line' : 'Your notes for this line';
     if (!card) { cardBody.innerHTML = ''; return; }
     const parts: string[] = [`<div><b>Line ${line}</b>: ${escapeHtml(card.text)}</div>`];
-    const hold: HoldCard | null = policy.computedCard ? holdCardFor(scenario, sim, line, o.asp) : null;
+    const hold: HoldCard | null = policy.computedCard ? (holdCardFor(scenario, sim, line, o.asp) ?? openTransitCard(scenario, sim, o.driver.lastExecutedLine)) : null;   // UI-032: an open exact transit keeps its recorded IN time on the card
     if (hold) parts.push(`<div class="holdcard ${hold.kind}" id="holdcard"><b>${escapeHtml(hold.title)}</b><div class="mono">${escapeHtml(hold.text)}</div></div>`);
     if (card.restart) {
       parts.push(`<div class="accent">Not a stop: call go so the car leaves at the out-time${card.restart.accel !== null ? ` minus the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);

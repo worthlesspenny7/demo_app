@@ -27,7 +27,7 @@ describe('stage structure (STAGE-001..008)', () => {
       expect(sc.book[ta1]!.taPoint!.endOfStage).toBe(false); expect(sc.book[ta2]!.taPoint!.endOfStage).toBe(true); expect(fin).toBe(sc.book.length - 1);
       expect(sc.checkpoints[sc.checkpoints.length - 1]!.kind).toBe('observation');
       // ~8 mi / 20 min warm-up, calibration >= 15 mi with 3-6 points, no timing checkpoint before the first restart
-      expect(sc.book[start]!.transit).toMatchObject({ exact: true, seconds: 1200 }); expect(sc.book[start]!.transit!.miles!).toBeGreaterThan(6); expect(sc.book[start]!.transit!.miles!).toBeLessThan(10);
+      expect(sc.book[start]!.transit).toMatchObject({ exact: false, plain: true, seconds: 1200 }); expect(sc.book[start]!.transit!.miles!).toBeGreaterThan(6); expect(sc.book[start]!.transit!.miles!).toBeLessThan(10);
       const firstCp = sc.checkpoints.find(c => c.kind === 'timing')!; expect(firstCp.s).toBeGreaterThan(nodeById(sc.course, sc.book[r1]!.nodeId).s);
       const lastTiming = sc.checkpoints.filter(c => c.kind === 'timing').pop()!; expect(lastTiming.s).toBeLessThan(nodeById(sc.course, sc.book[e2]!.nodeId).s);
       // legs between the restarts and end-timed lines

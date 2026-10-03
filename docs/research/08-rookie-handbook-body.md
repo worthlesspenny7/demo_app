@@ -140,12 +140,12 @@ Race, Page n of 6".
   octagon, traffic light, blinker star, yield triangle), railroad as a hatched bar, bridge as parallel lines.
 - Column B: symbols: hourglass full = begin transit, hourglass empty = end transit, with a 4-digit odometer box in
   tenths of a mile (0 0 4 5 = 4.5 mi, 0 2 4 0 = 24.0 mi); speedometer face = begin speedometer calibration run;
-  tyre (COKER) = tire warm-up; crossed-out camera = begin free zone, camera = end free zone; crossed-out clock =
-  end timed portion; cup = hosted pit stop; knife and fork = meal stop; fuel pump = refuelling; restroom figures =
+  tyre (COKER) = tire warm-up; crossed-out camera = begin free zone, camera = end free zone; cup = hosted pit stop; knife and fork = meal stop; fuel pump = refuelling; restroom figures =
   rest stop; checkered flag = finish line.
 - Column C: speeds and times, stacked one per line: "40 MPH"; pause = "0 MPH / 0m15s / 45 MPH"; timed segments =
   "30 MPH / 0m36s / 45 MPH / 1m12s / 50 MPH"; calibration point = boxed "interval / cumulative" ("5m32.0s" over
-  "7m21.3s"); transit guide times in parentheses "(0m30s)", "(3h25m00s)"; time-of-day restart = clock face
+  "7m21.3s"); transit guide times in parentheses "(0m30s)", "(3h25m00s)"; crossed-out watch = end timed portion
+  (drawn in Column C, HB p.27 / Example #17, not Column B; corrected 2026-10-03 after the realism re-validation); time-of-day restart = clock face
   "EDT 8:55:00" over "30 MPH"; calibration run start = "26m00s / 50 MPH / * 0m00.0s" (start the stopwatch).
 - Column D: the sentence: "Turn right onto Buchanan Blvd at a crossroad at a Traffic Light." "Pass a sign on your
   right reading in whole or in part 'Leaving Chattanooga City Limit'." "Go straight to cross Roosevelt Rd at a

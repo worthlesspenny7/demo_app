@@ -30,8 +30,9 @@ export function columnBHtml(r: Pick<BookRow, 'b' | 'odometer'>): string {
 const lineClass = (l: string): string => /^\(.*\)$/.test(l) ? 'approx' : /^[A-Z]{3,4} \d{1,2}:\d\d:\d\d$/.test(l) ? 'tod' : /MPH$/.test(l) ? 'speed' : /^\* /.test(l) ? 'ast' : 'time';
 
 /** Column C: the stacked lines in a monospace box; calibration boxes are drawn as a bordered box; the asterisk is set apart. */
-export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'>): string {
-  const out: string[] = [];
+export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & { cIcons?: BookRow['cIcons'] }): string {
+  // the watch faces live in Column C (HB p.27, Example #17): the restart watch over its time of day and speed, the crossed-out watch of End timed portion
+  const out: string[] = r.cIcons && r.cIcons.length ? [`<div class="cicons">${r.cIcons.map(s => `<span class="csym">${griidIcon(s, 26)}</span>`).join('')}</div>`] : [];
   r.c.forEach((l, i) => {
     const inBox = !!r.cBox && i >= r.cBox[0] && i <= r.cBox[1];
     const html = l.startsWith('* ') ? `<div class="cl ast"><b class="asterisk">*</b> ${esc(l.slice(2))}</div>` : `<div class="cl ${lineClass(l)}">${esc(l)}</div>`;
@@ -44,6 +45,14 @@ export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'>): string {
 
 export function columnDHtml(r: Pick<BookRow, 'd'>): string { return r.d ? esc(r.d) : ''; }
 
+/**
+ * The Time Allowance row (REG Example #18): a full-width yellow banner, not five cells. The sentence is always the written one, whatever the book style
+ * (the real banner prints it in full: "Within 15m00s, ..."); the method (web page, phone, or the Observation Checkpoint) is whatever the day's instructions print.
+ */
+export function taBannerHtml(r: Pick<BookRow, 'text'>): string {
+  return `<div class="tabanner" role="note"><span class="tab-icon">${griidIcon('ta', 28)}</span><span class="tab-text">${esc(r.text)}</span></div>`;
+}
+
 /** The five cells of a row as HTML strings. */
 export function griidCells(r: BookRow, a: CameoParts): { n: string; a: string; b: string; c: string; d: string } {
   return { n: esc(r.printed), a: columnAHtml(a), b: columnBHtml(r), c: columnCHtml(r), d: columnDHtml(r) };
@@ -51,6 +60,7 @@ export function griidCells(r: BookRow, a: CameoParts): { n: string; a: string; b
 
 /** A whole row (used by the printable view; the cockpit builds the same cells inside its own row element). */
 export function griidRowHtml(r: BookRow, a: CameoParts, extraClass = ''): string {
+  if (r.ta) return `<div class="grow ta-row ${extraClass}" data-n="${r.n}"><div class="gn">${esc(r.printed)}</div>${taBannerHtml(r)}</div>`;
   const c = griidCells(r, a);
   return `<div class="grow ${extraClass}${r.omitted ? ' omitted' : ''}" data-n="${r.n}">`
     + `<div class="gn">${c.n}</div><div class="ga">${c.a}</div><div class="gb">${c.b}</div><div class="gc">${c.c}</div><div class="gd">${c.d}${r.omitted ? ' <em>(omitted)</em>' : ''}</div></div>`;

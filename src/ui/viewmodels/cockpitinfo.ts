@@ -212,3 +212,19 @@ export function holdCardFor(sc: Pick<Scenario, 'book' | 'course' | 'asp'>, src: 
   }
   return null;
 }
+
+/**
+ * UI-032: an exact transit that is under way (IN crossed and recorded, OUT line not yet reached): the card keeps showing "IN 09:55:14 + 20m00s = OUT 10:15:14"
+ * whatever line the book pointer is on, so the navigator never has to re-read the IN time. Null when no exact transit is open.
+ */
+export function openTransitCard(sc: Pick<Scenario, 'book' | 'course' | 'asp'>, src: HoldSource | null, lastExecutedLine: number | null): HoldCard | null {
+  if (!src) return null;
+  for (let i = 0; i < sc.book.length; i++) {
+    const ins = sc.book[i]!; if (!ins.transit?.exact || ins.transit.end || src.transitIn[ins.n] === undefined) continue;
+    const endIdx = sc.book.findIndex((x, k) => k > i && x.transit?.end && x.transit.exact);
+    const end = endIdx >= 0 ? sc.book[endIdx]! : null;
+    if (end && lastExecutedLine !== null && lastExecutedLine >= end.n) continue;   // the OUT line has been crossed: the transit is over
+    return holdCardFor(sc, src, (end ?? ins).n);
+  }
+  return null;
+}

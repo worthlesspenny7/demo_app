@@ -4,6 +4,7 @@ import { ScenarioBuilder } from '../src/core/builder.js';
 import { DEFAULT_RULES, DRIVER_EXPERT } from '../src/core/course.js';
 import { Simulator, validateAction } from '../src/core/sim.js';
 import { hms } from '../src/core/units.js';
+import { generateStage } from '../src/core/generator/generate.js';
 import { stepUntil, startLikeOracle } from './helpers.js';
 
 const T0 = hms(8, 0, 0);
@@ -66,6 +67,22 @@ describe('instrument discipline (WATCH-009)', () => {
     const sim = new Simulator(stage()); startLikeOracle(sim); sim.act({ type: 'watch.mode', mode: 'tod' }); expect(sim.instrumentLog.some(e => e.kind === 'watch.mode' && e.mode === 'tod')).toBe(true);
     sim.act({ type: 'clock.read' }); expect(sim.instrumentLog.some(e => e.kind === 'clock.read')).toBe(true);
     const peek = new Simulator(stage()); peek.observe({ peek: true }); expect(peek.instrumentLog).toHaveLength(0); peek.observe({ peek: true, clock: true }); expect(peek.instrumentLog).toHaveLength(1);
+  });
+  it('WATCH-009 only a transit whose instruction says "take exactly" (transit.exact === true) counts as an exact-transit IN line: the calibration-run transit and the transit to the finish are never flagged', () => {
+    const sc = new ScenarioBuilder({ startTime: T0, driver: quiet }).start(50).calibrationRun({ miles: 2, points: 2, speed: 50 }).advanceMiles(1)
+      .checkpoint().advanceFt(200).endTimedPortion({ endOfStage: true, transit: { exact: false, plain: true, seconds: 300, miles: 1 } }).advanceMiles(0.8).checkpoint().advanceFt(300).finish().build();
+    const flagged = sc.book.filter(i => i.transit && !i.transit.end);
+    expect(flagged.length).toBeGreaterThanOrEqual(2); expect(flagged.every(i => i.transit!.exact === false)).toBe(true);
+    const sim = new Simulator(sc); startLikeOracle(sim);          // no clock read and no stopwatch at all
+    stepUntil(sim, () => sim.phase === 'finished', 6000);
+    const r = sim.result();
+    expect(r.instrumentDiscipline.filter(f => f.kind === 'clockForTimeOfDay')).toEqual([]);
+    expect(r.events.filter(e => e.type === 'transit.in')).toEqual([]);
+    expect(sim.sc.book.find(i => i.calibrationStart)!.transit).toMatchObject({ exact: false, plain: true });
+    // the generated day stage: its calibration start and finish transit are not exact either, so a clock-less run flags no transit IN
+    const day = generateStage(1);
+    expect(day.book.filter(i => i.transit && !i.transit.end && i.transit.exact)).toEqual([]);
+    expect(day.book.find(i => i.calibrationStart)!.transit!.exact).toBe(false);
   });
   it('WATCH-009 a pause or timed segment with no stopwatch start/lap within 2 s of its anchor is flagged; a lap at the anchor clears it', () => {
     const sc = stage();

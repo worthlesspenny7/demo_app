@@ -168,7 +168,7 @@ describe('driver behaviour', () => {
     const sim = new Simulator(sc); startAtOfficialTime(sim);
     stepUntil(sim, () => sim.waitingForGo, 300);
     expect(sim.waitReason).toBe('signal');
-    expect(sim.taQualifying[1]!).toBeGreaterThan(5);
+    expect(sim.taQualifying[1] ?? 0).toBe(0);   // TA-004 / V.H.1: a red light is not one of the delays the regulations name (rules.taForSignals defaults to false)
     stepUntil(sim, () => !sim.waitingForGo, 120); expect(sim.car.v).toBeGreaterThanOrEqual(0);
     runToEnd(sim);
     expect(sim.result().score.legs[0]!.error!).toBeGreaterThan(10);

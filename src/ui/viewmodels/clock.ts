@@ -1,5 +1,4 @@
-/** Analog time-of-day clock with a rotating bezel (UI-002). */
-import { formatClock } from '../../core/units.js';
+/** Analog time-of-day clock with a rotating bezel (UI-002). No numeric readout: REG II.H.1.d(1) forbids a digital readout on the clock (UI-033). */
 
 export interface ClockVm {
   /** Hour hand: moves with whole minutes (12 h = 360 deg). */
@@ -12,7 +11,6 @@ export interface ClockVm {
   bezelDeg: number;
   /** Seconds until the second hand reaches the bezel index. */
   bezelRemaining: number;
-  digital: string;
 }
 
 export function clockViewModel(tod: number, bezel = 0): ClockVm {
@@ -26,6 +24,6 @@ export function clockViewModel(tod: number, bezel = 0): ClockVm {
   const bezelDeg = r3((b / 60) * 360);
   const bezelRaw = (((b - sec) % 60) + 60) % 60;
   const bezelRemaining = bezelRaw < 1e-6 || bezelRaw > 60 - 1e-3 ? 0 : r3(bezelRaw);
-  return { hourDeg, minuteDeg, secondDeg, bezel: b, bezelDeg, bezelRemaining, digital: formatClock(t) };
+  return { hourDeg, minuteDeg, secondDeg, bezel: b, bezelDeg, bezelRemaining };
 }
 function r3(x: number): number { return Math.round(x * 1000) / 1000; }

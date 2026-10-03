@@ -68,6 +68,8 @@ export interface GenProfile {
   asp?: number;
   timeZone?: TimeZoneLabel;
   bookStyle?: 'example' | 'race';
+  /** GRIID-012: probability that a row whose assigned speed is unchanged omits it, as real sheets do (about one row in ten overall; Trophy Run #40, #53, #57, #73, #74). Default 0.3, about one row in twelve overall on top of the rows that never carry one; 0 prints every speed. */
+  omitUnchangedSpeedProbability?: number;
 }
 
 /** STAGE-007: multiples of 5 from 15 to 55; 20 is the common town speed, 50 and 55 are highway speeds. */
@@ -111,9 +113,9 @@ interface Item {
 interface CpChoice { at: number; mode: 'afterStop' | 'afterSpeed' | 'open'; anchorKind?: string }
 
 export const PROFILES: Record<'pauseDrill' | 'timedDrill' | 'landmarkDrill' | 'calibration' | 'recovery' | 'fullLeg' | 'combo' | 'fullStage', GenProfile> = {
-  pauseDrill: { name: 'pauseDrill', pauseOnStopProbability: 1, legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { stop: 70, straight: 10, speedSign: 10, turn: 0, timed: 0, landmarkSpeed: 5, curveSign: 5 }, townFraction: 0 },
-  timedDrill: { name: 'timedDrill', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { timed: 60, stop: 10, speedSign: 15, straight: 10, turn: 0, landmarkSpeed: 5, curveSign: 0 }, townFraction: 0 },
-  landmarkDrill: { name: 'landmarkDrill', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { speedSign: 35, landmarkSpeed: 30, curveSign: 15, stop: 10, straight: 5, turn: 0, timed: 5 }, townFraction: 0 },
+  pauseDrill: { name: 'pauseDrill', omitUnchangedSpeedProbability: 0, pauseOnStopProbability: 1, legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { stop: 70, straight: 10, speedSign: 10, turn: 0, timed: 0, landmarkSpeed: 5, curveSign: 5 }, townFraction: 0 },
+  timedDrill: { name: 'timedDrill', omitUnchangedSpeedProbability: 0, legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { timed: 60, stop: 10, speedSign: 15, straight: 10, turn: 0, landmarkSpeed: 5, curveSign: 0 }, townFraction: 0 },
+  landmarkDrill: { name: 'landmarkDrill', omitUnchangedSpeedProbability: 0, legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: false, lunchRestart: false, mix: { speedSign: 35, landmarkSpeed: 30, curveSign: 15, stop: 10, straight: 5, turn: 0, timed: 5 }, townFraction: 0 },
   calibration: { name: 'calibration', legs: 1, lineDensity: 'low', trapDensity: 0, signals: false, trains: false, slowTraffic: false, calibration: true, lunchRestart: false, mix: { stop: 30, speedSign: 30, straight: 20, turn: 0, timed: 0 }, townFraction: 0 },
   recovery: { name: 'recovery', pauseOnStopProbability: 0.85, legs: 1, lineDensity: 'normal', trapDensity: 0.1, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.3 },
   fullLeg: { name: 'fullLeg', pauseOnStopProbability: 0.85, endTimed: true, legs: 1, lineDensity: 'normal', trapDensity: 0.35, signals: true, trains: true, slowTraffic: true, calibration: false, lunchRestart: false, trafficWaitProbability: 0.15 },
@@ -130,6 +132,8 @@ const TOWN_NAMES = ['MILLBROOK', 'ELDORA', 'CENTERVILLE', 'FAIRFIELD', 'OSAGE', 
 
 class Generator {
   private readonly r: Rng;
+  /** Own stream for the cosmetic speed omission, so the layout, traps and timing of a seed do not depend on it. */
+  private readonly omitRng: Rng;
   private readonly b: ScenarioBuilder;
   private readonly tags: string[];
   private speed = 35;
@@ -157,6 +161,7 @@ class Generator {
 
   constructor(readonly seed: number, readonly profile: GenProfile, private readonly kind: 'leg' | 'stage') {
     this.r = rng(`gen:${kind}:${seed}`);
+    this.omitRng = rng(`gen-omit:${kind}:${seed}`);
     const wanted = profile.cpCount ?? profile.legs;
     this.legs = kind === 'leg' ? 1 : wanted > 0 ? wanted : this.r.int(4, 7);
     this.tags = [`gen:${profile.name ?? kind}`, `seed:${seed}`];
@@ -236,10 +241,10 @@ class Generator {
     const t1miles = r.int(25, 60) / 10; const t1sec = Math.ceil(t1miles / 30 * 3600 / 60) * 60;
     b.calibrationRun({ miles: calMiles, speed: 50, points, gaps, allowanceExtraSeconds: 60 * r.int(2, 5), thenTransit: { exact: false, seconds: t1sec } });
     this.tags.push(`calibration:miles:${calMiles.toFixed(1)}:points:${points}`);
-    b.advanceMiles(t1miles * 0.55);
+    b.advanceMiles(t1miles - 0.3);   // the last row of the transit sits 0.3 mi from its end: it prints the "(0m35s)" guide (HB p.26 #11)
     const bear = r.pick(['BL', 'BR'] as const);
     this.instruction({ exits: EXITS.wye(bear), sightDistance: 600, label: 'Y' }, { turn: bear });
-    b.advanceMiles(t1miles * 0.45);
+    b.advanceMiles(0.3);
     // time-of-day restart: printed base = start + warm-up + calibration allowance + transit (HB: 8:00 + 20m + 26m + 9m = 8:55), plus ASP minutes for the team
     const base = b.opts.startTime + 1200 + b.calibrationInfo!.allowanceSeconds + t1sec;
     this.speed = r.pick(TOWN_SPEEDS);
@@ -339,7 +344,7 @@ class Generator {
     const b = this.b, r = this.r;
     b.advanceFt(milesToFt(0.25 + 0.3 * r.next()));
     const miles = r.int(80, 160) / 10; const secs = Math.ceil(miles / 30 * 3600 / 60) * 60;
-    b.endTimedPortion({ endOfStage: true, transit: { exact: true, seconds: secs, miles } });
+    b.endTimedPortion({ endOfStage: true, transit: { exact: false, plain: true, seconds: secs, miles } });   // HB p.11 / Example #34: the transit to the finish is a guide, printed plain, not "take exactly"
     b.advanceMiles(miles * 0.45);
     const d = r.pick(['L', 'R'] as const);
     this.instruction({ exits: EXITS.tee(d), sightDistance: 600, label: 'T' }, { turn: d });
@@ -722,7 +727,7 @@ class Generator {
       if (it.slow) b.hazard({ kind: 'slow', s: legStart + it.slow.at, speedMph: it.slow.speedMph, lengthFt: it.slow.lengthFt, passWindowAfterFt: it.slow.passWindowAfterFt });
       b.advanceFt(it.at - prevAt); prevAt = it.at;
       if (it.ins) {
-        this.instruction(it.node, it.ins);
+        this.instruction(it.node, this.maybeOmitSpeed(it.ins));
         if (it.node.control === 'STOP' && it.ins.pause === undefined) this.tags.push(it.trapId === 'missing-pause' ? `trap:missingPause:${this.lineNo}` : `stop:noPause:${this.lineNo}`);
       } else b.node(it.node);
       if (it.signal) b.hazard({ kind: 'signal', redSeconds: it.signal.redSeconds, greenSeconds: it.signal.greenSeconds, offset: it.signal.offset });
@@ -748,6 +753,13 @@ class Generator {
   }
 
   private instruction(node: NodeSpec, ins: InsSpec): void { this.b.instruction(node, ins); }
+
+  /** GRIID-012: a row that repeats the speed already in force sometimes prints none (the navigator writes it in: HB p.15 notation 2). The behaviour is identical. */
+  private maybeOmitSpeed(ins: InsSpec): InsSpec {
+    const p = this.profile.omitUnchangedSpeedProbability ?? 0.3;
+    if (ins.speed === undefined || ins.timed || p <= 0 || ins.speed !== this.b.currentSpeed) return ins;
+    return this.omitRng.chance(p) ? { ...ins, speed: undefined } : ins;
+  }
 }
 
 function fmtT(sec0: number): string { const sec = Math.round(sec0); const m = Math.floor(sec / 60), s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; }

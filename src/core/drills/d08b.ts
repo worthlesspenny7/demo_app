@@ -39,7 +39,7 @@ export function committeeView(r: StageResult, sc: Scenario): LegDelay[] {
 }
 
 export const D08b: Drill = {
-  id: 'D08b', title: 'Time Allowance: the train', objective: 'Gates down. Time the train and the light, keep the ledger, and at the printed TA point file one request for the leg that was blocked: instruction numbers, a multiple of 10 s, never more than the delay you could not make up. A tractor is not a Time Allowance and a wrong turn never is.', skills: ['P6'], minutes: 9, kind: 'drive',
+  id: 'D08b', title: 'Time Allowance: the train', objective: 'Gates down. Time the train, keep the ledger, make up the red light yourself (V.H.1 names a train blockage and an accident, not lights), and at the printed TA point file one request for the leg that was blocked: instruction numbers, a multiple of 10 s, never more than the delay you could not make up. A tractor is not a Time Allowance and a wrong turn never is.', skills: ['P6'], minutes: 9, kind: 'drive',
   tiers: tiers(), unlock: [],
   scenario(seed, t) {
     const tier = tierOf(D08b, t); const r = rng(seed * 31 + 8); const b = base('D08b', 'Time allowance', seed, tier).start(35);
@@ -87,7 +87,7 @@ export const D08b: Drill = {
     for (const v of view.concat(Array.from(lastByLeg.keys()).filter(l => !view.some(x => x.leg === l)).map(l => ({ leg: l, measured: 0, recoverable: 0, possible: 0 })))) {
       const sl = r.score.legs[v.leg - 1]; const target = Math.min(v.possible, Math.max(sl?.rawError ?? 0, 0)); const req = lastByLeg.get(v.leg) ?? 0; const credit = sl?.taCredit ?? 0;
       const e = Math.abs(req - target); worst = Math.max(worst, e);
-      if (v.measured > 0 || req > 0) feedback.push(`Leg ${v.leg}: delayed ${Math.round(v.measured)} s by a train or light, ${Math.round(Math.min(v.measured, v.recoverable))} s could have been made up; you requested ${req} s, the committee allowed ${credit} s${sl?.taReason ? ` (${sl.taReason})` : ''}.`);
+      if (v.measured > 0 || req > 0) feedback.push(`Leg ${v.leg}: delayed ${Math.round(v.measured)} s by the train, ${Math.round(Math.min(v.measured, v.recoverable))} s could have been made up; you requested ${req} s, the committee allowed ${credit} s${sl?.taReason ? ` (${sl.taReason})` : ''}.`);
     }
     const stars: 0 | 1 | 2 | 3 = worst <= 10 && acked ? 3 : worst <= 30 ? 2 : 1;
     if (!acked) feedback.push('At the end-of-stage TA point acknowledge the scorecard, whether or not you filed anything (Example Rally #36).');

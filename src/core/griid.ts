@@ -22,7 +22,7 @@ export function formatClockFace(tod: number): string {
 /**
  * GRIID-002: the stacked Column C lines of one instruction.
  * Speeds "40 MPH"; a pause "0 MPH" / "0m15s" / "45 MPH"; a timed change "30 MPH" / "0m36s" / "45 MPH"; a delayed change "1m12s" / "40 MPH";
- * start/restart "CDT 8:55:00" over "30 MPH"; transit "20m00s" (exact) or "(0m30s)" (advisory); calibration box "5m32.0s" over "7m21.3s",
+ * start/restart "CDT 8:55:00" over "30 MPH"; transit "20m00s" (take exactly, or an official plain interval) or "(0m30s)" (advisory); calibration box "5m32.0s" over "7m21.3s",
  * the calibration start "26m00s" / "50 MPH" / "* 0m00.0s"; promoted stop "(45m00s)".
  */
 export function columnCLines(ins: Partial<Instruction> | null | undefined, timeZone = 'CDT'): string[] {
@@ -33,11 +33,12 @@ export function columnCLines(ins: Partial<Instruction> | null | undefined, timeZ
   if (ins.restartTime !== undefined) out.push(`${timeZone} ${formatClockFace(ins.baseTime ?? ins.restartTime)}`);
   const transitLines: string[] = [];
   if (ins.transit) {
-    if (!ins.transit.end) transitLines.push(ins.transit.exact ? formatInterval(ins.transit.seconds) : `(${formatInterval(ins.transit.seconds)})`);
+    if (!ins.transit.end) transitLines.push(ins.transit.exact || ins.transit.plain ? formatInterval(ins.transit.seconds) : `(${formatInterval(ins.transit.seconds)})`);
     else if (!ins.transit.exact && ins.transit.seconds > 0 && ins.restartTime === undefined) transitLines.push(`(${formatInterval(ins.transit.seconds)})`);
   }
   if (!calBox) out.push(...transitLines); // the calibration box comes before a transit that begins on the same line (Example Rally #10)
   if (ins.promotedStop) out.push(`(${formatInterval(ins.promotedStop.leaveBeforeEndSeconds)})`);
+  if (ins.transitGuide !== undefined && ins.transitGuide > 0) out.push(`(${formatInterval(ins.transitGuide)})`);   // time left to the end of the transit (HB #11)
   const hasPause = typeof ins.pause === 'number' && ins.pause > 0;
   if (hasPause) { out.push(mph(0), formatInterval(ins.pause!)); }
   if (ins.timed && Number.isFinite(ins.timed.holdSpeed)) {
@@ -49,17 +50,29 @@ export function columnCLines(ins: Partial<Instruction> | null | undefined, timeZ
   return out;
 }
 
-/** Symbol ids for Column B (GRIID-003). */
+/** Rows per printed page: real sheets carry 6-9 (HB App. D: 6-7 in the Example, 7-9 in the 2014 Trophy Run); the book, the cockpit page breaks and D15's page tops use 7, the printable view also offers 8. */
+export const ROWS_PER_PAGE = 7;
+
+/** Symbol ids for Column B (GRIID-003). The two watch faces are not here: they belong in Column C (HB p.27, Example #17). */
 export type ColumnBSymbol =
   | 'warmup' | 'calibration' | 'transit-begin' | 'transit-end' | 'freezone-begin' | 'freezone-end'
-  | 'end-timed' | 'pit' | 'meal' | 'refuel' | 'rest' | 'ta' | 'finish';
+  | 'pit' | 'meal' | 'refuel' | 'rest' | 'ta' | 'finish';
+/** Pictograms drawn in Column C beside the times (GRIID-003): the watch face of a time-of-day restart and the crossed-out watch that ends the timed portion. */
+export type ColumnCIcon = 'restart' | 'end-timed';
+
+export function columnCIcons(ins: Partial<Instruction> | null | undefined): ColumnCIcon[] {
+  if (!ins) return [];
+  const out: ColumnCIcon[] = [];
+  if (ins.restartTime !== undefined) out.push('restart');
+  if (ins.endTimed) out.push('end-timed');
+  return out;
+}
 
 export function columnBSymbols(ins: Partial<Instruction> | null | undefined): ColumnBSymbol[] {
   if (!ins) return [];
   const out: ColumnBSymbol[] = [];
   if ((ins.section === 'warmup' || ins.section === 'start') && ins.transit && !ins.transit.end) out.push('warmup');
   if (ins.calibrationStart) out.push('calibration');
-  if (ins.endTimed) out.push('end-timed');
   if (ins.promotedStop) out.push(ins.promotedStop.kind);
   if (ins.transit) out.push(ins.transit.end ? 'transit-end' : 'transit-begin');
   if (ins.freeZone) out.push(ins.freeZone === 'begin' ? 'freezone-begin' : 'freezone-end');

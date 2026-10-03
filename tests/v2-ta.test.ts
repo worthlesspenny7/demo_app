@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
-import { DRIVER_EXPERT } from '../src/core/course.js';
+import { DRIVER_EXPERT, DEFAULT_RULES } from '../src/core/course.js';
+import { scoreLeg } from '../src/core/scoring.js';
 import { Simulator, validateAction, ACTION_LIST } from '../src/core/sim.js';
 import { OracleBot, runBot } from '../src/agent/bots.js';
 import { Session } from '../src/agent/protocol.js';
@@ -76,8 +77,8 @@ describe('Time Allowance (REG V.H)', () => {
     expect(sim.taDeclared[1]).toBe(30); // the late request did not replace the filed one
     // a mid-stage TA point does not ask for the scorecard
     const mid = new Simulator(trainStage(140, { endOfStage: false })); const b2 = silentBot(mid); startLikeOracle(mid); runUntilWindow(mid, b2); expect(mid.observe().ta.endOfStage).toBe(false);
-    // rules.taForSignals is still configurable (lights are not named in V.H.1)
-    expect(sim.sc.rules.taForSignals).toBe(true);
+    // V.H.1 names only a train blockage and assisting at an accident: rules.taForSignals defaults to false and stays configurable
+    expect(sim.sc.rules.taForSignals).toBe(false);
   });
   it('TA-002 the deprecated ta.declare maps to the current leg at a TA point and is refused elsewhere; books without any TA point keep the old anywhere-filing', () => {
     const sc = trainStage(); const sim = new Simulator(sc); const bot = silentBot(sim); startLikeOracle(sim);
@@ -101,7 +102,7 @@ describe('Time Allowance (REG V.H)', () => {
     const sim2 = new Simulator(sc); const b2 = silentBot(sim2); startLikeOracle(sim2); runUntilWindow(sim2, b2);
     const a2 = sim2.taAdvice(1); const big = Math.ceil((a2.measuredDelay + 30) / 10) * 10;
     sim2.act({ type: 'ta.request', legIndex: 1, seconds: big, fromLine: 2, toLine: 2 }); runOut(sim2, b2);
-    const l2 = sim2.result().score.legs[0]!; expect(l2.taCredit).toBeCloseTo(Math.min(a2.possible, l2.rawError!), 0); expect(l2.taOverDeclared).toBe(true); expect(l2.taReason).toMatch(/could have been made up/);
+    const l2 = sim2.result().score.legs[0]!; expect(l2.taCredit).toBe(Math.floor(Math.min(a2.possible, l2.rawError!) / 10 + 1e-9) * 10);   // rounded DOWN to a multiple of 10 s (V.H.3, V.H.6) expect(l2.taOverDeclared).toBe(true); expect(l2.taReason).toMatch(/could have been made up/);
     // never early: a leg that was recovered after the train gets no credit beyond its lateness
     const sim3 = new Simulator(sc); const b3 = new OracleBot(sim3); (b3 as unknown as { declareTA: () => void }).declareTA = () => {}; startLikeOracle(sim3); runUntilWindow(sim3, b3);
     sim3.act({ type: 'ta.request', legIndex: 1, seconds: 600, fromLine: 2, toLine: 2 }); runOut(sim3, b3);
@@ -159,6 +160,25 @@ describe('Time Allowance (REG V.H)', () => {
     const mk = () => new ScenarioBuilder({ startTime: T0, driver: quiet }).start(35).advanceMiles(0.6).checkpoint('timing', 400).advanceFt(300).finish().build();
     const run = (mph: number) => { const sc = mk(); const sim = new Simulator(sc); startLikeOracle(sim); stepUntil(sim, () => sim.car.s >= sc.checkpoints[0]!.s - 380); sim.act({ type: 'call.speed', mph }); stepUntil(sim, () => sim.records.length > 0, 200); return sim.records[0]!.sightViolation; };
     expect(run(6)).toBe(false); expect(run(10)).toBe(false); expect(run(4)).toBe(true);
+  });
+
+  it('TA-007 the committee credit is rounded DOWN to a multiple of 10 s (V.H.3, V.H.6): 47 s possible credits 40 s, never 45 or 47', () => {
+    const leg = { index: 1, cpId: 'cp1', cpS: 1000, perfectTod: T0 + 600, perfectDuration: 600, anchor: { kind: 'official' as const, tod: T0 } };
+    const at = (late: number, declared: number, qualifying: number, recoverable = 0) => scoreLeg({ leg, record: { cpId: 'cp1', kind: 'timing', actualTod: T0 + 600 + late, rawTod: T0 + 600 + late, sightViolation: false }, anchorActual: T0, taDeclared: declared, taQualifying: qualifying, taRecoverable: recoverable }, DEFAULT_RULES);
+    expect(DEFAULT_RULES.taGranularitySeconds).toBe(10);
+    const a = at(90, 50, 47); expect(a.taCredit).toBe(40); expect(a.error).toBe(50);
+    expect(at(90, 70, 58, 13).taCredit).toBe(40);                 // 70 requested, 58 measured, 13 recoverable: 45 possible -> 40, as in D08b (was 45)
+    expect(at(90, 80, 80).taCredit).toBe(80);                     // an exact multiple is credited whole
+    expect(at(25, 50, 50).taCredit).toBe(20);                     // limited by the lateness (25 s) then rounded down
+    for (const late of [33, 47, 61, 99]) expect(at(late, 60, 60).taCredit % 10).toBe(0);
+  });
+  it('TA-008 rules.taForSignals defaults to false (V.H.1 names only a train blockage and an accident): a red light adds no qualifying delay unless the knob is on', () => {
+    const mk = (rules?: { taForSignals: boolean }) => { const b = new ScenarioBuilder({ startTime: T0, driver: quiet, rules }).start(35).advanceMiles(0.5);
+      b.instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 40, greenSeconds: 50, offset: T0 + 51.4 - 20 });
+      return b.advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(); };
+    expect(DEFAULT_RULES.taForSignals).toBe(false);
+    const off = new Simulator(mk()); startLikeOracle(off); stepUntil(off, () => off.waitingForGo, 300); expect(off.waitReason).toBe('signal'); expect(off.taQualifying[1] ?? 0).toBe(0);
+    const on = new Simulator(mk({ taForSignals: true })); startLikeOracle(on); stepUntil(on, () => on.waitingForGo, 300); expect(on.taQualifying[1]!).toBeGreaterThan(5);
   });
 
   it('TA-002 the agent protocol documents the new actions and carries the TA state in every observation', () => {

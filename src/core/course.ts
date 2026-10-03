@@ -62,6 +62,8 @@ export interface Instruction {
   remark?: string;
   /** Transit (STAGE-003). `exact`: take exactly `seconds` (OUT = IN + seconds); advisory transits print "(seconds)". `end`: this line ends a transit. */
   transit?: TransitSpec;
+  /** Guide row before a transit end: the seconds from this row to the end of the transit, printed "(0m30s)" (HB p.26 #11). Not scored. */
+  transitGuide?: number;
   /** Free zone begin/end (VII.C.5); no Timing Checkpoint lies between begin and end. */
   freeZone?: 'begin' | 'end';
   /** "End timed portion" line (crossed-out clock). */
@@ -78,7 +80,13 @@ export interface Instruction {
   omitted?: boolean;
 }
 
-export interface TransitSpec { exact: boolean; seconds: number; miles?: number; end?: boolean }
+/**
+ * `exact` is true only where the instruction says "take exactly" (Column D, HB #30): OUT = IN + seconds. An interval printed without
+ * parentheses is NOT automatically exact (REG VII.B.3.c(4) defines only the parenthesised advisory form; HB #10 `9m00s` and #34 `30m00s`
+ * are plain but not "exactly"). `plain` prints the interval without parentheses for such official-but-not-exact intervals
+ * (the calibration run's allowance, the transit to the finish).
+ */
+export interface TransitSpec { exact: boolean; seconds: number; miles?: number; end?: boolean; plain?: boolean }
 
 export interface Checkpoint { id: string; s: number; kind: 'timing' | 'observation'; sightDistance: number }
 
@@ -148,9 +156,9 @@ export interface RulesConfig {
   trophyRunCounts: boolean;
   /** Over-request above the possible credit by more than this many seconds is flagged (TA-003). */
   taOverDeclareTolerance: number;
-  /** Q5: is a red-signal wait a qualifying Time Allowance delay? (lights are not named in V.H.1) */
+  /** Q5: is a red-signal wait a qualifying Time Allowance delay? Default false: V.H.1 names only a train blockage and assisting at an accident; the knob stays for committee discretion. */
   taForSignals: boolean;
-  /** Committee credit granularity in seconds (requests are always multiples of 10 s, V.H.3). */
+  /** Committee credit granularity in seconds: the credit is rounded DOWN to a multiple of 10 s (V.H.3, V.H.6). Legacy books without a TA point score with 1 s. */
   taGranularitySeconds: number;
   /** Maximum single request (V.H.3): 29m30s. */
   taMaxRequestSeconds: number;
@@ -178,6 +186,8 @@ export interface AidsConfig {
 export interface Course { nodes: Node[]; lengthFt: number }
 
 export interface Scenario {
+  /** Rows per printed page when the book is laid out by hand (D15 uses 6); undefined = the default of 7 (ROWS_PER_PAGE in griid.ts). */
+  rowsPerPage?: number;
   id: string;
   name: string;
   seed: number;
@@ -212,7 +222,7 @@ export const DEFAULT_RULES: RulesConfig = {
   maxLate: 120, maxEarly: 300, missedCheckpoint: 180, missedCpLateMinutes: 30,
   sightZonePenalty: 30, observationMissPenalty: 180,
   earlyDepartureMinutes: 5, earlyDeparturePenalties: [60, 300],
-  trophyRunCounts: false, taOverDeclareTolerance: 10, taForSignals: true, taGranularitySeconds: 1, taMaxRequestSeconds: 1770, splitHoldSeconds: 5,
+  trophyRunCounts: false, taOverDeclareTolerance: 10, taForSignals: false, taGranularitySeconds: 10, taMaxRequestSeconds: 1770, splitHoldSeconds: 5,
 };
 export const LEGAL_AIDS: AidsConfig = { rung: 0, paceBar: false, countdown: false, cumulativeTimes: false, autoAdvanceLine: false, showTruthAfter: true, showSpeedo: 'marks', checkOff: false, cpCard: false, offCourseAlert: false };
 export const TRAINING_AIDS: AidsConfig = { rung: 3, paceBar: true, countdown: true, cumulativeTimes: true, autoAdvanceLine: true, showTruthAfter: true, showSpeedo: 'fine', checkOff: true, cpCard: true, offCourseAlert: true };

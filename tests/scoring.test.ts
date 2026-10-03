@@ -58,7 +58,7 @@ describe('scoring', () => {
   });
   it('SIM-009 time allowance credit = min(request, measured delay) with over-request flagged beyond 10 s (see TA-003 and SCORE-010)', () => {
     const l = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 50, taQualifying: 35 }, DEFAULT_RULES);
-    expect(l.taCredit).toBe(35); expect(l.error).toBe(5); expect(l.taOverDeclared).toBe(true);
+    expect(l.taCredit).toBe(30); expect(l.error).toBe(10); expect(l.taOverDeclared).toBe(true);   // 35 s possible: the committee credit rounds DOWN to a multiple of 10 s (V.H.3, V.H.6)
     const ok = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 30, taQualifying: 35 }, DEFAULT_RULES);
     expect(ok.taCredit).toBe(30); expect(ok.taOverDeclared).toBe(false);
     const edge = scoreLeg({ leg: leg(1, 600), record: rec('cp1', 28800 + 640), anchorActual: 28800, taDeclared: 45, taQualifying: 35 }, DEFAULT_RULES);

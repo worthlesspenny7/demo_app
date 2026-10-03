@@ -64,6 +64,8 @@ test('UI-006 smoke: home -> cockpit -> stopwatch -> debrief', async ({ page }) =
   await expect(page.locator('#debrief')).toBeVisible({ timeout: 15000 });
   await expect(page.locator('#cp-table tbody tr').first()).toBeVisible();
   await expect(page.locator('#tip')).toContainText(/./);
+  await expect(page.locator('#counterfactuals')).toBeVisible();
+  await page.locator('#counterfactuals > summary').click();   // UI-035: the replays are a fold
   await expect(page.locator('#counterfactuals .cf-row').first()).toBeVisible({ timeout: 15000 });
   await page.screenshot({ path: `${SHOTS}/debrief.png`, fullPage: true });
   expect(errors, errors.join('\n')).toEqual([]);

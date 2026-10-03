@@ -1,6 +1,6 @@
-/** Printable full-page book (UI-029): `#/book/<runId>`. Six rows a page, each page headed by the stage title and footed "Page n of m". */
+/** Printable full-page book (UI-029): `#/book/<runId>`. Seven rows a page (7 or 8 on request; a hand-laid-out drill book keeps its own), each page headed by the stage title and footed "Page n of m". */
 import type { Scenario } from '../../core/course.js';
-import { bookPages, signBox, landmarkLabel } from '../viewmodels/book.js';
+import { bookPages, signBox, landmarkLabel, ROWS_PER_PAGE, PAGE_ROW_CHOICES } from '../viewmodels/book.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
 import { griidRowHtml, esc } from '../render/griid.js';
 import { app, buildScenario, parseSource, el, restoreLastRun } from '../state.js';
@@ -20,9 +20,9 @@ export function scenarioForRunId(parts: string[]): { scenario: Scenario; title: 
 }
 
 /** The whole book as printable page markup (also used by tests). */
-export function bookSheetsHtml(sc: Scenario, title: string): string {
+export function bookSheetsHtml(sc: Scenario, title: string, perPage: number = sc.rowsPerPage ?? ROWS_PER_PAGE): string {
   const nodes = new Map(sc.course.nodes.map(n => [n.id, n] as const));
-  return bookPages(sc.book, title, { timeZone: sc.timeZone, style: sc.bookStyle }).map(pg => {
+  return bookPages(sc.book, title, { timeZone: sc.timeZone, style: sc.bookStyle, perPage }).map(pg => {
     const rows = pg.rows.map(r => {
       const ins = sc.book[r.n - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined;
       const svg = node?.exits ? cameoSvg(node.exits, node.control, ins?.turn ?? null, 64) : node?.sign || (node?.control && node.control !== 'none') ? cameoSvg([{ angle: 0, kind: 'road', isRoute: true }], node!.control, 'S', 64) : '';
@@ -41,7 +41,13 @@ export function renderBookPage(root: HTMLElement, parts: string[]): void {
   const print = el('button', { class: 'primary', id: 'book-do-print' }, 'Print'); print.onclick = () => window.print();
   const wrap = el('div', { class: 'book-page-wrap', id: 'book-pages' },
     el('div', { class: 'book-toolbar' }, el('h1', { style: 'margin:0' }, title), el('span', { class: 'muted' }, `${scenario.book.length} lines, ${scenario.bookStyle === 'race' ? 'race style (remarks only in Column D)' : 'example style (sentences in Column D)'}`), print));
-  const sheets = el('div', { html: bookSheetsHtml(scenario, title) });
+  const sheets = el('div', { id: 'book-sheets', html: bookSheetsHtml(scenario, title) });
+  if (scenario.rowsPerPage === undefined) {   // 7-8 rows a page (real sheets carry 6-9)
+    const sel = el('select', { id: 'rows-per-page', title: 'rows per printed page' }) as HTMLSelectElement;
+    for (const n of PAGE_ROW_CHOICES) sel.append(el('option', { value: String(n), selected: n === ROWS_PER_PAGE ? true : null }, `${n} rows a page`));
+    sel.onchange = () => { sheets.innerHTML = bookSheetsHtml(scenario, title, Number(sel.value) || ROWS_PER_PAGE); };
+    wrap.querySelector('.book-toolbar')!.append(sel);
+  }
   wrap.append(sheets);
   root.replaceChildren(wrap);
 }

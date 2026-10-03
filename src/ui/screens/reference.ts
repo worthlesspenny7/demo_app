@@ -77,10 +77,10 @@ export function renderReference(root: HTMLElement): void {
   const items: [string, string][] = [
     [cameoSvg(EXITS.crossroads('R'), 'STOP', 'R'), 'Dot = road you arrive on. Arrow = road you leave on. Bold = route. Thin = roads not taken. The octagon is the control on your approach.'],
     [cameoSvg(EXITS.tee('L'), 'none', 'L'), 'T: your road ends. Without a callout the driver stops and asks.'],
-    [cameoSvg(EXITS.wye('BR'), 'none', 'BR'), 'Y: bear right (20-60 degrees). "Bear" is not "turn".'],
+    [cameoSvg(EXITS.wye('BR'), 'none', 'BR'), 'Y: bear right (20-60 degrees). "Bear" is not "turn". (Simulator convention, not in the documents.)'],
     [cameoSvg(EXITS.sideRoad('R', { kind: 'driveway' }), 'none', 'S'), 'Dashed = driveway, lot, dead end, private, unpaved: not a road. Continue straight.'],
-    [cameoSvg([{ angle: 0, surface: 'paved', kind: 'road', isRoute: false }, { angle: 150, surface: 'paved', kind: 'road', isRoute: true }], 'YIELD', 'AR'), 'Acute right (more than 120 degrees) at a YIELD.'],
-    [cameoSvg(EXITS.crossroads('S'), 'SIGNAL', 'S'), 'Straight through a signal. A red light may qualify for a Time Allowance.'],
+    [cameoSvg([{ angle: 0, surface: 'paved', kind: 'road', isRoute: false }, { angle: 150, surface: 'paved', kind: 'road', isRoute: true }], 'YIELD', 'AR'), 'Acute right (more than 120 degrees) at a YIELD. (Simulator convention, not in the documents.)'],
+    [cameoSvg(EXITS.crossroads('S'), 'SIGNAL', 'S'), 'Straight through a signal. A traffic light is not one of the delays V.H.1 names for a Time Allowance (a train blocking the route, assisting at an accident).'],
   ];
   for (const [svg, text] of items) legend.append(el('div', { html: svg }), el('div', { style: 'font-size:13px' }, text));
   cam.append(legend);
@@ -92,7 +92,7 @@ export function renderReference(root: HTMLElement): void {
     ['Speed change at a landmark', 'REG VII.E.2: at a sign or landmark when the front tires come even with it; at an intersection, at the referenced sign if there is one, otherwise at the centre of the intersection or the apex of the turn. Handbook: split the speed change at the sign, crossing it at the midpoint speed. Be mid-ramp as the bumper passes it.'],
     ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or travel 5 MPH or slower within sight of a Timing Checkpoint: 30 s (REG V.E.3.a).'],
     ['Observation checkpoint', 'A manned stop (typically the finish, where you also submit any Time Allowance Requests). Missing one costs 3 minutes, or DNF/FNS for the final one (REG V.E.2.c-d).'],
-    ['Time Allowance (TA)', 'Request the seconds a train or an accident held you, in multiples of 10 s, at the TA point within 15 minutes (REG V.H; see the TA procedure below). The committee denies time you could have made up. Only the wait is creditable, not your braking and acceleration loss. Never also make the time up.'],
+    ['Time Allowance (TA)', 'Request the seconds a train or an accident held you (V.H.1), in multiples of 10 s, by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint) at the TA point within the time it gives (REG V.H; see the TA procedure below). The committee denies time you could have made up. Only the wait is creditable, not your braking and acceleration loss. Never also make the time up.'],
     ['Ace', 'A checkpoint crossed at exactly the perfect second (error 0).'],
     ['Age factor', 'Raw seconds times a factor for the car\'s year: 0.845 for a 1939 car.'],
     ['Transit / free zone', 'Untimed sections between legs (section symbols in Column B). Drive normally, reset for the next start time.'],
@@ -103,13 +103,13 @@ export function renderReference(root: HTMLElement): void {
   const rules = el('div', { class: 'panel', style: 'grid-column:1/3' }, el('h3', {}, 'Rules summary (with sources)'));
   const rl = el('ul', {});
   const cites: [string, string][] = [
-    ['Permitted timing equipment: one analog speedometer, one analog time-of-day clock, one stopwatch; calculators and phones prohibited; paper tables legal; odometer covered.', 'docs/research/01-great-race-rules-and-format.md §1; docs/research/05 §5.3; REQUIREMENTS §0'],
+    ['Permitted timing equipment: one analog speedometer, one analog time-of-day clock with no digital readout (II.H.1.d(1)), one stopwatch that may be digital or analog with split and time-of-day functions (II.H.1.d(3)), analog wristwatches (II.H.1.d(2)); calculators prohibited; a cellular phone only for emergencies and for submitting Time Allowance Requests (II.H.1.i), its clock, calculator and maps never; paper tables legal; odometer covered.', 'docs/research/09 §5 (REG II.H.1.d, II.H.1.i); docs/research/01-great-race-rules-and-format.md §1'],
     ['Scoring: one point per second early or late at each hidden checkpoint; Ace = 0; capped at 2 minutes late and 5 minutes early per checkpoint, 3 minutes for a missed one (REG V.E.1-2); stage raw multiplied by the age factor (1939 Ford: 0.845).', 'docs/research/01 §3; docs/research/07 §7; DESIGN §10'],
     ['The perfect time is integrated by a ghost car with instantaneous speed changes; pauses add the printed seconds; the leg clock resets at every checkpoint.', 'docs/research/07 §1, §4; DESIGN §4'],
     ['Stop/start and speed-change losses are measured per car (performance table); teams subtract them from the printed pause ("34 not 36").', 'docs/research/07 §2.1-2.3; docs/research/03 §1.7'],
     ['Calibration run each morning: k = perfect / actual; indicated speed to hold = assigned / k; a 1 % error is about 9 s over 15 minutes.', 'docs/research/07 §3; DESIGN §12'],
     ['Recovery: 10 % over for 10x the delay or 20 % over for 5x (exact on the stopwatch: t = E x v / d); penalties are symmetric so never overshoot into early; stop correcting before likely checkpoint spots.', 'docs/research/03 §4.3; docs/research/07 §6'],
-    ['Time allowances are requested at the TA point within 15 minutes, in multiples of 10 s, for delays beyond your control (a train, an accident); the committee denies time you could have made up.', 'docs/research/09 §14 (REG V.H); docs/research/08 §6'],
+    ['Time allowances are requested by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint), at the TA point, within the time it gives (15 minutes in the 2026 example), in multiples of 10 s, for delays beyond your control that V.H.1 names (a train, an accident); the committee denies time you could have made up.', 'docs/research/09 §14 (REG V.H); docs/research/08 §6'],
     ['Typical scores: champions about 1 s per leg; a normal rookie day is 20-46 s (Team Hagerty 34, 46 and 20 s; 13 s is the best rookie on record); well over 46 s is a blown day.', 'docs/research/06 §4; STATUS.md key facts'],
     ['Course following: dashed CAMEO lines are driveways/lots/unpaved/dead ends; quoted signs must match exactly; never go past the leading edge of an intersection you are unsure of.', 'docs/research/04 §2.2, §4; REQUIREMENTS P8'],
   ];

@@ -250,9 +250,9 @@ describe('scoring and hazards extras', () => {
     expect(l.taCredit).toBe(10); expect(l.error).toBe(0);
     const early = scoreLeg({ leg, record: { cpId: 'cp1', kind: 'timing', actualTod: T0 + 595, rawTod: T0 + 595, sightViolation: false }, anchorActual: T0, taDeclared: 10, taQualifying: 10 }, DEFAULT_RULES);
     expect(early.taCredit).toBe(0); expect(early.error).toBe(-5);
-    // the committee deducts what could have been made up: 60 s delay, 25 s recoverable, 60 s requested -> 35 s credited, 25 s over-requested is flagged
+    // the committee deducts what could have been made up: 60 s delay, 25 s recoverable, 60 s requested -> 35 s possible, credited as 30 s (multiples of 10 s), over-requested is flagged
     const late = scoreLeg({ leg, record: { cpId: 'cp1', kind: 'timing', actualTod: T0 + 660, rawTod: T0 + 660, sightViolation: false }, anchorActual: T0, taDeclared: 60, taQualifying: 60, taRecoverable: 25 }, DEFAULT_RULES);
-    expect(late.taCredit).toBe(35); expect(late.error).toBe(25); expect(late.taOverDeclared).toBe(true); expect(late.taReason).toMatch(/could have been made up/);
+    expect(late.taCredit).toBe(30); expect(late.error).toBe(30);   // 35 s possible rounds down to 30 s (V.H.3, V.H.6) expect(late.taOverDeclared).toBe(true); expect(late.taReason).toMatch(/could have been made up/);
   });
   it('SCORE-011 benchmark labels', () => {
     expect(benchmarkLabel(2)).toBe('champion'); expect(benchmarkLabel(13)).toBe('expert'); expect(benchmarkLabel(20)).toBe('sportsman'); expect(benchmarkLabel(46)).toBe('rookie'); expect(benchmarkLabel(47)).toBe('blown');

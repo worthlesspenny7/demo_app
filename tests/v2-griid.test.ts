@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ScenarioBuilder, EXITS, describeInstruction, type NodeSpec } from '../src/core/builder.js';
 import { DRIVER_EXPERT, TRAINING_AIDS, aidsForRung, instructionS, validateScenario, nodeById, type Instruction } from '../src/core/course.js';
-import { columnCLines, columnBSymbols, transitMiles, odometerBox, columnD, formatInterval, formatClockFace } from '../src/core/griid.js';
+import { columnCLines, columnBSymbols, columnCIcons, transitMiles, odometerBox, columnD, formatInterval, formatClockFace } from '../src/core/griid.js';
 import { buildGhost, ghostTimeAt } from '../src/core/ghost.js';
 import { generateStage, PROFILES } from '../src/core/generator/generate.js';
 import { Simulator } from '../src/core/sim.js';
@@ -65,7 +65,8 @@ describe('GRIID format (REG VII.B.3, VII.F; HB Appendix D/E)', () => {
     const calEnd = sc.book.filter(i => i.section === 'calibration').pop()!; expect(columnBSymbols(calEnd)).toEqual(['transit-begin']); expect(odometerBox(calEnd)).toBe('0045');
     expect(columnBSymbols(sc.book.find(i => i.section === 'restart')!)).toEqual(['transit-end']);
     expect(columnBSymbols(sc.book.find(i => i.freeZone === 'begin'))).toEqual(['freezone-begin']); expect(columnBSymbols(sc.book.find(i => i.freeZone === 'end'))).toEqual(['freezone-end']);
-    const et = sc.book.filter(i => i.endTimed); expect(columnBSymbols(et[0])).toEqual(['end-timed', 'transit-begin']); expect(odometerBox(et[0])).toBe('0750'); expect(odometerBox(et[1])).toBe('0200');
+    const et = sc.book.filter(i => i.endTimed); expect(columnBSymbols(et[0])).toEqual(['transit-begin']); expect(columnCIcons(et[0])).toEqual(['end-timed']);   // the crossed-out watch is a Column C pictogram (HB p.27, Example #17)
+     expect(odometerBox(et[0])).toBe('0750'); expect(odometerBox(et[1])).toBe('0200');
     expect(columnBSymbols(sc.book.find(i => i.taPoint))).toEqual(['ta']);
     expect(['refuel', 'pit', 'meal', 'rest'].map(k => columnBSymbols(sc.book.find(i => i.promotedStop?.kind === k)))).toEqual([['refuel'], ['pit'], ['meal'], ['rest']]);
     expect(columnBSymbols(sc.book[sc.book.length - 1])).toEqual(['finish']); expect(odometerBox(sc.book.find(i => i.section === 'restart'))).toBeNull();
@@ -161,5 +162,69 @@ describe('GRIID format (REG VII.B.3, VII.F; HB Appendix D/E)', () => {
 describe('book text of generated rows', () => {
   it('GRIID-004 generated stages print GRIID sentences, never the old "Pause 15" / "Speed 35" forms', () => {
     for (const row of generateStage(3, PROFILES.fullStage!).book) { expect(row.text).not.toMatch(/\bSpeed \d\d\b|^Pause \d+\.|mph for/); }
+  });
+});
+
+describe('V2 fix sprint: transit exactness, Column C icons, guide rows and speeds not shown', () => {
+  it('STAGE-009 only "take exactly" makes a transit exact: a plain interval (calibration run, tire warm-up, transit to the finish) prints without parentheses but is not exact, an advisory one prints in parentheses, and the Column D sentence follows the flag', () => {
+    expect(columnCLines(ins({ transit: { exact: false, plain: true, seconds: 1560, miles: 21 } }))).toEqual(['26m00s']);      // HB #5 / #34: plain, not exact
+    expect(columnCLines(ins({ transit: { exact: false, seconds: 540, miles: 4.5 } }))).toEqual(['(9m00s)']);               // advisory
+    expect(columnCLines(ins({ transit: { exact: true, seconds: 1200, miles: 12 } }))).toEqual(['20m00s']);                 // "take exactly 20 minutes" (HB #30)
+    const sentence = (t: Instruction['transit']) => describeInstruction({ transit: t }, { label: 'Begin transit', sightDistance: 400 });
+    expect(sentence({ exact: false, plain: true, seconds: 1800, miles: 20 })).toMatch(/take approximately 30 minutes/); expect(sentence({ exact: true, seconds: 1200, miles: 12 })).toMatch(/take exactly 20 minutes/);
+    for (const seed of [1, 2, 3, 4]) {
+      const sc = generateStage(seed);
+      expect(sc.book.filter(i => i.transit && !i.transit.end && i.transit.exact === true), `seed ${seed}`).toEqual([]);   // no generated line says "take exactly": calibration, warm-up, finish transit are plain
+      const cal = sc.book.find(i => i.calibrationStart)!; expect(cal.transit).toMatchObject({ exact: false, plain: true }); expect(columnCLines(cal)[0]).toMatch(/^\d+m\d\ds$/);
+      expect(columnCLines(sc.book[0]!)[columnCLines(sc.book[0]!).length - 1]).toBe('20m00s'); expect(sc.book[0]!.transit!.exact).toBe(false);
+      const fin = sc.book.filter(i => i.endTimed).pop()!; expect(fin.transit).toMatchObject({ exact: false, plain: true });
+    }
+    const d = new ScenarioBuilder({ startTime: T0, driver: quiet }).start(35).advanceMiles(0.5).transit({ exact: true, seconds: 600, miles: 1.4 }).advanceMiles(1.4).endTransit({ speed: 35 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+    expect(d.book.find(i => i.transit && !i.transit.end)!.transit!.exact).toBe(true);
+  });
+
+  it('GRIID-010 the restart watch face and the crossed-out watch of End timed portion are Column C pictograms, not Column B symbols (HB p.27, Example #17)', () => {
+    const sc = generateStage(1);
+    const restart = sc.book.find(i => i.section === 'restart')!; const et = sc.book.find(i => i.endTimed)!;
+    expect(columnCIcons(restart)).toEqual(['restart']); expect(columnCIcons(et)).toEqual(['end-timed']); expect(columnCIcons(sc.book.find(i => i.taPoint))).toEqual([]);
+    expect(columnBSymbols(et)).not.toContain('end-timed' as never); expect(columnBSymbols(restart)).toEqual(['transit-end']);
+    for (const i of sc.book) { expect(columnBSymbols(i) as string[]).not.toContain('end-timed'); expect(columnBSymbols(i) as string[]).not.toContain('restart'); }
+    expect(columnCLines(restart, sc.timeZone)).toEqual([expect.stringMatching(/^CDT \d+:\d\d:\d\d$/), expect.stringMatching(/^\d+ MPH$/)]);   // the time of day and the speed stay as the lines under the watch
+  });
+
+  it('GRIID-011 the row before the end of an advisory transit prints "(0m30s)": the time left to the end of the transit, from the transit\'s own pace', () => {
+    expect(columnCLines(ins({ transitGuide: 30 }))).toEqual(['(0m30s)']); expect(columnCLines(ins({ transitGuide: 30, speed: 35 }))).toEqual(['(0m30s)', '35 MPH']);
+    for (const seed of [1, 2, 3, 4, 5]) {
+      const sc = generateStage(seed);
+      const guided = sc.book.filter(i => i.transitGuide !== undefined); expect(guided.length, `seed ${seed}`).toBeGreaterThanOrEqual(2);
+      for (const g of guided) {
+        const idx = sc.book.indexOf(g); const begin = [...sc.book.slice(0, idx)].reverse().find(i => i.transit && !i.transit.end)!;
+        const endIdx = sc.book.findIndex((x, k) => k > idx && (x.transit?.end || x.restartTime !== undefined && x.section === 'restart' || x.section === 'finish'));
+        const end = sc.book[endIdx]!; expect(begin.transit!.exact).toBe(false);
+        const dist = instructionS(sc.course, end) - instructionS(sc.course, g); const total = instructionS(sc.course, end) - instructionS(sc.course, begin);
+        expect(Math.abs(g.transitGuide! - begin.transit!.seconds * dist / total), `seed ${seed} line ${g.n}`).toBeLessThanOrEqual(3);   // rounded to 5 s
+        expect(g.transitGuide! % 5).toBe(0); expect(columnCLines(g)).toContain(`(${formatInterval(g.transitGuide!)})`);
+        expect(g.transitGuide!).toBeLessThan(begin.transit!.seconds); expect(g.restartTime).toBeUndefined();
+      }
+      const lastOfOpening = sc.book.find(i => i.section === 'restart')!; expect(sc.book[lastOfOpening.n - 2]!.transitGuide).toBeGreaterThan(0);   // the transit into the first restart
+    }
+  });
+
+  it('GRIID-012 about one row in ten prints no speed where the speed is unchanged, as real sheets do (Trophy Run #40, #53, #57, #73, #74); layout, timing and the ghost are identical', () => {
+    let omitted = 0, total = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const a = generateStage(seed); const b = generateStage(seed, { ...PROFILES.fullStage!, omitUnchangedSpeedProbability: 0 });
+      expect(a.book.length).toBe(b.book.length); expect(a.course.lengthFt).toBe(b.course.lengthFt);
+      const ga = buildGhost(a), gb = buildGhost(b); expect(ga.legs.map(l => l.perfectDuration)).toEqual(gb.legs.map(l => l.perfectDuration)); expect(ga.endTod).toBe(gb.endTod);
+      let cur: number | undefined;
+      a.book.forEach((x, i) => {
+        const y = b.book[i]!; total++;
+        if (x.speed === undefined && y.speed !== undefined) { omitted++; expect(y.speed, `seed ${seed} line ${x.n}`).toBe(cur); expect(y.timed).toBeUndefined(); expect(columnCLines(x).some(l => /MPH$/.test(l) && !/^0 MPH$/.test(l))).toBe(false); }
+        else expect(x.speed).toBe(y.speed);
+        if (y.timed) cur = y.timed.thenSpeed; else if (y.speed !== undefined) cur = y.speed;
+      });
+    }
+    expect(omitted / total).toBeGreaterThan(0.05); expect(omitted / total).toBeLessThan(0.11);
+    const none = generateStage(2, { ...PROFILES.fullStage!, omitUnchangedSpeedProbability: 0 }); expect(none.book.filter(i => i.speed === undefined && i.section === undefined).length).toBeLessThan(generateStage(2).book.filter(i => i.speed === undefined && i.section === undefined).length);
   });
 });

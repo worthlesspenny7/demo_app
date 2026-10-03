@@ -956,7 +956,7 @@ export class Simulator {
       if (ins.pause) { this.buckets.stop -= ins.pause; if (!this.curStop) { /* pause without a stop node: still credited to stop bucket */ } }
       if (ins.transit && !ins.transit.end) this.inTransit = true;
       if (ins.transit?.end || (ins.restartTime !== undefined && ins.section === 'restart')) this.inTransit = false;
-      if (ins.transit && !ins.transit.end && ins.transit.exact) { this.transitIn[ins.n] = roundToSecond(this.nodeCrossTod); this.log('transit.in', { n: ins.n, tod: this.transitIn[ins.n] }); this.checkClockUse('Exact-transit IN time', ins.n); }
+      if (ins.transit && !ins.transit.end && ins.transit.exact === true) { this.transitIn[ins.n] = roundToSecond(this.nodeCrossTod); this.log('transit.in', { n: ins.n, tod: this.transitIn[ins.n] }); this.checkClockUse('Exact-transit IN time', ins.n); }
       if (ins.timed) this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'timed' });
       if (ins.section === 'calibration') this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'calibration' });
       if (ins.restartTime !== undefined && ins.section === 'restart') {
@@ -1112,7 +1112,7 @@ export class Simulator {
         const o = this.transitOutFor(endIns); anchorActual = o ?? (prevActual ?? this.sc.startTime); cumAnchor = anchorActual;
       } else anchorActual = prevActual ?? this.sc.startTime;
       const ta = this.taDeclared[leg.index] ?? 0; const q = this.taQualifying[leg.index] ?? 0;
-      out.push(scoreLeg({ leg, record: rec, anchorActual, cumulativeAnchorActual: cumAnchor, taDeclared: ta, taQualifying: q, taRecoverable: Math.min(q, this.taRecoverable[leg.index] ?? 0) }, this.sc.rules));
+      out.push(scoreLeg({ leg, record: rec, anchorActual, cumulativeAnchorActual: cumAnchor, taDeclared: ta, taQualifying: q, taRecoverable: Math.min(q, this.taRecoverable[leg.index] ?? 0) }, this.hasTaPoints ? this.sc.rules : { ...this.sc.rules, taGranularitySeconds: 1 }));
       prevActual = rec?.actualTod ?? (anchorActual + leg.perfectDuration);
     }
     return out;
