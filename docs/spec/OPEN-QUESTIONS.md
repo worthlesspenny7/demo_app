@@ -61,3 +61,13 @@ Full extractions: docs/research/08-rookie-handbook-body.md, 08b-rookie-handbook-
 | Q24 | PARTIAL | HB: digital stopwatch with lap/split + TOD "a necessity"; analog dash clock; count "3, 2, 1, GO"; bezel never mentioned. Josh defers to the documents: digital stopwatch with lap/split + TOD by default, analog clock; analog stopwatch kept as an option | UI-033, WATCH-008/009, LESSON-006, DRILL-026 |
 | Q25 | NOT IN DOCS | Checkpoint density not stated; 2014 sheet shows a declared checkpoint-free zone | STAGE-004 |
 | Q26 | ANSWERED | Written text is Column D (example rally); real race sheets carry only remarks there | GRIID-001, GRIID-009 |
+
+## Updates from the rally school videos (2026-10-04, docs/research/10-rally-school-videos.md)
+| # | Status | Answer |
+|---|---|---|
+| Q17 | ANSWERED | Nobody releases you; queue, pull up when the car ahead leaves, leave on your minute; position 1 = base + 1 min; launch early by the standing-start net loss (START-001) |
+| Q20 | ANSWERED | 10-55; 48 used; 55 in warm-up/calibration/transit (SPEED-001) |
+| Q23 | ANSWERED | ICE, "mark", read-backs, rock-back stop count with "keep counting" (PROTO-001); Dad's own preferences still to come |
+| Q24 | ANSWERED | Director: stopwatch TOD mode for time of day, clock for seconds; Sawtooth minute hand ambiguous near the minute change (INST-001/002) |
+| Q25 | ANSWERED | 4-6 timing checkpoints a day, one in the morning, one late surprise (CPX-001) |
+| Q13 | LOW | MBCA video still unread; the official videos cover the ground |
