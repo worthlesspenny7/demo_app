@@ -6,3 +6,4 @@ coverage/
 playtest-output/
 test-results/
 playwright-report/
+frames/

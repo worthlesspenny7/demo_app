@@ -1,14 +1,15 @@
-# key = YouTube URL (fill in; keys are referenced by screenshots.txt)
-2026 =
-2024 =
-classen1 =
-croker2 =
-clock =
-start =
-delay =
-makeup =
-reading =
-prepcharts =
-xcupcharts =
-timewise =
-hacking =
+# key = YouTube URL (keys are referenced by screenshots.txt)
+# Playlist: https://www.youtube.com/playlist?list=PLAF22133BB7285860
+2026 = https://www.youtube.com/watch?v=hyD1xKcFY18
+2024 = https://www.youtube.com/watch?v=2cnmpeUfRk0
+classen1 = https://www.youtube.com/watch?v=G6NB19nPdwk
+croker2 = https://www.youtube.com/watch?v=LIHlUU3IHVM
+clock = https://www.youtube.com/watch?v=5eYKDyR3sHA
+start = https://www.youtube.com/watch?v=8YJC3i8BYcE
+delay = https://www.youtube.com/watch?v=MEvfXbaiDFU
+makeup = https://www.youtube.com/watch?v=eSXvwNEbHYQ
+reading = https://www.youtube.com/watch?v=ZNlP8iSz3s4
+prepcharts = https://www.youtube.com/watch?v=ak743hRbJjs
+xcupcharts = https://www.youtube.com/watch?v=7bVU8hlpOJE
+timewise = https://www.youtube.com/watch?v=8u6aQ7rH5vg
+hacking = https://www.youtube.com/watch?v=R-q1ihUrch4
