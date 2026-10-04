@@ -14,13 +14,12 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): fix sprint PT-08/PT-09 DONE on 5e31c12, NOT committed (five checks green: tsc clean, 591 unit,
-  80 e2e, 338/338 specs, build clean, ENGINE_VERSION 3.2.0; see LOG "Fix sprint PT-08/PT-09"). Next: commit, push, then
-  the PT-10 playability replay on the new path. Known not-done: PT-06 LOW 14 (unprinted nodes in timed intervals),
-  20, 21, 25-27; PT-09 LOW 10 (scheduling nits), 12 (oracle never laps at plain markers), 13 (D10 seed-decided
-  stars), 14 (D08 tip names hazard for a no-pause STOP); PT-08 N-B14 (500-ft call taken by a distractor, T check-off
-  wording), N-B16 campaign benchmark totals before a stage; lesson 1 still carries the TA procedure; 39-page day vs
-  13-26 real; Bronze stage sentences in Column D by design.
+- In flight (2026-10-04): PT-10 playability replay (Opus, read-only) on the fix-sprint PT-08/PT-09 commit (591 unit,
+  80 e2e, 338/338, ENGINE 3.2.0; path order Safety > Start on time (transits, which-timer, ghost-car, D16) > Stay on
+  course (griid-cameo, protocol, D09, lost, D10) > Stay on time (pause-arithmetic, D01, D03, timed-leads, D04, D05,
+  measure-car, D06, recovery, D08, calibration, D07, D18)). When it lands: commit the report; if its top fixes are small,
+  one more fix sprint, five checks, commit, push. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14;
+  PT-08 N-B14 (side-road turn at 500 ft), N-B16 (campaign benchmarks before play); TA procedure still in lesson 1.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
