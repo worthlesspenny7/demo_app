@@ -1,18 +1,22 @@
 /** Home: start-here path, resume, curriculum map (drills by track with per-tier stars and locks) plus free-practice built-in scenarios. */
 import '../../core/drills/index.js';
-import { allDrills, isUnlocked } from '../../core/drills/index.js';
+import { allDrills, isUnlocked, tierNeeds } from '../../core/drills/index.js';
+import { LESSONS } from '../../../content/lessons.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
-import { drillMinutes, formatMinutes } from '../viewmodels/estimate.js';
-import { startPathFromProgress, unlockBest, pathStepHash } from '../viewmodels/curriculum.js';
+import { formatMinutes } from '../viewmodels/estimate.js';
+import { startPathFromProgress, unlockBest, pathStepHash, lockText, readFirstOf, cardMinutesText } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
+/** EDU-005: the tracks in the Four S's order (HB p.13-14): stay on course and start on time before stay on time. D02 is retired. */
 const TRACKS: { name: string; blurb: string; ids: string[] }[] = [
-  { name: 'Timing', blurb: 'stopwatch, pauses, speed changes, calibration, recovery', ids: ['D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D08b', 'D15', 'D16', 'D17'] },
-  { name: 'Course', blurb: 'reading the page, CAMEOs, traps', ids: ['D09', 'D10'] },
+  { name: 'Stay on course', blurb: 'reading the page, CAMEOs, traps, what to do when lost', ids: ['D09', 'D10'] },
+  { name: 'Start on time', blurb: 'base + ASP, restarts, exact transits, the pre-read', ids: ['D16', 'D15'] },
+  { name: 'Stay on time', blurb: 'stopwatch, pauses, speed changes, your charts, recovery, Time Allowance, calibration', ids: ['D01', 'D03', 'D04', 'D05', 'D06', 'D08', 'D08b', 'D07', 'D17'] },
   { name: 'Arithmetic', blurb: 'the coffee-break track: no calculator', ids: ['D14'] },
   { name: 'Whole legs', blurb: 'put it together', ids: ['D18', 'D11', 'D12', 'D13'] },
 ];
+const lessonTitle = (id: string): string => LESSONS.find(l => l.id === id)?.title ?? id;
 
 export function renderHome(root: HTMLElement): void {
   const page = el('div', { class: 'page' });
@@ -71,7 +75,7 @@ function startHerePanel(drills: Drill[], prog: ReturnType<typeof app.progress.lo
   if (go && cur) go.onclick = () => { location.hash = pathStepHash(cur.step); };
   return el('section', { class: 'panel startpath', id: 'starthere-panel' },
     el('h3', {}, 'Start here'),
-    el('p', {}, 'New? Take the path in order: read the first School lesson (3 minutes), then play D01 (stopwatch), D03 (pauses) and D04 (timed changes) at Bronze: one star at any tier ticks a step and moves you on. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the whole-leg drills.'),
+    el('p', {}, "New? Take the path in order. It follows the handbook's Four S's: safety and the priorities, reading the page and Dad's card, staying on course (the trap quiz, what to do when lost, D10), starting on time (restarts, D16), and only then the stay-on-time drills. Lessons tick when you pass their check question; a drill ticks with one star at any tier. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the whole-leg drills."),
     ol, go ? el('div', { style: 'margin-top:10px' }, go) : el('p', { class: 'ok' }, 'Path complete. Take the whole-leg drills (D11) and the full stage (D12).'));
 }
 
@@ -88,6 +92,17 @@ function resumePanel(drills: Drill[]): HTMLElement | null {
 }
 const root = (): HTMLElement => document.getElementById('view') ?? document.body;
 
+/** EDU-005: "Read first: <lesson>" links on every drill card; a lesson that gates the drill says so. */
+function readFirstLine(d: Drill, lessonDone: (id: string) => boolean): HTMLElement | null {
+  const ls = readFirstOf(d); if (!ls.length) return null;
+  const line = el('div', { class: 'readfirst muted', 'data-readfirst': d.id }, 'Read first: ');
+  ls.forEach((l, i) => {
+    const a = el('a', { href: `#/school/${l.id}`, 'data-lesson-link': l.id }, `${lessonTitle(l.id)}${lessonDone(l.id) ? ' ✓' : ''}`);
+    line.append(...(i ? [', '] : []), a, ...(l.gate && !lessonDone(l.id) ? [' (pass it to unlock)'] : []));
+  });
+  return line;
+}
+
 function tierPips(d: Drill, p: ReturnType<typeof app.progress.get>): HTMLElement {
   const wrap = el('div', { class: 'pips', 'data-pips': d.id });
   d.tiers.forEach((t, i) => {
@@ -99,7 +114,8 @@ function tierPips(d: Drill, p: ReturnType<typeof app.progress.get>): HTMLElement
 }
 
 function drillCard(d: Drill, best: Record<string, number>): HTMLElement {
-  let unlocked = true; try { unlocked = isUnlocked(d, best); } catch { unlocked = true; }
+  const lessonDone = (id: string): boolean => { try { return app.progress.lessonDone(id); } catch { return false; } };
+  let unlocked = true; try { unlocked = isUnlocked(d, best, lessonDone); } catch { unlocked = true; }
   const p = app.progress.get(d.id);
   const stars = p?.stars ?? 0;
   const multiTier = d.tiers.length > 1;
@@ -107,17 +123,19 @@ function drillCard(d: Drill, best: Record<string, number>): HTMLElement {
   const bestTxt = p ? (quiz ? `best ${p.bestScore ?? '-'} wrong` : p.bestRaw !== null && p.bestRaw !== undefined ? `best ${p.bestRaw} raw s` : p.bestScore !== null ? `best ${p.bestScore} s/leg (older run)` : '') : '';
   const card = el('div', { class: `card ${unlocked ? 'playable' : 'locked'}`, 'data-drill': d.id },
     el('div', { class: 'title' }, `${unlocked ? '' : '🔒 '}${d.id}  ${d.title}`),
-    el('div', { class: 'meta' }, `${d.kind} · ${formatMinutes(drillMinutes(d))}${d.id === 'D13' ? ' per stage' : ''} at 1x · ${d.skills.join(' ')}`),
+    el('div', { class: 'meta' }, `${d.kind} · ${cardMinutesText(d)} · ${d.skills.join(' ')}`),
     el('div', {}, d.objective),
+    readFirstLine(d, lessonDone),
     multiTier ? tierPips(d, p) : el('div', { class: 'stars' }, '★'.repeat(stars) + '☆'.repeat(3 - stars)),
     p ? el('div', { class: 'muted' }, `${p.runs} run${p.runs === 1 ? '' : 's'}, ${p.aces} ace${p.aces === 1 ? '' : 's'}${bestTxt ? `, ${bestTxt}` : ''}`) : el('div', { class: 'muted' }, 'not yet played'),
   );
   const actions = el('div', { class: 'actions' });
-  if (!unlocked) actions.append(el('span', { class: 'lockline' }, `🔒 Locked: needs ${d.unlock.map(u => `${u.drill} ${'★'.repeat(u.stars)}`).join(', ')} at Silver or Gold`));
+  if (!unlocked) { const miss = d.unlock.filter(u => (best[u.drill] ?? 0) < u.stars); const text = lockText(miss, (d.lessonGate ?? []).filter(l => !lessonDone(l)), lessonTitle) || lockText(d.unlock); actions.append(el('span', { class: 'lockline' }, `🔒 Locked: ${miss.length || !text.startsWith('pass') ? 'needs ' : ''}${text}`)); }
   else if (d.id === 'D13') { const b = el('button', { class: 'primary' }, 'Open campaign'); b.onclick = () => { location.hash = '#/campaign'; }; actions.append(b); }
   else if (quiz) { const b = el('button', { class: 'primary' }, 'Open'); b.onclick = () => { location.hash = `#/${d.kind}/${d.id}`; }; actions.append(b); }
   else {
-    const tier = el('select', {}); d.tiers.forEach((t, i) => tier.append(el('option', { value: String(i), title: t.description }, t.name))); tier.title = 'tier: Bronze = live aids, Silver = fewer aids, Gold = Great Race legal';
+    // EDU-005: a tier with its own prerequisite (Gold D03/D04/D05 need the D06 chart) is listed but disabled, with what it needs
+    const tier = el('select', {}); d.tiers.forEach((t, i) => { const need = tierNeeds(d, i, best); const o = el('option', { value: String(i), title: need.length ? `${t.name} needs ${lockText(need)} (build your chart first)` : t.description }, need.length ? `${t.name} (needs ${need.map(u => u.drill).join(', ')})` : t.name); if (need.length) o.setAttribute('disabled', ''); tier.append(o); }); tier.title = 'tier: Bronze = live aids, Silver = fewer aids, Gold = Great Race legal';
     const seed = el('input', { type: 'number', value: String(1 + ((p?.runs ?? 0) % 10)), min: '1', max: '9999', title: 'seed' }) as HTMLInputElement; seed.style.width = '64px';
     const play = el('button', { class: 'primary' }, 'Play');
     play.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: d.id, tier: Number(tier.value) || 0, seed: Number(seed.value) || 1 }); };

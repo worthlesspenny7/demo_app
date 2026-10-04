@@ -137,8 +137,8 @@ function pick3(r: Rng, speeds: number[], minGap: number, firstFromZero = false):
 }
 
 export const D06: Drill = {
-  id: 'D06', title: 'Build your charts', objective: 'Measure the car: three stop-and-go pauses, three acceleration/deceleration losses and three turn losses for the IN > OUT pairs on the marker lines. Note each as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; the debrief compares with the car\'s true charts. The real chart tool takes raw run times instead ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ..."; three run types, four runs per speed) and derives the net losses: that works here too.', skills: ['P12'], minutes: 16, kind: 'drive',
-  tiers: tiers([3, 3, 2]), unlock: [],
+  id: 'D06', title: 'Build your charts', objective: 'Measure the car: three stop-and-go pauses, three acceleration/deceleration losses and three turn losses for the IN > OUT pairs on the marker lines. Note each as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; the debrief compares with the car\'s true charts. The real chart tool takes raw run times instead ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ..."; three run types, four runs per speed) and derives the net losses: that works here too. Bronze keeps every pair inside the 15-50 mph the handbook prints, so a team that copies the Packard charts can earn three stars.', skills: ['P12'], minutes: 22, kind: 'drive',
+  tiers: tiers([3, 3, 2]), unlock: [], readFirst: ['measure-car'],
   scenario(seed, t) {
     const tier = tierOf(D06, t); const r = rng(seed * 6007 + 6);
     const driver: 'A' | 'B' = tier.name === 'Bronze' ? 'A' : rng(seed * 6007 + 99).chance(0.5) ? 'B' : 'A';   // CHART-006: each driver has his own chart; Bronze copies the printed Packard (driver A)
@@ -146,9 +146,11 @@ export const D06: Drill = {
     const tags: string[] = [`driver:${driver}`];
     const mark = (id: string, what: string): void => { b.advanceMiles(0.2); b.instruction({ label: `MARK ${id}`, sightDistance: 450 }, { text: `MARK ${id}: lap the stopwatch here. ${what}` }); };
     let cur = 30;
+    // EDU-009: Bronze copies the printed Packard charts (HB p.7-9), which run 15-50 mph: no Bronze pair falls outside them (55 is measured from Silver up)
+    const inPrinted = (xs: number[]): number[] => (tier.name === 'Bronze' ? xs.filter(v => v <= 50) : xs);
     const setIn = (v: number, id: string): void => { b.advanceMiles(0.35); if (v !== cur) { b.speedAtSign(`SPEED ${v}`, v); cur = v; } else b.instruction({ sign: { text: `SPEED ${v}`, shape: 'rect', side: 'R' }, sightDistance: 450 }, { speed: v }); void id; };
     // section A: stop & go (15 s pause printed): IN speed, a STOP with a 15 s pause, OUT speed
-    pick3(r, [25, 30, 35, 40, 45, 50, 55], 0).forEach(([vi, vo], k) => {
+    pick3(r, inPrinted([25, 30, 35, 40, 45, 50, 55]), 0).forEach(([vi, vo], k) => {
       const id = `A${k + 1}`; tags.push(`chart:stopGo:${vi}>${vo}`);
       setIn(vi, id); mark(`${id} in`, `Stop & go ${vi} > ${vo}: approach at ${vi}.`);
       b.advanceMiles(0.2).stop(r.pick(['L', 'R']), vo, { pause: 15 }); cur = vo;
@@ -156,7 +158,7 @@ export const D06: Drill = {
     });
     b.advanceMiles(0.6).checkpoint();
     // section B: acceleration / deceleration: the first pair starts from a standstill (a time-of-day restart), the others are speed changes at a sign
-    pick3(r, [20, 25, 30, 35, 40, 45, 50, 55], 10, true).forEach(([vi, vo], k) => {
+    pick3(r, inPrinted([20, 25, 30, 35, 40, 45, 50, 55]), 10, true).forEach(([vi, vo], k) => {
       const id = `B${k + 1}`; tags.push(`chart:accel:${vi}>${vo}`);
       if (vi === 0) {
         b.advanceMiles(0.4);
@@ -179,7 +181,7 @@ export const D06: Drill = {
     });
     b.advanceMiles(0.7).checkpoint().advanceFt(300);
     // section D (CHART-006, 10c): the stop-in-the-middle run: a stop with no pause printed between the marks; the net loss is the zero-dwell stop & go loss
-    { const [vi, vo] = pick3(r, [25, 30, 35, 40, 45, 50, 55], 0)[0]!; const id = 'D1'; tags.push(`chart:stopMid:${vi}>${vo}`);
+    { const [vi, vo] = pick3(r, inPrinted([25, 30, 35, 40, 45, 50, 55]), 0)[0]!; const id = 'D1'; tags.push(`chart:stopMid:${vi}>${vo}`);
       setIn(vi, id); mark(`${id} in`, `Stop in the middle ${vi} > ${vo}: approach at ${vi}; the car stops at the sign and you call go at once.`);
       b.advanceMiles(0.2).stop('S', vo, { noPause: true }); cur = vo;
       mark(`${id} out`, `Leave at ${vo}. Net seconds lost against the ghost = the stop-and-go loss for ${vi} > ${vo}.`);
@@ -215,9 +217,15 @@ export const D06: Drill = {
     const stars: 0 | 1 | 2 | 3 = ratio >= 0.88 ? 3 : ratio >= 0.66 ? 2 : ratio >= 0.33 ? 1 : 0;
     const packard = (sc.tags ?? []).includes('charts:packard');
     const other = [...parseChartRuns(notes).values()].filter(v => v.driver && v.driver !== driver).length;
+    // EDU-002: the tip names the chart cells, the thing this drill grades (never the leg-error "Clean run")
+    const firstMiss = lines.find(l => /not noted|off by|NEGATIVE|disagrees|above 15 s/.test(l));
+    const tip = stars === 3 ? `Clean run: ${good}/${pairs.length} chart cells within 1 s. Keep the chart in the car and write its numbers beside the book's stops and turns.`
+      : good === 0 && !notes.length ? `No chart cells were noted: write each pair as you measure it ("stopgo 30>40 = 8.4", "accel 0>40 = 4.5", "turn 40>35 = 4.0"), or the raw runs ("const 25 runs 19.8 19.9 19.8 19.9"). ${packard ? 'At Bronze copy the printed Packard charts (Reference, HB p.7-9).' : 'Lesson "Measure your car" shows the runs.'}`
+        : `${good}/${pairs.length} chart cells within 1 s${firstMiss ? `; first to fix: ${firstMiss}` : ''}. ${packard ? 'At Bronze every pair is on the printed Packard charts (Reference): copy the cell for the IN > OUT pair.' : 'Measure each pair again (four runs, average them, drop or re-run an outlier).'}`;
     return {
-      score: good, stars, headline: `${good}/${pairs.length} chart cells within 1 s (stop & go ${per.stopGo}/3, accel/decel ${per.accel}/3, turns ${per.turn}/3, stop in the middle ${per.stopMid}/1)`,
+      score: good, stars, tip, headline: `${good}/${pairs.length} chart cells within 1 s (stop & go ${per.stopGo}/3, accel/decel ${per.accel}/3, turns ${per.turn}/3, stop in the middle ${per.stopMid}/1)`,
       feedback: [
+        tip,
         packard ? 'Bronze hands you the 1936 Packard charts and drives the Packard: your notes should match the printed tables; Silver and Gold hide the car\'s numbers, so measure.' : `This car (${sc.car.name}) is hidden: the notes are your own measurements. Four runs per pair in a real car ("stopgo 30>40 runs 8.4 8.6 8.5 8.5" is averaged); a negative net loss is an outlier to delete or re-run.`,
         `Charts are per driver: this run is driver ${driver}${other ? `; ${other} note(s) tagged for the other driver were ignored` : ' (tag a note "A:" or "B:" to chart both drivers)'}.`,
         'Chart (b): the pause time to sit for a 15 s stop at this IN/OUT. Chart (a): net seconds lost changing speed (the 0 row is a start from a stop). Chart (c): seconds lost in a 90 degree turn. Stop in the middle: the same stop with no pause, whose net loss is 15 s minus chart (b).',

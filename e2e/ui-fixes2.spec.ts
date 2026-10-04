@@ -141,7 +141,7 @@ test('RUB-001 a perfect D16 run shows "Clean run" with no contradicting "Fix thi
   const d = drillById('D16')!; const sc = d.scenario(1, 0);
   const sim = new Simulator(sc); const res = runBot(sim, new OracleBot(sim));
   expect(res.score.raw).toBeLessThanOrEqual(3 * res.score.legs.length);
-  const stored = snapshotRun(sim, { kind: 'drill', drillId: 'D16', tier: 0, seed: 1 }, { driverSkill: 'scenario', watch: 'analog', annotations: null, scaleMax: 1 });
+  const stored = snapshotRun(sim, { kind: 'drill', drillId: 'D16', tier: 0, seed: 1 }, { driverSkill: 'scenario', watch: 'digital', annotations: null, scaleMax: 1 });   // EDU-002: the D16 rubric's own tip leads, so replay on the drill's digital watch (its TOD reads are clock reads)
   await page.evaluate(v => localStorage.setItem('rally-trainer.last-run.v1', JSON.stringify(v)), stored);
   await page.goto('/#/debrief'); await page.reload();
   await expect(page.locator('#debrief')).toBeVisible({ timeout: 15000 });

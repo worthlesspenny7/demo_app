@@ -7,7 +7,7 @@ import type { Scenario } from '../course.js';
 import type { StageResult } from '../sim.js';
 import type { Drill } from './types.js';
 import { tiers, tierOf, base } from './common.js';
-import { basicRubric, instrumentFindingLines } from './rubrics.js';
+import { basicRubric, instrumentFindingLines, withSkillTip } from './rubrics.js';
 
 /** "5m32.0s", "5m32.0", "5:32.0", "332.0" -> seconds. */
 export function parseDuration(s: string): number | null {
@@ -58,7 +58,7 @@ export function playerFactor(r: StageResult): number | null {
 
 export const D07: Drill = {
   id: 'D07', title: 'Morning calibration run', objective: 'Start the stopwatch at the asterisk, lap at every calibration point, read interval and cumulative against the printed box (note "cal 3 = 5m32.0 / 7m21.3"), work out k and set the Timewise factor (or build a cheat card), then run a leg.', skills: ['P5'], minutes: 45, kind: 'drive',
-  tiers: tiers([3, 2, 1]), unlock: [],
+  tiers: tiers([3, 2, 1]), unlock: [], readFirst: ['calibration'],
   scenario(seed, t) {
     const tier = tierOf(D07, t); const r = rng(seed);
     const hiddenGain = 1 + (r.chance(0.5) ? 1 : -1) * (0.015 + r.next() * 0.02); // +-1.5..3.5%: uncorrected = 15-30 s over the 15-minute leg
@@ -92,6 +92,12 @@ export const D07: Drill = {
     if (!points.length) stars = rb.stars;
     feedback.unshift(`Read-offs within 0.3 s: ${good}/${points.length}. Factor k: ${k === null ? 'not set' : k.toFixed(4)}${trueK === null ? '' : ` (the run says ${trueK.toFixed(4)})`}${k !== null && trueK !== null && kStars < 3 ? '; recompute k = sum(perfect)/sum(actual) from the last cumulative, or the Timewise clicks (CHART-005: new factor = old x correct / actual)' : ''}.`);
     if (noLap) feedback.push(...instrumentFindingLines(r.instrumentDiscipline.filter(f => f.kind === 'calibrationWithoutLap')).slice(0, 1), 'A calibration point passed without a lap caps this drill at two stars.');
-    return { score: rb.score, stars, headline: `${rb.headline} · read-offs ${good}/${points.length}, k ${k === null ? 'not set' : k.toFixed(4)}`, feedback: [...feedback, ...rb.feedback] };
+    // EDU-002: when the reads, the factor or a missing lap held the stars down, that is the tip, not the leg error
+    const tip = stars === 3 || !points.length ? null
+      : noLap && stars <= 2 && readStars >= 2 && kStars >= 2 ? 'A calibration point passed without a lap: lap the stopwatch at every calibration point (start it at the asterisk), then read interval and cumulative against the printed box.'
+        : readStars <= kStars && readStars < 3 ? `Read-offs within 0.3 s: ${good}/${points.length}. Lap at every calibration point and write what the watch shows, interval over cumulative ("cal 3 = 5m32.0 / 7m21.3"), beside the printed box.`
+          : kStars < 3 ? `Factor k ${k === null ? 'was never set' : `${k.toFixed(4)} is off`}${trueK === null ? '' : ` (the run says ${trueK.toFixed(4)})`}: k = printed cumulative / your cumulative at the last point; set the Timewise factor (old x correct / actual) or build the cheat card, parked, before the leg.` : null;
+    const out = withSkillTip({ score: rb.score, stars, headline: `${rb.headline} · read-offs ${good}/${points.length}, k ${k === null ? 'not set' : k.toFixed(4)}`, feedback: [...rb.feedback.slice(0, 1), ...feedback, ...rb.feedback.slice(1)], tip: rb.tip }, r, sc, tip);
+    return out;
   },
 };

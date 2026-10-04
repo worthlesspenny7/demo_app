@@ -154,3 +154,28 @@ Sources: docs/playtest/PT-05-playability-v3.md (all ten top fixes, the three dri
 - Not done: see STATUS HANDOFF.
 - Education re-validation v3 (edf4bce): tip accuracy 94 % loose / 71 % strict; curriculum order inverts the Four S's;
   Dad's card not enough for a first morning (14 lines to add); 16 slips. Education fix sprint launched (Opus).
+
+## 2026-10-04 Education fix sprint v3 (docs/playtest/REVALIDATION-v3-education.md section 5, all ten items; not committed)
+- Specs: new section "EDUCATION FIX SPRINT V3" in docs/spec/SPECS.md (EDU-001..EDU-011, before BACKLOG); DRILL-004/014/024/026, LESSON-002/007 carry an "Amended by EDU-..." note.
+- Tips (src/core/drills/rubrics.ts, types.ts, index.ts, d01/d06/d07/d08b/d15/d16.ts; src/ui/viewmodels/debrief.ts rankTips): Rubric.tip is the drill's own "Fix this next"
+  and the Debrief leads with it (drillTip / drillOfScenario); headlineTip takes the run's stars (never "Clean run" under 3, no "recover more" lecture at 3), puts a
+  oneMinuteMistake first, gives off-course runs the lost doctrine and TA-credited runs "delayed / made up / credited" (EDU-001..003). D16: wrong minute and late launch tips.
+- Gates (EDU-005/006): D18 needs D16 >= 1, D12 needs D16 >= 2; D10 needs the lesson "When you are lost", D15 needs "Transits and restarts"; Gold D03/D04/D05 need D06
+  (Drill.lessonGate, Drill.tierUnlock, isUnlocked(d, best, lessonDone), tierNeeds). D10 stars bounded by the leg error; D16 late launch capped at 1; D17 grades the
+  "elapsed m:ss" note after the forced reset (elapsedAfterReset); D18 hazard first + 1.3-1.6 mi recovery straight, thresholds 4/8/14; D01 graded on mean absolute lap error,
+  a frozen-split lap caps at 1. D15 softened (5 of 6 with a small notation missed = 2 stars; missing the chart pauses still 0) (EDU-010).
+- D06 Bronze pairs inside 15-50 mph (Packard copier 3 stars); Reference answer sheet closed until D06 is passed (answerSheetOpen) (EDU-009).
+- Content (content/lessons.ts, reference-data.ts): lessons reordered to the Four S's (LESSON_ORDER), new lessons "When you are lost" and "Measure your car"; Dad's card
+  12 lines (safety, full stop at every STOP, checkpoint signs and "5 mph or slower", calibration conduct, restart queue, lost, GR emergency signs, phone); rule 10 no
+  longer says stop short of the intersection; LESSON-004 "Your first morning, in order"; LESSON-006 one time zone; 16 slips fixed; Ford numbers labelled
+  "simulator default, measure your car" (FORD_NOTE); penalty rows V.E.3.c/d/f, II.H.1.i, V.F.1.c; D08b tractor wording and the stop-and-go loss sentence (EDU-004, 007, 008).
+- Curriculum/UI (src/ui/viewmodels/curriculum.ts, screens/home.ts, school.ts, reference.ts): START_PATH four-s, griid-cameo, protocol, D09, lost, D10, transits, D16,
+  ghost-car, D01, D03, D04, D05, D06, D08, D07, D18; CURRICULUM and Home tracks in the Four S's order, D02 retired; drill cards "Read first" links and lock reasons,
+  Gold option disabled until D06; lesson pages list their drills; card minutes "at 1x · at 4x" from the ghost; minutes fields re-measured (EDU-005, EDU-010).
+- Bot (src/agent/bots.ts): the rookie (ignoreLosses) uses the stopwatch unless useWatch: false; the watch starts on the first running tick of an auto-launched drill and
+  laps at every timed anchor (EDU-011).
+- Tests: tests/edu-fix-v3.test.ts (19); updated with the reason in the test: DRILL-004, DRILL-024 (x2), DRILL-026, CHART-006, UI-019, DRILL-004 (unlockStars), UI-028,
+  LESSON-001, LESSON-002 (x2), LESSON-005, LESSON-006, LESSON-007, LESSON-008; e2e PLAY-001, C2, RUB-001 (replay on the drill's digital watch), LESSON-002 (12 card lines).
+- Checks: tsc clean, 542 unit, build clean, 311/311 specs, 62 e2e.
+- Not done: D05 rookie at Gold still 1-2 stars and D04 goCount at Gold 2-3 (the "D05/D04 thresholds against the bias row" note of report fix 6 was not in this sprint's list);
+  D08b is still not a gate for D11/D12; D13 not re-run; human-facing D01 thresholds (0.4 / 0.8 / 1.5 s mean absolute) not tried by a person.

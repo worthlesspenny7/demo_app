@@ -42,12 +42,13 @@ describe('drill curriculum', () => {
     expect(d.rubric(fake(1), sc).stars).toBe(3); expect(d.rubric(fake(3), sc).stars).toBe(2); expect(d.rubric(fake(6), sc).stars).toBe(1); expect(d.rubric(fake(7), sc).stars).toBe(0);
   });
   it('DRILL-003 trap quiz drill exists as a static quiz kind', () => { const d = drillById('D09')!; expect(d.kind).toBe('quiz'); expect(d.unlock).toEqual([]); });
-  it('DRILL-004 unlock rules: D09/D14 open; D18 needs D03,D04,D05,D08,D10 at 2 stars; D11 needs D18 + D07; D12 needs D11, D15, D16; D13 needs D12', () => {
+  it('DRILL-004 EDU-005 EDU-006 unlock rules: D09/D14 open; D18 needs D03,D04,D05,D08,D10 at 2 stars and D16 at 1; D11 needs D18 + D07; D12 needs D11, D15 and D16 at 2; D13 needs D12', () => {
     const none: Record<string, number> = {};
     expect(isUnlocked(drillById('D09')!, none)).toBe(true); expect(isUnlocked(drillById('D14')!, none)).toBe(true); expect(isUnlocked(drillById('D18')!, none)).toBe(false);
-    const some = { D03: 2, D04: 2, D05: 2, D08: 2, D10: 2 }; expect(isUnlocked(drillById('D18')!, some)).toBe(true); expect(isUnlocked(drillById('D11')!, some)).toBe(false);
+    const some = { D03: 2, D04: 2, D05: 2, D08: 2, D10: 2, D16: 1 }; expect(isUnlocked(drillById('D18')!, some)).toBe(true); expect(isUnlocked(drillById('D11')!, some)).toBe(false);
+    expect(isUnlocked(drillById('D18')!, { ...some, D16: 0 })).toBe(false);   // EDU-005: start on time is graded in D18 (base + ASP)
     expect(isUnlocked(drillById('D11')!, { ...some, D18: 1, D07: 2 })).toBe(true);
-    expect(isUnlocked(drillById('D12')!, { D11: 1 })).toBe(false); expect(isUnlocked(drillById('D12')!, { D11: 1, D15: 1, D16: 1 })).toBe(true);
+    expect(isUnlocked(drillById('D12')!, { D11: 1 })).toBe(false); expect(isUnlocked(drillById('D12')!, { D11: 1, D15: 1, D16: 1 })).toBe(false); expect(isUnlocked(drillById('D12')!, { D11: 1, D15: 1, D16: 2 })).toBe(true);
     expect(isUnlocked(drillById('D13')!, { D12: 1 })).toBe(true);
   });
   it('DRILL-005 aids defaults: rung 3 for D01-D05 Bronze, rung 2 for D18/D11 Bronze (coarse pace, the cliff fix), rung 0 for D12+; legal mode has no aids', () => {
@@ -275,9 +276,10 @@ describe('DRILL-024 D15 pre-read triage grades the six notations of LESSON-003 (
       const naive = runOracle(sc, { useWatch: true }); expect(d.rubric(naive.r, sc).stars).toBe(0);
     }
     const sc = d.scenario(1, 0); const notes = idealNotes(sc);
-    const noRestart = run(sc, notes.map(a => ({ ...a, text: a.text.replace(/restart [\d:]+/, 'restart') }))); expect(d.rubric(noRestart.r, sc).stars).toBe(0); expect(d.rubric(noRestart.r, sc).feedback.join(' ')).toMatch(/base .* \+ ASP/);
-    const baseOnly = run(sc, notes.map(a => ({ ...a, text: a.text.replace(/restart [\d:]+/, `restart ${formatClock(sc.baseStartTime!)}`) }))); expect(d.rubric(baseOnly.r, sc).stars).toBe(0);
-    const noOut = run(sc, notes, false); expect(d.rubric(noOut.r, sc).stars).toBe(0); expect(d.rubric(noOut.r, sc).feedback.join(' ')).toMatch(/exact transit/);
+    // EDU-010: a missing restart time or OUT time zeroes that notation, and with the other five right that is 2 stars (no cliff), the tip naming it
+    const noRestart = run(sc, notes.map(a => ({ ...a, text: a.text.replace(/restart [\d:]+/, 'restart') }))); const nr = d.rubric(noRestart.r, sc); expect(nr.stars).toBe(2); expect(nr.headline).toMatch(/restart time \(base \+ ASP\) 0\/1/); expect(nr.feedback.join(' ')).toMatch(/base .* \+ ASP/); expect(nr.tip).toMatch(/^Pre-read notation "restart time/);
+    const baseOnly = run(sc, notes.map(a => ({ ...a, text: a.text.replace(/restart [\d:]+/, `restart ${formatClock(sc.baseStartTime!)}`) }))); expect(d.rubric(baseOnly.r, sc).stars).toBe(2);
+    const noOut = run(sc, notes, false); expect(d.rubric(noOut.r, sc).stars).toBe(2); expect(d.rubric(noOut.r, sc).feedback.join(' ')).toMatch(/exact transit/);
   });
   it('DRILL-024 stars by the worst notation: >= 90 % is 3, >= 70 % is 2, >= 50 % is 1, below is 0 (speeds-not-shown, "comes quick", pause time and page-top carry)', () => {
     const sc = d.scenario(2, 0); const notes = idealNotes(sc); const pure = notes.filter(a => /^\d+ mph$/.test(a.text) && (a.n - 1) % 6 !== 0);
@@ -288,7 +290,7 @@ describe('DRILL-024 D15 pre-read triage grades the six notations of LESSON-003 (
     expect(d.rubric(without(new Set(pure.slice(0, 13).map(a => a.n))).r, sc).stars).toBe(1);    // 63 %
     expect(d.rubric(run(sc, notes.map(a => ({ ...a, text: a.text.replace(/\d+ mph;? ?/, '') }))).r, sc).stars).toBe(0);   // no speeds written at all
     // dropping the "comes quick" flag on the previous page's last line zeroes that notation; so does a pause time more than 1 s off
-    const q = sc.book.find(i => /comes quick/i.test(i.remark ?? ''))!; const noQuick = run(sc, notes.filter(a => a.n !== q.n - 1)); expect(d.rubric(noQuick.r, sc).stars).toBeLessThanOrEqual(1); expect(d.rubric(noQuick.r, sc).feedback.join(' ')).toMatch(/Comes quick/);
+    const q = sc.book.find(i => /comes quick/i.test(i.remark ?? ''))!; const noQuick = run(sc, notes.filter(a => a.n !== q.n - 1)); expect(d.rubric(noQuick.r, sc).stars).toBeLessThanOrEqual(2); expect(d.rubric(noQuick.r, sc).feedback.join(' ')).toMatch(/Comes quick/);
     const off = run(sc, notes.map(a => ({ ...a, text: a.text.replace(/pause ([\d.]+) s/, (_, x) => `pause ${(Number(x) + 2).toFixed(1)} s`) }))); expect(d.rubric(off.r, sc).stars).toBe(0);
     const near = run(sc, notes.map(a => ({ ...a, text: a.text.replace(/pause ([\d.]+) s/, (_, x) => `pause ${(Number(x) + 0.9).toFixed(1)} s`) }))); expect(d.rubric(near.r, sc).stars).toBe(3);
   });
@@ -339,7 +341,7 @@ describe('DRILL-025 D18/D11/D12/D13 use the STAGE-001 skeleton and print pauses 
 });
 
 describe('DRILL-026 D01 and D07 on the digital stopwatch', () => {
-  it('DRILL-026 D01 grades lap timing at the landmarks (jitter to 0.1 s) and a lap taken while the split is frozen costs a star (WATCH-009)', () => {
+  it('DRILL-026 EDU-006 D01 grades lap timing at the landmarks (mean absolute error: lap at the marker, not off the display) and a lap taken while the split is frozen holds it at one star (WATCH-009)', () => {
     const d = drillById('D01')!; const sc = d.scenario(1, 0); expect(sc.tags).toContain('watch:digital');
     const marks = sc.book.filter(i => i.n > 1 && i.n < sc.book.length).map(i => instructionS(sc.course, i));
     const lapRun = (jitter: (k: number) => number, doubleAt = -1) => {
@@ -352,8 +354,10 @@ describe('DRILL-026 D01 and D07 on the digital stopwatch', () => {
       return { r, rb: d.rubric(r, sc) };
     };
     const good = lapRun(() => 0.05); expect(good.rb.stars).toBe(3); expect(good.r.instrumentDiscipline.filter(f => f.kind === 'lapWhileFrozen')).toEqual([]);
-    const jittery = lapRun(k => (k % 2 ? 1.2 : -0.4)); expect(jittery.rb.stars).toBe(1);
-    const frozen = lapRun(() => 0.05, 3); expect(frozen.r.instrumentDiscipline.some(f => f.kind === 'lapWhileFrozen')).toBe(true); expect(frozen.rb.stars).toBe(2); expect(frozen.rb.feedback.join(' ')).toMatch(/frozen/);
+    const jittery = lapRun(k => (k % 2 ? 1.6 : 0.4)); expect(jittery.rb.stars).toBe(1);   // (a negative delay is pressed at once by this harness, so both are late)
+    // EDU-006: knowledge, not jitter: a steady 0.9 s late (lapping off the display) is one star although it does not scatter; at the marker is three
+    const dial = lapRun(() => 0.9); expect(dial.rb.stars).toBe(1); expect(dial.rb.tip).toMatch(/late on average.*eyes on the marker, not on the display/i);
+    const frozen = lapRun(() => 0.05, 3); expect(frozen.r.instrumentDiscipline.some(f => f.kind === 'lapWhileFrozen')).toBe(true); expect(frozen.rb.stars).toBe(1); expect(frozen.rb.feedback.join(' ')).toMatch(/frozen/); expect(frozen.rb.tip).toMatch(/frozen/);
     const none = runOracle(sc, { latency: 0 }, { clock: false }); expect(d.rubric(none.r, sc).stars).toBe(0);
   });
   it('DRILL-026 D07 requires a lap at every calibration point, grades "cal 3 = 5m32.0 / 7m21.3" read-offs within 0.3 s, then the factor k', () => {

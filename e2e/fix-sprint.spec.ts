@@ -16,17 +16,21 @@ async function onTop(page: Page, sel: string): Promise<boolean> {
 
 test.use({ viewport: { width: 1366, height: 768 } });
 
-test('PLAY-001 a Bronze star moves the Start-here path on: Next opens D03 at Bronze, and lesson 1 leads to D01', async ({ page }) => {
+test('PLAY-001 EDU-005 a Bronze star moves the Start-here path on: Next opens D03 at Bronze, and the protocol lesson leads to the D09 quiz', async ({ page }) => {
   await page.goto('/#/settings');
-  await page.evaluate(([k]) => localStorage.setItem(k!, JSON.stringify({ version: 1, drills: { D01: { stars: 3, tierStars: [3, 0, 0], aces: 0, runs: 1, bestScore: 0.2, lastScore: 0.2, bestRaw: 0, lastPlayed: Date.now() } }, lessons: { 'ghost-car': true }, runs: [], maneuvers: {} })), [PROGRESS_KEY]);
+  const p1 = (stars: number, tiers: number[]) => ({ stars, tierStars: tiers, aces: 0, runs: 1, bestScore: 0.2, lastScore: 0.2, bestRaw: 0, lastPlayed: Date.now() });
+  const read = { 'four-s': true, 'griid-cameo': true, protocol: true, lost: true, transits: true, 'ghost-car': true };
+  await page.evaluate(([k, v]) => localStorage.setItem(k!, v!), [PROGRESS_KEY, JSON.stringify({ version: 1, drills: { D09: p1(1, [1]), D10: p1(1, [1, 0, 0]), D16: p1(1, [1, 0, 0]), D01: p1(3, [3, 0, 0]) }, lessons: read, runs: [], maneuvers: {} })]);
   await page.goto('/#/');
   await expect(page.locator('#starthere-panel li[data-step="D01"]')).toHaveClass(/done/);
   await expect(page.locator('#starthere')).toHaveText(/Next: D03 Pause arithmetic/);
   await page.locator('#starthere').click();
   await expect(page).toHaveURL(/#\/cockpit\/drill\/D03\/0\/1$/);
   await page.evaluate(([k]) => localStorage.removeItem(k!), [PROGRESS_KEY]);
-  await page.goto('/#/school/ghost-car'); await page.reload();
-  await expect(page.locator('#next-path')).toHaveText(/Next on your path: D01/);
+  await page.evaluate(([k]) => localStorage.setItem(k!, JSON.stringify({ version: 1, drills: {}, lessons: { 'four-s': true, 'griid-cameo': true }, runs: [], maneuvers: {} })), [PROGRESS_KEY]);
+  await page.goto('/#/school/protocol'); await page.reload();
+  await expect(page.locator('#next-path')).toHaveText(/Next on your path: D09/);
+  await page.locator('#next-path').click(); await expect(page).toHaveURL(/#\/quiz\/D09$/);
 });
 
 test('PLAY-002 the day stage moves: with no speed printed on the warm-up the driver asks "what speed?" and the card prints the transit pace', async ({ page }) => {

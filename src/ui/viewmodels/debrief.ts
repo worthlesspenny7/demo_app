@@ -10,6 +10,7 @@ import type { Scenario, AidsConfig, Instruction } from '../../core/course.js';
 import { buildGhost, ghostTimeAt } from '../../core/ghost.js';
 import { stopLoss, rampLead, accelLoss } from '../../core/perf-table.js';
 import { headlineTip as engineHeadlineTip, timedAnchorTod, prevCrossTod, uncalledSpeeds } from '../../core/drills/rubrics.js';
+import { drillTip } from '../../core/drills/index.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { stopsFromEvents, speedsByNode, turnCap } from './counterfactual.js';
 import { restartLabel, lineSpeeds } from './cockpitinfo.js';
@@ -440,6 +441,8 @@ export function biasNoise(src: { stops: StopRow[]; timed: TimedRow[]; landmarks:
 export function rankTips(result: StageResult | null | undefined, scenario: Scenario | null | undefined, hasRows: boolean, bucketTip: string, bias: BiasNoiseVm, totals: Record<Bucket, number>): string[] {
   let first = bucketTip;
   if (hasRows && result) { try { first = engineHeadlineTip(result, scenario ?? undefined); } catch { first = bucketTip; } }
+  // EDU-002: a drill run leads with the drill's own tip (its rubric knows when the stars came from calls, chart cells, notations, laps or departures)
+  if (hasRows && result && scenario) { const t = drillTip(result, scenario); if (t) first = t; }
   const tips = [first];
   if (!hasRows || !bias.tip || !bias.topType || first.startsWith('Clean run')) return tips;
   if (bias.topType === 'cruise') return tips; // the headline already covers cruise, with the speedometer caveat
@@ -500,13 +503,13 @@ function headlineTip(totals: Record<Bucket, number>, rows: CpRow[], result: Stag
   const n = Math.round(mag);
   const tips: Record<Bucket, string> = {
     cruise: late ? `You are running ${n} s slow at cruise: your indicated speed reads high. Correct the card (call about 0.5 mph more) or check the calibration factor.` : `You are running ${n} s fast at cruise: the speedometer reads low. Call half a mph less, or fix the card.`,
-    stop: late ? `Stops cost ${n} s net: you are dwelling longer than pause minus car loss. Compute the dwell before the stop (a \"0 MPH / 0m15s\" stop at 35 in / 35 out is about 15 - 7.5 = 7.5 s) and call "go" on the count.` : `You are leaving stops ${n} s early: the pause is credited to the ghost in full; dwell = pause - car loss, not zero.`,
+    stop: late ? `Stops cost ${n} s net: you are dwelling longer than pause minus car loss. Compute the dwell before the stop (a \"0 MPH / 0m15s\" stop at 35 in / 35 out is about 15 - 7.5 = 7.5 s for the simulator's Ford, a simulator default: use your own chart) and call "go" on the count.` : `You are leaving stops ${n} s early: the pause is credited to the ghost in full; dwell = pause - car loss, not zero.`,
     speedChange: late ? `Speed changes cost ${n} s: start the change half a ramp early so the ramp straddles the landmark (ramp lead).` : `You are gaining ${n} s on speed changes: you call the new speed too early. Lead by half the ramp, not a full one.`,
     timedChange: late ? `Timed changes cost ${n} s: lap the watch at the start of the segment and call the new speed half a ramp before the count expires.` : `Timed changes run ${n} s early: the count starts when the ghost leaves the landmark, not when you call it.`,
     hazard: `Hazards cost ${n} s. Start the watch when you are held by a light or a train and write the delay in the ledger; a train blockage or an accident (V.H.1) can be requested as a Time Allowance at the TA point, a light is made up yourself.`,
     offCourse: `Off-course cost ${n} s. Read the CAMEO before the intersection and call the turn 500-600 ft out; when unsure, stop before the leading edge.`,
     turn: `Turns cost ${n} s: the car must slow for a 90; recover by holding +5 mph for (v/5) x the seconds lost (8 s late at 35: 40 mph for 56 s).`,
-    start: late ? `You left the start ${n} s late. Leave on the official second, or a few seconds early to cover the standing-start loss.` : `You left the start ${n} s early. The start-line loss is your car's standing-start loss (about 4-7 s depending on speed); do not lead by more than that.`,
+    start: late ? `You left the start ${n} s late. Leave on the official second, or a few seconds early to cover the standing-start loss.` : `You left the start ${n} s early. The start-line loss is your car's standing-start loss (about 4-7 s for the simulator's Ford depending on speed, a simulator default: measure your car); do not lead by more than that.`,
     ta: `Time allowance changed the score by ${n} s. Declare only what the hazard cost; over-declaring is penalised.`,
   };
   return { headline, tip: tips[worst] };

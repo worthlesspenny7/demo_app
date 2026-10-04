@@ -30,9 +30,12 @@ function chartTable(c: ChartData): HTMLElement {
   return el('div', { class: 'charttable-wrap' }, t);
 }
 
+/** EDU-009: the simulator's Ford answer sheet is open only once D06 is passed (one star at any tier): measure your own chart first. */
+export function answerSheetOpen(d06: { stars?: number } | null | undefined): boolean { return (d06?.stars ?? 0) >= 1; }
+
 /** The LESSON-005 reference pages. Each carries its rule number; the Packard charts are labelled as the handbook example. */
 function regPanels(): HTMLElement[] {
-  const pen = el('div', { class: 'panel', id: 'ref-penalties', style: 'grid-column:1/3' }, el('h3', {}, 'Penalties (REG V.E)'), el('p', { class: 'muted' }, 'As printed in the 2026 Event Regulations. The late cap (2 minutes) is lower than the early cap (5 minutes) and lower than a missed checkpoint (3 minutes).'),
+  const pen = el('div', { class: 'panel', id: 'ref-penalties', style: 'grid-column:1/3' }, el('h3', {}, 'Penalties (REG V.E, II.H.1.i, V.F.1)'), el('p', { class: 'muted' }, 'As printed in the 2026 Event Regulations. The late cap (2 minutes) is lower than the early cap (5 minutes) and lower than a missed checkpoint (3 minutes). Every STOP sign is a full stop, also one with no pause in the book.'),
     rt(['Rule', 'Event', 'Penalty'], PENALTY_ROWS.map(r => [rule(r.rule), r.what, r.penalty])));
   const ta = el('div', { class: 'panel', id: 'ref-ta', style: 'grid-column:1/3' }, el('h3', {}, 'Time Allowance procedure (REG V.H)'), el('p', { class: 'muted' }, 'Wording pattern for the request:'), el('div', { class: 'pattern' }, TA_PATTERN),
     rt(['Rule', 'In plain words'], TA_STEPS.map(r => [rule(r.rule), r.text])));
@@ -42,7 +45,7 @@ function regPanels(): HTMLElement[] {
   const grid = el('div', { class: 'agefactors' });
   for (let i = 0; i < AGE_FACTOR_ROWS.length; i += 14) grid.append(rt(['Year', 'Factor'], AGE_FACTOR_ROWS.slice(i, i + 14).map(r => [r.year, r.factor.toFixed(3)]), 1));
   age.append(grid);
-  const pack = el('div', { class: 'panel', id: 'ref-packard', style: 'grid-column:1/3' }, el('h3', {}, `The three handbook charts: ${PACKARD_LABEL}`), el('p', { class: 'muted' }, 'Net seconds, IN speed in the rows and OUT speed in the columns. Teams make their own charts (HB Appendix B); a rookie with no time may use these as-is ("better than nothing"). The 1939 Ford card above is the sim\'s own car.'));
+  const pack = el('div', { class: 'panel', id: 'ref-packard', style: 'grid-column:1/3' }, el('h3', {}, `The three handbook charts: ${PACKARD_LABEL}`), el('p', { class: 'muted' }, 'Net seconds, IN speed in the rows and OUT speed in the columns. Teams make their own charts (HB Appendix B); a rookie with no time may use these as-is ("better than nothing"). The 1939 Ford card above is the simulator\'s own car model (simulator default, measure your car).'));
   for (const c of PACKARD_CHARTS) pack.append(el('h3', { style: 'margin-top:12px' }, `${c.title} (${PACKARD_LABEL})`), el('p', { class: 'cite' }, c.note), chartTable(c));
   return [pen, ta, ...schoolPanels(), colc, spd, age, pack];
 }
@@ -53,7 +56,7 @@ function schoolPanels(): HTMLElement[] {
   const panel = el('div', { class: 'panel', id: 'ref-rally-school', style: 'grid-column:1/3' }, el('h3', {}, 'Rally school'), el('p', { class: 'muted' }, 'From the official rally school videos (see the lesson "What the rally school adds"). Each row names its video and caption timestamp; where only a video says it, the row is labelled.'),
     el('h3', { id: 'ref-ta-form', style: 'margin-top:10px' }, 'The Time Allowance web form'), el('p', { class: 'muted' }, TA_FORM_NOTE),
     rt(['Field', 'Example', 'What to put', 'Source'], TA_FORM_FIELDS.map(f => [el('span', { 'data-field': f.id }, `${f.field} [${f.form}]`), f.example, `${f.note}${label(f.inDocs)}`, el('span', { class: 'cite' }, f.cite)])),
-    el('h3', { id: 'ref-checkpoints', style: 'margin-top:12px' }, 'The checkpoint facts'), el('p', { class: 'muted' }, 'Green = do nothing, red = stop, never under 5 mph in sight of a green one.'),
+    el('h3', { id: 'ref-checkpoints', style: 'margin-top:12px' }, 'The checkpoint facts'), el('p', { class: 'muted' }, 'Green = do nothing, red = stop, never 5 mph or slower in sight of a green one.'),
     rt(['Fact', 'Source', 'Also in the documents'], CHECKPOINT_FACTS.map(f => [f.fact, el('span', { class: 'cite' }, f.cite), f.doc ?? '(video, not in the documents)'])));
   return [panel];
 }
@@ -71,10 +74,11 @@ export function renderReference(root: HTMLElement): void {
   const tb2 = el('tbody', {}); for (let v = 20; v <= 60; v += 5) tb2.append(el('tr', {}, el('td', {}, String(v)), el('td', { class: 'num' }, (v / 5).toFixed(1)), el('td', { class: 'num' }, (v / 10).toFixed(1)), el('td', { class: 'num' }, `${(v * 1.1).toFixed(1)} for 10x`), el('td', { class: 'num' }, `${(v * 1.2).toFixed(1)} for 5x`))); t2.append(tb2); rec.append(t2);
   // pause arithmetic / performance table
   const P = perf();
-  const d06 = (app.progress.get('D06')?.stars ?? 0) >= 1;
-  const pa = el('div', { class: 'panel', style: 'grid-column:1/3' }, el('h3', {}, 'Pause arithmetic: the 1939 Ford performance card'), el('p', { class: 'muted' }, 'dwell = printed pause - stop/start loss (entry -> exit). Measured by simulating the car model (DESIGN §12); your real car needs four runs per speed. A stop that is also a turn loses a little more (the car crawls through the turn): the cockpit card and the Debrief include it, the straight-stop table below does not. Standing-start loss (leave early by this at the start line): ' + SPEEDS.map((v, i) => `${v}: ${P.accel[i] ?? '?'} s`).join(', ') + '.'));
-  const answerSheet = el('details', { id: 'answer-sheet' }, el('summary', {}, d06 ? 'Show the true Ford table anyway (you passed D06: build and use your own measured table)' : 'The true Ford table (answer sheet: in D06 you measure these yourself; Gold and legal runs hide the card)'));
-  if (!d06) answerSheet.setAttribute('open', '');
+  const d06 = answerSheetOpen(app.progress.get('D06'));
+  const pa = el('div', { class: 'panel', style: 'grid-column:1/3' }, el('h3', {}, 'Pause arithmetic: the 1939 Ford performance card (simulator default, measure your car)'), el('p', { class: 'muted' }, 'dwell = printed pause - stop/start loss (entry -> exit). Every number on this card is a simulator default from the car model (DESIGN §12), not Dad\'s Ford: measure your car (lesson "Measure your car", HB Appendix B, four runs per speed). A stop that is also a turn loses a little more (the car crawls through the turn): the cockpit card and the Debrief include it, the straight-stop table below does not. Standing-start loss (leave early by this at the start line): ' + SPEEDS.map((v, i) => `${v}: ${P.accel[i] ?? '?'} s`).join(', ') + '.'));
+  // EDU-009: the answer sheet stays closed until D06 is passed (measure first); after that it opens, to compare with your own chart
+  const answerSheet = el('details', { id: 'answer-sheet' }, el('summary', {}, d06 ? 'The simulator\'s Ford table (you passed D06: compare it with your own measured chart)' : 'The simulator\'s Ford table (answer sheet, closed until you pass D06: measure these yourself first; Gold and legal runs hide the card)'));
+  if (d06) answerSheet.setAttribute('open', '');
   const t3 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'in \\ out'), ...SPEEDS.map(w => el('th', { class: 'num' }, String(w))))));
   const tb3 = el('tbody', {}); SPEEDS.forEach((v, i) => tb3.append(el('tr', {}, el('td', {}, `${v} in`), ...SPEEDS.map((_, j) => el('td', { class: 'num' }, String(P.stop[i]?.[j] ?? '?')))))); t3.append(tb3);
   answerSheet.append(el('h3', {}, 'Stop/start loss (s)'), t3);
@@ -109,7 +113,7 @@ export function renderReference(root: HTMLElement): void {
     ['Speed change at a landmark', 'REG VII.E.2: at a sign or landmark when the front tires come even with it; at an intersection, at the referenced sign if there is one, otherwise at the centre of the intersection or the apex of the turn. Handbook: split the speed change at the sign, crossing it at the midpoint speed. Be mid-ramp as the bumper passes it.'],
     ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or travel 5 MPH or slower within sight of a Timing Checkpoint: 30 s (REG V.E.3.a).'],
     ['Observation checkpoint', 'A manned stop (typically the finish, where you also submit any Time Allowance Requests). Missing one costs 3 minutes, or DNF/FNS for the final one (REG V.E.2.c-d).'],
-    ['Time Allowance (TA)', 'Request the seconds a train or an accident held you (V.H.1), in multiples of 10 s, by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint) at the TA point within the time it gives (REG V.H; see the TA procedure below). The committee denies time you could have made up. Only the wait is creditable, not your braking and acceleration loss. Never also make the time up.'],
+    ['Time Allowance (TA)', 'Request the seconds a train or an accident held you (V.H.1; V.H.5\'s own example is a farm tractor), in multiples of 10 s, by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint; in 2026 the web form) at the TA point within the time it gives (REG V.H; see the TA procedure below). The committee denies time you could have made up. The measured delay is the time stopped plus the chart stop-and-go loss for your speeds (Time Delay Form [01:38], [04:44]; video, not in the documents). Never also make the same seconds up.'],
     ['Ace', 'A checkpoint crossed at exactly the perfect second (error 0).'],
     ['Age factor', 'Raw seconds times a factor for the car\'s year: 0.845 for a 1939 car.'],
     ['Transit / free zone', 'Untimed sections between legs (section symbols in Column B). Drive normally, reset for the next start time.'],

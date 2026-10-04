@@ -703,10 +703,11 @@ describe('UI-018 progress per tier, honest persistence flag, resume and campaign
 });
 
 describe('UI-019 first-run clarity and the curriculum order', () => {
-  it('UI-019 Start here: lesson 1 first, then D01, D03; the current step is the first one not done', () => {
+  it('UI-019 EDU-005 Start here: the Four S\'s lesson first; the current step is the first one not done', () => {
     const none = startPathState({}, () => false);
-    expect(none[0]!.step.id).toBe('ghost-car'); expect(none[0]!.current).toBe(true); expect(none.filter(x => x.current).length).toBe(1);
-    const some = startPathState({ D01: 1 }, id => id === 'ghost-car');
+    expect(none[0]!.step.id).toBe('four-s'); expect(none[0]!.current).toBe(true); expect(none.filter(x => x.current).length).toBe(1);
+    const lessonsRead = (id: string) => ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'ghost-car'].includes(id);
+    const some = startPathState({ D09: 1, D10: 1, D16: 1, D01: 1 }, lessonsRead);
     expect(some.find(x => x.current)!.step.id).toBe('D03');
     expect(startPathState({}, () => true).some(x => x.current)).toBe(true);   // drills still pending
   });
@@ -803,9 +804,9 @@ describe('DRILL-004 unlocks count Silver or Gold stars only', () => {
     expect(unlockStars(d03, { stars: 3, tierStars: [1, 0, 3] })).toBe(3);
     expect(unlockStars(d09, { stars: 2, tierStars: [2, 0, 0] })).toBe(2);
     expect(unlockStars(d03, { stars: 2 })).toBe(2);
-    const bronze = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10'].map(id => [id, { stars: 3, tierStars: [3, 0, 0] }]));
+    const bronze = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10', 'D16'].map(id => [id, { stars: 3, tierStars: [3, 0, 0] }]));
     expect(isUnlocked(drillById('D18')!, unlockBest(ds, { drills: bronze }))).toBe(false);
-    const silver = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10'].map(id => [id, { stars: 2, tierStars: [0, 2, 0] }]));
+    const silver = Object.fromEntries(['D03', 'D04', 'D05', 'D08', 'D10', 'D16'].map(id => [id, { stars: 2, tierStars: [0, 2, 0] }]));
     expect(isUnlocked(drillById('D18')!, unlockBest(ds, { drills: silver }))).toBe(true);
   });
 });
@@ -813,14 +814,16 @@ describe('DRILL-004 unlocks count Silver or Gold stars only', () => {
 describe('UI-028 Start-here path and pace aid polish', () => {
   it('UI-028 PLAY-001 Start-here: a Bronze star ticks a drill step and the path moves on (no D01 loop), while unlocks still need Silver or Gold; lessons use lessonDone', () => {
     const ds = allDrills();
-    const bronze = { drills: { D01: { stars: 3, tierStars: [3, 0, 0] } } };
-    const afterBronze = startPathFromProgress(ds, bronze, id => id === 'ghost-car');
+    const early = { D09: { stars: 1, tierStars: [1] }, D10: { stars: 1, tierStars: [1, 0, 0] }, D16: { stars: 1, tierStars: [1, 0, 0] } };
+    const read = (id: string) => ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'ghost-car'].includes(id);
+    const bronze = { drills: { ...early, D01: { stars: 3, tierStars: [3, 0, 0] } } };
+    const afterBronze = startPathFromProgress(ds, bronze, read);
     expect(afterBronze.find(x => x.step.id === 'D01')!.done).toBe(true);
     expect(afterBronze.find(x => x.current)!.step.id).toBe('D03');
     expect(pathStepHash(currentPathStep(afterBronze)!)).toBe('#/cockpit/drill/D03/0/1');   // the Next button opens D03 at Bronze
     expect(unlockBest(ds, bronze).D01).toBe(0);                                              // Bronze still opens no content
-    const silver = { drills: { D01: { stars: 2, tierStars: [0, 2, 0] }, D03: { stars: 3, tierStars: [0, 0, 3] } } };
-    const afterSilver = startPathFromProgress(ds, silver, id => id === 'ghost-car');
+    const silver = { drills: { ...early, D01: { stars: 2, tierStars: [0, 2, 0] }, D03: { stars: 3, tierStars: [0, 0, 3] } } };
+    const afterSilver = startPathFromProgress(ds, silver, read);
     expect(afterSilver.find(x => x.step.id === 'D01')!.done).toBe(true);
     expect(afterSilver.find(x => x.step.id === 'D03')!.done).toBe(true);
     expect(afterSilver.find(x => x.current)!.step.id).toBe('D04');
@@ -921,7 +924,7 @@ describe('LESSON-001 The Four S\'s', () => {
     expect(LESSONS.length).toBeGreaterThanOrEqual(10);
     for (const l of LESSONS) { expect(l.source.length, l.id).toBeGreaterThan(10); expect(l.source, l.id).toMatch(/docs\/research|DESIGN/); checkOk(l); }
     expect(new Set(LESSONS.map(l => l.id)).size).toBe(LESSONS.length);
-    expect(LESSONS[0]!.id).toBe('ghost-car');   // the start-here path still begins with the ghost car
+    expect(LESSONS[0]!.id).toBe('four-s');   // EDU-005: the School and the start-here path begin with the Four S's
   });
 });
 
@@ -935,9 +938,9 @@ describe('LESSON-002 Team protocol', () => {
     const glossary = l.body.find((b): b is Extract<typeof b, { table: unknown }> => typeof b !== 'string' && 'table' in b)!;
     expect(glossary.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['crossroad', 'T', 'sideroad', 'Y', 'soft right curve', 'soft offset right curve', 'blinker', 'yield', 'comes quick']));
   });
-  it('LESSON-002 PLAY-011 carries a printable card for the driver of nine lines: who says "I see it" / "I see it too", the start routine, and rule 6 launches early by the start loss', () => {
+  it('LESSON-002 PLAY-011 EDU-007 carries a printable card for the driver of twelve lines: who says "I see it" / "I see it too", the start routine, and rule 6 launches early by the start loss', () => {
     const card = lesson('protocol').body.find((b): b is Extract<typeof b, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
-    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(9);
+    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(12);
     const all = card.card.lines.join(' ');
     expect(all).toMatch(/Whoever sees it first says "I see it"; the other answers "I see it too"/);
     expect(all).toMatch(/Starts and restarts: .*30 seconds.*count ends on the launch second.*go on GO/);
@@ -971,7 +974,7 @@ describe('LESSON-005 Reference pages', () => {
     const by = (rule: string) => PENALTY_ROWS.find(r => r.rule === rule)!;
     expect(by('V.E.1.a').seconds).toBe(1); expect(by('V.E.1.b').seconds).toBe(120); expect(by('V.E.1.c').seconds).toBe(300); expect(by('V.E.2.a, V.C.2.b').seconds).toBe(180); expect(by('V.E.3.a').seconds).toBe(30);
     expect(by('V.E.3.e').penalty).toBe('DNF');
-    for (const r of PENALTY_ROWS) expect(r.rule).toMatch(/^V\.E\.\d/);
+    for (const r of PENALTY_ROWS) expect(r.rule).toMatch(/^(V\.E\.\d|II\.H\.1\.i|V\.F\.1)/);
   });
   it('LESSON-005 the age factor table is the printed V.D table: 0.845 for 1939, 0.915 for 1953, 1.000 from 1954, 0.800 for 1930, 0.500 for 1900', () => {
     const f = (y: string) => AGE_FACTOR_ROWS.find(r => r.year === y)!.factor;
@@ -1002,11 +1005,11 @@ describe('LESSON-007 lessons and reference follow the documents (REG V.H.1, V.H.
     hasAll(lessonText(lesson('four-s')), ['by the method printed in the day\'s instructions', 'a web page, a phone call, or at the Observation Checkpoint', 'within 15 minutes', 'Within 15m00s', 'cellular telephone']);
     const v3 = TA_STEPS.find(r => r.rule === 'V.H.3')!.text; hasAll(v3, ['method printed in the day', 'web page, phone, or at the Observation Checkpoint', 'Within 15m00s', 'cellular telephone']); expect(v3).not.toContain('(the yellow box)');
   });
-  it('LESSON-007 the GRIID lesson puts both watch faces in Column C and says a plain interval is not automatically an exact transit (only "take exactly" is); the transits lesson and the Column C reference agree', () => {
-    const g = lessonText(lesson('griid-cameo')); hasAll(g, ['restart watch-face icon', 'crossed-out watch', 'HB p.27', 'Example #17', 'not automatically an exact transit', 'take exactly', 'Example #30']);
-    expect(g).not.toContain('end of the timed portion (crossed-out clock)'); expect(lesson('griid-cameo').check.explain).toContain('does not make a transit exact'); expect(lesson('griid-cameo').check.explain).not.toMatch(/exact transit prints its interval without parentheses/);
-    hasAll(lessonText(lesson('transits')), ['Only "take exactly" makes a transit exact', '26m00s']);
-    expect(COLUMN_C_ROWS.map(r => r.shows)).toEqual(expect.arrayContaining(['(0m30s)', '26m00s'])); expect(COLUMN_C_ROWS.find(r => r.shows === '26m00s')!.means).toContain('not automatically');
+  it('LESSON-007 EDU-008 the GRIID lesson puts both watch faces in Column C; a plain interval is official (only parentheses make it advisory) and "take exactly" (2026 Example #31) makes you leave on IN + interval; the transits lesson and the Column C reference agree', () => {
+    const g = lessonText(lesson('griid-cameo')); hasAll(g, ['restart watch-face icon', 'crossed-out watch', 'HB p.27', 'Example #17', 'without parentheses is official', 'take exactly', '2026 Example Rally #31', 'the 2014 handbook numbers it #30', 'V.B.2.c']);
+    expect(g).not.toContain('end of the timed portion (crossed-out clock)'); expect(g).not.toContain('not automatically an exact transit'); expect(lesson('griid-cameo').check.explain).toContain('without parentheses the interval is official'); expect(lesson('griid-cameo').check.explain).not.toMatch(/exact transit prints its interval without parentheses/);
+    hasAll(lessonText(lesson('transits')), ['An interval without parentheses is official', '"take exactly" in Column D (2026 Example Rally #31)', '30m00s (#35)']);
+    expect(COLUMN_C_ROWS.map(r => r.shows)).toEqual(expect.arrayContaining(['(0m30s)', '26m00s'])); expect(COLUMN_C_ROWS.find(r => r.shows === '26m00s')!.means).toContain('is official'); expect(COLUMN_C_ROWS.find(r => r.shows === '26m00s')!.means).not.toContain('not automatically');
   });
   it('LESSON-007 the T / Y / bear / acute / jog definitions and the "call turns 500-600 ft out" habit are labelled simulator convention, not the documents', () => {
     hasAll(lessonText(lesson('griid-cameo')), ['Simulator convention, not in the documents']);
@@ -1058,8 +1061,8 @@ describe('UI-033 Settings: handbook defaults (digital stopwatch, analog clock), 
 });
 
 describe('LESSON-006 Which timer, when', () => {
-  it('LESSON-006 sits right after the Four S\'s and states the clock / stopwatch split with the two never-do rules', () => {
-    const i = LESSONS.findIndex(l => l.id === 'which-timer'); expect(i).toBeGreaterThan(0); expect(LESSONS[i - 1]!.id).toBe('four-s');
+  it('LESSON-006 EDU-005 sits right after transits and restarts (start on time) and states the clock / stopwatch split with the two never-do rules', () => {
+    const i = LESSONS.findIndex(l => l.id === 'which-timer'); expect(i).toBeGreaterThan(0); expect(LESSONS[i - 1]!.id).toBe('transits');
     const l = lesson('which-timer'); const t = lessonText(l); checkOk(l); expect(l.title).toBe('Which timer, when');
     hasAll(t, ['HB p.5', 'WWV', 'Restart time = base + ASP', 'exact transit', 'TA window (15 min)', 'lap at every calibration point', 'asterisk', 'wheels stop', '10 % make-up count', 'never read time of day off a running chrono', 'never time an interval off the clock']);
     // LESSON-006 (V3): the director's clock method
@@ -1392,7 +1395,7 @@ const LABEL = /\((video, not in the documents|in the documents: [^)]+(?:\([^)]*\
 describe('LESSON-008 What the rally school adds', () => {
   const l = lesson('rally-school');
   it('LESSON-008 exists after the other lessons, cites the research files and has a check question', () => {
-    expect(l.title).toBe('What the rally school adds'); checkOk(l); expect(LESSONS[0]!.id).toBe('ghost-car');
+    expect(l.title).toBe('What the rally school adds'); checkOk(l); expect(LESSONS[0]!.id).toBe('four-s'); expect(LESSONS[LESSONS.length - 1]!.id).toBe('rally-school');
     expect(l.source).toMatch(/10a-training-sessions/); expect(l.source).toMatch(/10b-rally-school/); expect(l.source).toMatch(/10c-short-videos/);
     expect(l.check.options[l.check.answer]).toMatch(/9:31:57/);
   });
@@ -1431,7 +1434,7 @@ describe('LESSON-002 LESSON-003 LESSON-004 LESSON-006 and the recovery and calib
     const l = lesson('protocol'); const t = lessonText(l);
     hasAll(t, ['ICE: identify, confirm, execute', 'I see it too', '"Mark."', 'holding 35', 'rock-back', 'keep counting', '0, 1, 2', 'coming in at 20, out 35, holding for nine', '9, 8, 7, 6', 'Rally School Part 2 [15:45]', '2026 Training Session [121:20]', 'video, not in the documents']);
     const card = l.body.find((b): b is Extract<LessonBlock, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
-    expect(card.card.lines).toHaveLength(9); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);
+    expect(card.card.lines).toHaveLength(12); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);
   });
   it('LESSON-003 PREREAD-001 adds the Column D checkpoint number and arrival time, the pre-written chart losses and "page n of m" (and keeps the six notations)', () => {
     const l = lesson('markup'); const t = lessonText(l);

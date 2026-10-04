@@ -8,7 +8,7 @@ import type { Drill } from './types.js';
 import { tiers, tierOf, bookStyleFor } from './common.js';
 import { departuresOf, startFeedback } from './departures.js';
 import { gradeCheckpointNotes } from './preread.js';
-import { legErrors, meanAbs, instrumentFindingLines } from './rubrics.js';
+import { legErrors, meanAbs, instrumentFindingLines, headlineTip } from './rubrics.js';
 
 const V = 35; const FPS = V * 1.4666666666666666; const FT = 5280;
 
@@ -31,8 +31,8 @@ export function d16Plan(seed: number, trap = false): { asp: number; start: numbe
 }
 
 export const D16: Drill = {
-  id: 'D16', title: 'Start on the second', objective: 'Your start is the printed time plus your ASP minutes. Leave on that second, take exactly 20 minutes where told (OUT = IN + 20m00s), leave lunch 45 minutes before the restart, and restart on your minute. One wrong minute fails the drill.', skills: ['P9'], minutes: 80, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [],
+  id: 'D16', title: 'Start on the second', objective: 'Your start is the printed time plus your ASP minutes. Leave on that second, take exactly 20 minutes where told (OUT = IN + 20m00s), leave lunch 45 minutes before the restart, and restart on your minute. One wrong minute fails the drill, and a start or restart with no launch lead (leaving on the minute itself, so the car is still accelerating at it) holds it at one star.', skills: ['P9'], minutes: 85, kind: 'drive',
+  tiers: tiers([2, 1, 0]), unlock: [], readFirst: ['transits', 'which-timer'],
   scenario(seed, t) {
     const tier = tierOf(D16, t); const trap = tier.aids.rung <= 1; const p = d16Plan(seed, trap);
     const b = new ScenarioBuilder({ id: `D16-${seed}-${tier.name}`, name: 'Time of day', seed, startTime: p.base, asp: p.asp, timeZone: 'CDT', bookStyle: bookStyleFor(tier.aids), driver: tier.driver, aids: tier.aids, speedo: PERFECT_TIMEWISE, car: FORD_1939, prereadSeconds: 180 }).start(V);
@@ -63,8 +63,11 @@ export const D16: Drill = {
     const clock = r.instrumentDiscipline.filter(f => f.kind.startsWith('clock'));
     const missing = deps.filter(d => d.actual === null).length;
     const base3: 0 | 1 | 2 | 3 = !isFinite(worst) ? 0 : worst <= 1 ? 3 : worst <= 3 ? 2 : worst <= 10 ? 1 : 0;
-    const late = (r.findings ?? []).some(f => f.kind === 'lateLaunch');   // START-001: a departure a few seconds after its launch time loses a star
-    const stars = (base3 === 3 && (clock.length || late) ? 2 : base3) as 0 | 1 | 2 | 3;
+    const lateF = (r.findings ?? []).filter(f => f.kind === 'lateLaunch');
+    const minuteF = (r.findings ?? []).find(f => f.kind === 'oneMinuteMistake');
+    // START-001 / EDU-006: a start or restart left a few seconds after its launch time (no lead for the standing-start loss) is capped at one star,
+    // so the D12 gate (D16 >= 2) means the launch count is learned; a clock finding alone costs the third star
+    const stars = (lateF.length ? Math.min(1, base3) : base3 === 3 && clock.length ? 2 : base3) as 0 | 1 | 2 | 3;
     const wrongMinute = deps.filter(d => d.err > 10);
     const feedback: string[] = [];
     if (wrongMinute.length) feedback.push(`Wrong time: ${wrongMinute.map(d => `${d.kind === 'start' ? 'the start' : d.kind === 'restart' ? 'the restart' : d.kind === 'promoted' ? 'the lunch departure' : 'the exact-transit OUT'} (line ${d.line})`).join(', ')}. Four S's, Start on time: read the minute twice (base + ASP, IN + 20m00s, restart - 45m) and do not pull up to the restart point before your minute.`);
@@ -76,6 +79,15 @@ export const D16: Drill = {
     if (clock.length) feedback.push(...instrumentFindingLines(r.instrumentDiscipline.filter(f => f.kind.startsWith('clock'))), 'Time of day comes from the clock (or the watch in TOD mode), never from a running chrono: three stars need no clock finding.');
     const legs = legErrors(r); if (legs.length) feedback.push(`Leg errors: ${legs.map(e => `${e > 0 ? '+' : ''}${e}`).join(', ')} s (mean ${meanAbs(legs).toFixed(1)} s).`);
     if (missing) feedback.push(`${missing} departure(s) never happened.`);
-    return { score: isFinite(worst) ? Math.round(worst * 10) / 10 : 999, stars, headline: !isFinite(worst) ? 'A departure never happened' : wrongMinute.length ? 'Wrong minute at a start, restart, lunch or transit OUT' : `worst departure ${worst.toFixed(1)} s off the second, ${deps.length} departures${clock.length ? `, ${clock.length} clock finding(s)` : ''}`, feedback };
+    // EDU-001: the headline tip names the departure finding (a wrong minute, a late launch) whenever the stars come from the departures
+    const wm = wrongMinute[0]; const what = (d: { kind: string; line: number }): string => `${d.kind === 'start' ? 'the start' : d.kind === 'restart' ? 'the restart' : d.kind === 'promoted' ? 'the lunch departure' : 'the exact-transit OUT'} (line ${d.line})`;
+    const tip = minuteF ? `Start on time (the second S): ${minuteF.text}`
+      : wm ? `Start on time (the second S): ${what(wm)} left ${wm.actual === null ? 'never' : `${Math.round(wm.err)} s off its second`}. Read the minute twice (base + ASP, IN + 20m00s, restart minus 45m) from the stopwatch's TOD mode and the seconds from the clock, and do not pull up before your minute.`
+        : !isFinite(worst) ? `A departure never happened (${deps.filter(d => d.actual === null).map(what).join(', ')}): at every hold, count down and say GO on the launch second.`
+          : lateF.length ? `${lateF[0]!.text} Give the driver "about 30 seconds", then count down so GO lands on the launch second (your minute minus the car's standing-start loss), not on the minute itself.`
+            : stars < 3 ? (clock.length ? `Every departure was close, but time of day was read off a running chrono: ${clock[0]!.text}.` : `The worst departure was ${worst.toFixed(1)} s off its second: lead the car by the standing-start loss only, and say GO on the launch second.`)
+              : headlineTip(r, sc, { stars });
+    feedback.unshift(tip);
+    return { score: isFinite(worst) ? Math.round(worst * 10) / 10 : 999, stars, tip, headline: !isFinite(worst) ? 'A departure never happened' : wrongMinute.length ? 'Wrong minute at a start, restart, lunch or transit OUT' : `worst departure ${worst.toFixed(1)} s off the second, ${deps.length} departures${clock.length ? `, ${clock.length} clock finding(s)` : ''}`, feedback };
   },
 };

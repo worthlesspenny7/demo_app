@@ -38,6 +38,11 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
     const box = el('div', { class: 'lesson panel' }, el('h3', {}, `Lesson ${idx + 1} of ${LESSONS.length}`), el('h1', {}, lesson.title));
     const body = el('div', { class: 'body' }); for (const b of lesson.body) body.append(renderBlock(b)); box.append(body);
     box.append(el('p', { class: 'cite' }, `Source: ${lesson.source}`));
+    // EDU-005: the drills that read this lesson first, one click away
+    try {
+      const ds = allDrills().filter(d => (d.readFirst ?? []).includes(lesson.id) || (d.lessonGate ?? []).includes(lesson.id));
+      if (ds.length) { const p = el('p', { class: 'muted', id: 'lesson-drills' }, 'Practise it: '); ds.forEach((d, i) => p.append(...(i ? [', '] : []), el('a', { href: d.kind === 'drive' ? `#/cockpit/drill/${d.id}/0/1` : `#/${d.kind}/${d.id}`, 'data-drill-link': d.id }, `${d.id} ${d.title}`), ...((d.lessonGate ?? []).includes(lesson.id) ? [' (this lesson unlocks it)'] : []))); box.append(p); }
+    } catch { /* registry unavailable */ }
     const quiz = el('div', { class: 'quiz' }, el('h3', {}, 'Check'), el('p', {}, lesson.check.question));
     const fb = el('p', { class: 'muted' });
     lesson.check.options.forEach((o, i) => {

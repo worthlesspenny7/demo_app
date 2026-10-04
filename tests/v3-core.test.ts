@@ -581,9 +581,10 @@ describe('CHART-006 the D06 chart tool: runs, outliers, per-driver charts, stop 
       const sm = pairs.find(p => p.kind === 'stopMid')!; const stopIns = sc.book.filter(i => i.turn === 'S' && i.pause === undefined && i.speed === sm.vOut); expect(stopIns.length).toBeGreaterThanOrEqual(1);
     }
     expect(mid).toBe(30); expect(speeds.has(55)).toBe(true); expect(speeds.has(50)).toBe(true); expect([...speeds].every(v => v === 0 || (v >= 20 && v <= 55))).toBe(true);
-    // Bronze copies the printed Packard: a pair at 55 is flagged as extrapolated in the answer lines
-    const bronze = Array.from({ length: 30 }, (_, i) => i + 1).map(sd => d.scenario(sd, 0)).find(sc => chartPairs(sc.tags).some(p => p.vIn === 55 || p.vOut === 55))!;
-    const rb = d.rubric(runBot(new Simulator(bronze), null), bronze); expect(rb.feedback.join(' ')).toMatch(/extrapolated: the handbook prints 15-50/); expect(rb.feedback.join(' ')).toMatch(/simple chart is enough/i); expect(rb.headline).toMatch(/stop in the middle 0\/1/);
+    // EDU-009: Bronze copies the printed Packard, so no Bronze pair leaves its printed 15-50 mph; Silver and Gold still measure 55
+    const bronzes = Array.from({ length: 30 }, (_, i) => i + 1).map(sd => d.scenario(sd, 0)); for (const sc of bronzes) expect(chartPairs(sc.tags).every(p => p.vIn <= 50 && p.vOut <= 50)).toBe(true);
+    const bronze = bronzes[0]!;
+    const rb = d.rubric(runBot(new Simulator(bronze), null), bronze); expect(rb.feedback.join(' ')).toMatch(/simple chart is enough/i); expect(rb.headline).toMatch(/stop in the middle 0\/1/);
     // the stop-in-the-middle truth is the zero-dwell stop loss
     const f = FORD_1939; expect(stopLoss(35, 35, f)).toBeCloseTo(15 - buildPerfTable(f).stopGo.rows[35]![35]!, 0);
   });

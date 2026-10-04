@@ -42,8 +42,8 @@ export function committeeView(r: StageResult, sc: Scenario): LegDelay[] {
 }
 
 export const D08b: Drill = {
-  id: 'D08b', title: 'Time Allowance: the train', objective: 'Gates down. Time the train, keep the ledger, make up the red light yourself (V.H.1 names a train blockage and an accident, not lights), and at the printed TA point file one request for the leg that was blocked: instruction numbers, a multiple of 10 s, never more than the delay you could not make up. A tractor is not a Time Allowance and a wrong turn never is.', skills: ['P6'], minutes: 9, kind: 'drive',
-  tiers: tiers(), unlock: [],
+  id: 'D08b', title: 'Time Allowance: the train', objective: 'Gates down. Time the train, keep the ledger, make up the red light yourself (V.H.1 names a train blockage and an accident, not lights), and at the printed TA point file one request for the leg that was blocked: instruction numbers, a multiple of 10 s, never more than the delay you could not make up. The slow truck on leg 2 can be passed after a few hundred feet, so its seconds are yours to make up; a tractor or combine that holds you with no safe place to pass does qualify (REG V.H.5 uses a farm tractor as its own example), less what you could make up. A wrong turn never qualifies.', skills: ['P6'], minutes: 23, kind: 'drive',
+  tiers: tiers(), unlock: [], readFirst: ['four-s', 'recovery'],
   scenario(seed, t) {
     const tier = tierOf(D08b, t); const r = rng(seed * 31 + 8); const b = base('D08b', 'Time allowance', seed, tier).start(35);
     // leg 1: two stops with printed pauses, a red light, a railroad crossing with a train (60-120 s), then a short run to the checkpoint
@@ -55,7 +55,8 @@ export const D08b: Drill = {
     const g1 = buildGhost(b.build()); const arrival = ghostTimeAt(g1, b.position);
     b.hazard({ kind: 'train', startTod: arrival - 35, durationSeconds: r.int(75, 120) }); // gates are already down when the car arrives, even a few seconds early
     b.advanceMiles(0.35).checkpoint();
-    // leg 2: a farm tractor holds the car up; it does not qualify, so make it up
+    // leg 2: a slow truck that can be passed after 900 ft: a delay you can pass or recover from is not creditable (REG V.H.5: the committee denies time
+    // you could have made up), so make it up. A tractor or combine that holds you with no safe pass would qualify (REG V.H.5's example; 10b P2 [05:43])
     b.advanceMiles(0.5).speedAtSign('SPEED LIMIT 35', 35);
     b.advanceMiles(0.3); b.hazard({ kind: 'slow', speedMph: 18, lengthFt: 1700, passWindowAfterFt: 900 });
     b.advanceMiles(1.6).checkpoint();
@@ -67,7 +68,7 @@ export const D08b: Drill = {
     b.advanceMiles(0.3).endTimedPortion({ endOfStage: true, transit: { exact: false, seconds: 600, miles: 2.5 } });
     b.advanceMiles(2.5);
     const sc = b.observationFinish().build();
-    sc.tags = [...(sc.tags ?? []), 'ta:navLeg:3', 'ta:trainLeg:1', 'ta:tractorLeg:2'];
+    sc.tags = [...(sc.tags ?? []), 'ta:navLeg:3', 'ta:trainLeg:1', 'ta:slowTruckLeg:2'];
     return sc;
   },
   rubric(r, sc) {
@@ -80,11 +81,13 @@ export const D08b: Drill = {
     const feedback: string[] = [];
     if (navFiled.length) {
       feedback.push(`You filed for leg ${navFiled.join(', ')}, where the delay was a wrong turn. ${NAV_ERROR_QUOTE}`);
-      return { score: 0, stars: 0, headline: `Request filed for a navigation error (leg ${navFiled.join(', ')}): 0 stars`, feedback: [...feedback, headlineTip(r, sc)] };
+      const tip = `You filed a Time Allowance for leg ${navFiled.join(', ')}, where the delay was a wrong turn: a navigation error is never creditable (REG V.H.1; HB p.13). Stay on course and take the time penalty.`;
+      return { score: 0, stars: 0, tip, headline: `Request filed for a navigation error (leg ${navFiled.join(', ')}): 0 stars`, feedback: [tip, ...feedback, headlineTip(r, sc, { stars: 0 })] };
     }
     if (!filed.length) {
       const owed = view.filter(v => v.possible >= 10).map(v => `leg ${v.leg} (about ${formatInterval(Math.floor(v.possible / 10) * 10)})`);
-      return { score: 0, stars: 0, headline: view.some(v => v.measured > 0) ? 'No Time Allowance request was filed' : 'No qualifying delay and no request: the gates were open when you arrived', feedback: [owed.length ? `Time you could have claimed at the TA point: ${owed.join(', ')}. File within 15 minutes of the yellow box: leg number, instruction numbers, an amount in multiples of 10 s ("Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.").` : 'You reached the crossing before the train (running early?): there was no delay to claim, and the drill needs the delay. Hold your pauses and the clock; then file at the TA point.', headlineTip(r, sc)] };
+      const tip = view.some(v => v.measured > 0) ? `No Time Allowance request was filed${owed.length ? `; you were owed ${owed.join(', ')}` : ''}: time the train on the stopwatch, write it in the ledger, and at the yellow TA point file the leg, the instruction numbers and the delay less what you made up, in multiples of 10 s.` : 'There was no qualifying delay to claim (you reached the crossing before the train): hold your pauses and the clock, then file at the TA point.';
+      return { score: 0, stars: 0, tip, headline: view.some(v => v.measured > 0) ? 'No Time Allowance request was filed' : 'No qualifying delay and no request: the gates were open when you arrived', feedback: [tip, owed.length ? `Time you could have claimed at the TA point: ${owed.join(', ')}. File within 15 minutes of the yellow box: leg number, instruction numbers, an amount in multiples of 10 s ("Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.").` : 'You reached the crossing before the train (running early?): there was no delay to claim, and the drill needs the delay. Hold your pauses and the clock; then file at the TA point.', headlineTip(r, sc)] };
     }
     let worst = 0;
     for (const v of view.concat(Array.from(lastByLeg.keys()).filter(l => !view.some(x => x.leg === l)).map(l => ({ leg: l, measured: 0, recoverable: 0, possible: 0 })))) {
@@ -95,7 +98,9 @@ export const D08b: Drill = {
     const stars: 0 | 1 | 2 | 3 = worst <= 10 && acked ? 3 : worst <= 30 ? 2 : 1;
     if (!acked) feedback.push('At the end-of-stage TA point acknowledge the scorecard, whether or not you filed anything (Example Rally #36).');
     if (worst > 10) feedback.push('Request what the delay was less what you made up, never more; the same seconds are never both a Time Allowance and made-up time.');
-    feedback.push(headlineTip(r, sc));
-    return { score: Math.round(worst), stars, headline: `${filed.length} request(s) filed, worst miss against the committee credit ${Math.round(worst)} s${acked ? ', scorecard acknowledged' : ', scorecard not acknowledged'}`, feedback };
+    // EDU-003: a request the committee covers is not a recovery shortfall; the tip names the request or the acknowledgement when they cost the stars
+    const tip = stars === 3 ? headlineTip(r, sc, { stars }) : !acked && worst <= 10 ? 'At the end-of-stage TA point acknowledge the scorecard, whether or not you filed anything (Example Rally #36).' : `Your request missed what the committee could credit by ${Math.round(worst)} s: request the delay (stopped time plus the chart stop-and-go loss) less what you could make up before the checkpoint, rounded to 10 s, never more.`;
+    feedback.unshift(tip); if (stars < 3) feedback.push(headlineTip(r, sc, { stars }));
+    return { score: Math.round(worst), stars, tip, headline: `${filed.length} request(s) filed, worst miss against the committee credit ${Math.round(worst)} s${acked ? ', scorecard acknowledged' : ', scorecard not acknowledged'}`, feedback };
   },
 };

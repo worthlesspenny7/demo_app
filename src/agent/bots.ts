@@ -70,7 +70,11 @@ export class OracleBot implements Bot {
   private calSeen = new Set<number>();
   /** Calibration factor measured on the morning run (true = k x indicated, CAL-001); applied to every held speed on a stock speedometer. */
   private k: number | null = null;
-  constructor(private readonly sim: Simulator, private readonly o: OracleOptions = {}) {
+  private readonly o: OracleOptions;
+  constructor(private readonly sim: Simulator, opts: OracleOptions = {}) {
+    // EDU-011: the rookie (ignoreLosses) keeps the stopwatch busy like any navigator unless told not to, so a naive tip carries no bot-artifact
+    // "no stopwatch start or lap" clause: what it ignores is the car's losses, not the watch
+    const o = this.o = opts.ignoreLosses && opts.useWatch === undefined ? { ...opts, useWatch: true } : opts;
     this.plans = planBook(sim.sc);
     this.holdPlans = this.plans.filter(p => isHoldIns(p.ins) || (p.ins.transit?.exact === true && !p.ins.transit.end));
     this.calPlans = this.plans.filter(p => p.ins.section === 'calibration');
@@ -155,6 +159,8 @@ export class OracleBot implements Bot {
       return;
     }
     if (sim.phase !== 'running') return;
+    // a drill whose start the simulator launches itself (startProcedure 'drill'): start the stopwatch on the first running tick
+    if (!this.departed) { this.departed = true; if (this.o.useWatch) sim.act({ type: 'watch.start' }); }
     const s = car.s;
     this.calibrate();
     for (const p of this.plans) {
@@ -185,6 +191,7 @@ export class OracleBot implements Bot {
       // timed segment anchor: arm when crossing
       if (p.ins.timed && !p.speedCalled && d <= 0) {
         p.speedCalled = true;
+        if (this.o.useWatch && !isStop) sim.act({ type: 'watch.lap' });   // the count of a timed segment starts on the stopwatch at the sign (WATCH-009)
         if (!isStop) this.act({ type: 'call.speed', mph: this.ind(p.ins.timed.holdSpeed) });
         this.timedPending = { plan: p, thenSpeed: p.ins.timed.thenSpeed, called: false };
       }
@@ -210,7 +217,7 @@ export class OracleBot implements Bot {
           const cap = turnAng >= 20 ? (turnAng > 120 ? sc.car.turnSpeedMph.acute : turnAng >= 60 ? sc.car.turnSpeedMph.turn : sc.car.turnSpeedMph.bear) : undefined;
           const loss = this.o.ignoreLosses ? 0 : stopLoss(p.vIn || p.vOut, p.vOut, sc.car, cap);
           const dwell = this.o.forgetPauses ? 0 : Math.max(0, pause - loss);
-          if (sim.tod - this.stopWaitSince >= dwell) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); }
+          if (sim.tod - this.stopWaitSince >= dwell) { p.stopHandled = true; this.stopWaitSince = null; this.act({ type: 'call.go' }); if (this.o.useWatch && p.ins.timed) sim.act({ type: 'watch.lap' }); }
         }
       }
     }

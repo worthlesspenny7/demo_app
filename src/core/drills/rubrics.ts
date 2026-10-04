@@ -68,12 +68,21 @@ export function instrumentFindingSentence(findings: InstrumentFinding[]): string
   return ` Instrument discipline (WATCH-009): ${t.count} x ${FINDING_NAME[t.kind]}; ${FINDING_SHORT[t.kind]}.`;
 }
 
+/** EDU-001..003: what the headline knows about the run's stars. `stars` < 3 never yields "Clean run"; 3 never yields the "recover more" lecture. */
+export interface TipOptions { stars?: number }
+
+/** Total Time Allowance credit the committee granted over all legs. */
+export function taCreditTotal(r: StageResult): number { return (r.score?.legs ?? []).reduce((a, l) => a + (l.taCredit ?? 0), 0); }
+
 /** Largest-bucket headline tip (DEBRIEF-001 at engine level). */
-export function headlineTip(r: StageResult, sc?: Scenario): string {
+export function headlineTip(r: StageResult, sc?: Scenario, opts: TipOptions = {}): string {
   const totals: Record<string, number> = {};
   for (const a of r.attribution) for (const [k, v] of Object.entries(a.buckets)) totals[k] = (totals[k] ?? 0) + v;
   const errs = legErrors(r); const mean = meanAbs(errs);
   const inst = instrumentFindingSentence(r.instrumentDiscipline ?? []);
+  // EDU-001: a misread minute (60 s at the next checkpoint) heads the tip whatever the leg error says (Start on time, the second S)
+  const minute = (r.findings ?? []).find(f => f.kind === 'oneMinuteMistake');
+  if (minute) return `Start on time (the second S): ${minute.text}${inst}`;
   // PLAY-006: "Clean run" only with no penalty item (observation miss, early departure, DNF) and no start / minute / timed-interval finding
   const penalties = !!r.observationMissed || (r.score.earlyDeparturePenalty ?? 0) > 0 || !!r.score.dnf || (r.findings ?? []).length > 0;
   if (penalties && mean <= 3 && r.offCourseCount === 0) {
@@ -82,13 +91,29 @@ export function headlineTip(r: StageResult, sc?: Scenario): string {
     if (r.observationMissed) return `Leg times are clean, but the Observation Checkpoint was missed (+${r.score.observationPenalty} s): stop at the red GREAT RACE STOP board.${inst}`;
     if (f) return `Leg times are clean, but: ${f.text}${inst}`;
   }
-  if (mean <= 3 && r.offCourseCount === 0 && !penalties) return `Clean run: the remaining seconds are speed-holding noise, and consistency is what wins over nine days.${inst}`;
+  // EDU-002: under three stars the verdict is never "Clean run"; the largest cause below is named instead
+  const underThree = opts.stars !== undefined && opts.stars < 3;
+  if (mean <= 3 && r.offCourseCount === 0 && !penalties && !underThree) return `Clean run: the remaining seconds are speed-holding noise, and consistency is what wins over nine days.${inst}`;
+  // EDU-003: a wrong turn gets the stay-on-course and lost doctrine, never the 10 % lecture
+  if (r.offCourseCount > 0) return `${tipFor('offCourse', true, sc, r.events)}${inst}`;
   const net = Object.values(totals).reduce((a, b) => a + b, 0);
   // the largest cause with the same sign as the net error (a negative cruise bucket against positive stops is recovery, not a fault)
-  const sameSign = Object.entries(totals).filter(([, v]) => Math.sign(v) === Math.sign(net) && Math.abs(v) >= 1.5).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-  const [k, v] = sameSign[0] ?? Object.entries(totals).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0] ?? ['cruise', 0];
+  const sameSign = Object.entries(totals).filter(([k, v]) => k !== 'ta' && Math.sign(v) === Math.sign(net) && Math.abs(v) >= 1.5).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const [k, v] = sameSign[0] ?? Object.entries(totals).filter(([k]) => k !== 'ta').sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0] ?? ['cruise', 0];
   const recovered = -Math.min(0, totals.cruise ?? 0);
-  if (k !== 'cruise' && recovered > 3 && net > 0) return `You lost ${Math.round(v)} s in ${k === 'stop' ? 'stops' : k} and recovered ${Math.round(recovered)} s in cruise; recover a little more, or earlier, next time (10 % rule: 10 % faster for 10 x the seconds lost).${inst}`;
+  const credit = taCreditTotal(r);
+  const name = k === 'stop' ? 'stops' : k;
+  // EDU-003: a Time Allowance that covers the delay is the procedure working, not a recovery shortfall
+  if (credit > 0 && k === 'hazard') {
+    const left = Math.round(v - recovered - credit);
+    const what = `Delayed ${Math.round(v)} s by hazards: you made up ${Math.round(recovered)} s and the committee credited ${Math.round(credit)} s at the TA point`;
+    if (opts.stars === 3) return `Clean run: three stars. ${what}.${inst}`;
+    return `${what}${left > 3 ? `; the ${left} s still owed are made up with the 10 % rule before the checkpoint` : ': the credit covers what was left, which is the Time Allowance working as intended'}.${inst}`;
+  }
+  if (k !== 'cruise' && recovered > 3 && net > 0) {
+    if (opts.stars === 3) return `Clean run: three stars. You lost ${Math.round(v)} s in ${name} and made up ${Math.round(recovered)} s in cruise; what is left is inside this drill's tolerance.${inst}`;
+    return `You lost ${Math.round(v)} s in ${name} and recovered ${Math.round(recovered)} s in cruise; recover a little more, or earlier, next time (10 % rule: 10 % faster for 10 x the seconds lost).${inst}`;
+  }
   const late = v > 0;
   return `${tipFor(k, late, sc, r.events)}${inst}`;
 }
@@ -96,12 +121,12 @@ export function headlineTip(r: StageResult, sc?: Scenario): string {
 function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[]): string {
   switch (k) {
     case 'stop': return late ? 'Your stops cost more than the printed pause, so go earlier: dwell = the chart pause time for your IN/OUT pair (the printed pause minus the stop/start loss), written next to every pause.' : 'You left stops too early and are not using the whole pause: dwell = the chart pause time, no less.';
-    case 'start': return late ? 'You left the start late: leave early by the standstill acceleration loss (the 0 > speed cell of the acceleration chart, about 4-5 s for the Ford).' : 'You left the start too early: lead by the acceleration loss only (about 4-5 s), not more.';
+    case 'start': return late ? 'You left the start late: leave early by the standstill acceleration loss (the 0 > speed cell of your acceleration chart; about 4-5 s for the simulator\'s Ford, a simulator default: measure your car).' : 'You left the start too early: lead by the acceleration loss only (about 4-5 s for the simulator\'s Ford), not more.';
     case 'speedChange': return 'Landmark speed changes are mistimed: split at the sign, crossing it at the midpoint speed, which means beginning the change half a ramp early.';
     case 'timedChange': return "Timed changes are off: count from the ghost's departure (arrival + pause) and split the change at the sign by calling it half a ramp early.";
     case 'hazard': return 'Lights, trains or traffic cost you: time every delay on the stopwatch, then make it up with the 10 % rule (10 % faster for 10 x the seconds lost, 4 s lost at 35 -> 38.5 mph for 40 s) or, for a train or accident, file a Time Allowance at the TA point, never both.';
-    case 'offCourse': return "A wrong turn cost the leg: stay on course first (the third of the Four S's), confirm the landmark before the leading edge of the intersection, and never ask for a Time Allowance for a wrong turn.";
-    case 'turn': return 'Turns cost time the ghost does not spend: write the turn chart loss on your card (approach 40, exit 35 = 4 s) and recover it with the 10 % rule right after the turn.';
+    case 'offCourse': return "A wrong turn cost the leg: stay on course first (the third of the Four S's) and confirm the landmark before the leading edge of the intersection. Once you know you are lost: turn around where it is safe, start the stopwatch at the turn-around and double it for the lost time, rejoin 30 s behind a car known to be on course, and never ask for a Time Allowance for a wrong turn.";
+    case 'turn': return 'Turns cost time the ghost does not spend: write the turn chart loss on your card (the handbook\'s Packard: approach 40, exit 35 = 4.0 s) and recover it with the 10 % rule right after the turn.';
     case 'cruise': {
       if (sc && events && uncalledSpeeds(events, sc).length) { const m = uncalledSpeeds(events, sc); return `Cruise ran ${late ? 'slow' : 'fast'} because ${m.length === 1 ? `${m[0]!.mph} at line ${m[0]!.line} was` : `${m.length} new speeds (first ${m[0]!.mph} at line ${m[0]!.line}) were`} never called: the driver keeps the old speed until you call the new one, and after every stop he needs the out speed again.`; }
       const speedoTrue = sc ? sc.speedo.kind === 'timewise' && Math.abs(sc.speedo.gain - 1) < 0.003 && Math.abs(sc.speedo.offset) < 0.1 : false;
@@ -119,13 +144,28 @@ export function basicRubric(r: StageResult, thresholds: [number, number, number]
   const k = driverScale(driverSkill); thresholds = [thresholds[0] * k, thresholds[1] * k, thresholds[2] * k];
   const errs = legErrors(r); const mean = meanAbs(errs);
   const stars = r.offCourseCount > 0 ? Math.min(1, starsFromMeanAbs(mean, thresholds)) as 0 | 1 : starsFromMeanAbs(mean, thresholds);
-  const feedback = [headlineTip(r, sc), ...extra];
+  const tip = headlineTip(r, sc, { stars });
+  const feedback = [tip, ...extra];
   const top = topFinding(r.instrumentDiscipline ?? []); // the tip already names the most frequent kind; list the others here
   if (top) feedback.push(...instrumentFindingLines((r.instrumentDiscipline ?? []).filter(f => f.kind !== top.kind)));
   if (r.offCourseCount) feedback.push(`Off course ${r.offCourseCount} time(s): a wrong turn costs far more than a timing error.`);
   if (r.observationMissed) feedback.push('You did not stop at the Observation Checkpoint: call stop before the finish banner.');
   if (r.score.aces) feedback.push(`${r.score.aces} ACE${r.score.aces > 1 ? 's' : ''}!`);
-  return { score: Math.round(mean * 10) / 10, stars, feedback, headline: `${r.score.raw} s raw (${r.score.benchmark}), ${r.score.aces} ace(s)` };
+  return { score: Math.round(mean * 10) / 10, stars, feedback, tip, headline: `${r.score.raw} s raw (${r.score.benchmark}), ${r.score.aces} ace(s)` };
+}
+
+/**
+ * EDU-002: a rubric whose stars were lowered by its own skill check (call timing, chart cells, reads) names that skill as the tip, in place of
+ * the leg-error verdict (which moves down the list unless it was a "Clean run"). With `stars` already final, the leg-error tip is recomputed so it
+ * is never "Clean run" under three stars.
+ */
+export function withSkillTip(rb: Rubric, r: StageResult, sc: Scenario, skillTip: string | null): Rubric {
+  const legTip = headlineTip(r, sc, { stars: rb.stars });
+  const oldTip = rb.tip ?? rb.feedback[0];
+  const rest = rb.feedback.filter(f => f !== oldTip);
+  if (skillTip) { rb.tip = skillTip; rb.feedback = [skillTip, ...(legTip.startsWith('Clean run') ? [] : [legTip]), ...rest]; }
+  else { rb.tip = legTip; rb.feedback = [legTip, ...rest]; }
+  return rb;
 }
 
 /**

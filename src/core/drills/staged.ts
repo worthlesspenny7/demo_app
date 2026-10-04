@@ -11,12 +11,13 @@ export function campaignAsp(stage: number): number { return aspForSeed(stage, 13
 
 // ---------- D18: one timed portion only (start at base + ASP, End timed portion, no Time Allowance point) ----------
 export const D18: Drill = {
-  id: 'D18', title: 'Miniature leg: everything once', objective: 'One timed portion, left at base + ASP: one stop with a printed pause, one timed segment, one landmark speed change, one trap, one hazard (a light or a slow truck: there is no TA point in this drill, so make the time up), one hidden checkpoint, then End timed portion. About five minutes.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8'], minutes: 6, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D03', stars: 2 }, { drill: 'D04', stars: 2 }, { drill: 'D05', stars: 2 }, { drill: 'D08', stars: 2 }, { drill: 'D10', stars: 2 }],
+  id: 'D18', title: 'Miniature leg: everything once', objective: 'One timed portion, left at base + ASP: one stop with a printed pause, one timed segment, one landmark speed change, one trap, one hazard (a light or a slow truck: there is no TA point in this drill, so make the time up), one hidden checkpoint, then a recovery straight to the checkpoint and End timed portion. About nine minutes at 1x.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8'], minutes: 9, kind: 'drive',
+  // EDU-005: D16 (start on time) is graded here too (the start is base + ASP), so it is a gate
+  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D03', stars: 2 }, { drill: 'D04', stars: 2 }, { drill: 'D05', stars: 2 }, { drill: 'D08', stars: 2 }, { drill: 'D10', stars: 2 }, { drill: 'D16', stars: 1 }], readFirst: ['protocol', 'recovery'],
   scenario(seed, t) {
     const tier = tierOf(D18, t); const r = rng(seed); const asp = aspForSeed(seed, 18);
     const b = base('D18', 'Miniature leg', seed, tier, { trafficWaitProbability: 0.2, asp }).start(r.pick([30, 35]));
-    const order = r.pick([[4, 0, 1, 2, 3], [1, 4, 0, 3, 2], [4, 2, 3, 0, 1], [3, 4, 2, 1, 0]]);
+    const order = r.pick([[4, 0, 1, 2, 3], [4, 1, 0, 3, 2], [4, 2, 3, 0, 1], [4, 3, 2, 1, 0]]);   // EDU-006: the hazard comes first, so the whole leg is there to make it up
     for (const k of order) {
       b.advanceMiles(0.3 + r.next() * 0.3);
       if (k === 0) b.stop(r.pick(['L', 'R', 'S']), r.pick([30, 35, 40]));
@@ -25,14 +26,15 @@ export const D18: Drill = {
       else if (k === 3) { b.node({ exits: EXITS.sideRoad('R', { kind: 'driveway' }), sightDistance: 400, label: 'driveway' }); b.advanceFt(450); b.instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 600 }, { turn: 'R', speed: 35, hint: '1st paved road' }); }
       else { if (r.chance(0.5)) { b.instruction({ control: 'SIGNAL', exits: EXITS.crossroads('S'), sightDistance: 800 }, { turn: 'S', speed: 35 }); b.hazard({ kind: 'signal', redSeconds: 15 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 55) }); } else { b.hazard({ kind: 'slow', speedMph: 28, lengthFt: 1500, passWindowAfterFt: 900 }); b.advanceMiles(0.4); } }
     }
-    b.advanceMiles(0.25 + r.next() * 0.3).checkpoint().advanceFt(300);
+    // EDU-006: a recovery straight before the checkpoint, so the losses of the leg (a light, a stop, a turn) can be made up with the 10 % rule (D18 residual loss)
+    b.advanceMiles(1.3 + r.next() * 0.3).checkpoint().advanceFt(300);
     // the timed portion ends with "End timed portion"; this drill prints no TA point (D11 adds it)
     b.instruction({ sign: { text: 'END TIMED', shape: 'rect', side: 'R' }, sightDistance: 500 }, { endTimed: true });
     const sc = b.advanceMiles(0.25).finish().build();
     sc.tags = [...(sc.tags ?? []), 'd18', `asp:${asp}`, 'timed-portion:1'];
     return sc;
   },
-  rubric(r, sc) { return basicRubric(r, [3, 6, 12], ['Left at base + ASP, one timed portion, End timed portion: the shape of every stage in miniature. No TA point here, so a light or a truck is made up with the 10 % rule.'], sc.driver.skill, sc); },
+  rubric(r, sc) { return basicRubric(r, [4, 8, 14], ['Left at base + ASP, one timed portion, End timed portion: the shape of every stage in miniature. No TA point here, so a light or a truck is made up with the 10 % rule.'], sc.driver.skill, sc); },
 };
 
 // ---------- generator-backed drills ----------
@@ -44,8 +46,8 @@ function genOr(profileKey: string, overrides: Record<string, unknown>, fallback:
 
 // ---------- D11: one timed portion with its TA point and an advisory transit in ----------
 export const D11: Drill = {
-  id: 'D11', title: 'Full leg', objective: 'A real timed portion: an advisory transit in, the restart at base + ASP, 25-40 instructions, one hidden checkpoint, End timed portion and its TA point. Great Race legal aids. Stay on course, stay on time, file what you are owed.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8', 'P10'], minutes: 15, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D18', stars: 1 }, { drill: 'D07', stars: 2 }],
+  id: 'D11', title: 'Full leg', objective: 'A real timed portion: an advisory transit in, the restart at base + ASP, 25-40 instructions, one hidden checkpoint, End timed portion and its TA point. Great Race legal aids. Stay on course, stay on time, file what you are owed.', skills: ['P1', 'P2', 'P3', 'P4', 'P6', 'P7', 'P8', 'P10'], minutes: 55, kind: 'drive',
+  tiers: tiers([2, 1, 0]), unlock: [{ drill: 'D18', stars: 1 }, { drill: 'D07', stars: 2 }], readFirst: ['markup', 'four-s'],
   scenario(seed, t) {
     const tier = tierOf(D11, t);
     const sc = genOr('fullLeg', { transitIn: true, asp: aspForSeed(seed, 11), bookStyle: bookStyleFor(tier.aids), aids: tier.aids, driver: tier.driver }, () => { const s = D18.scenario(seed, t); s.name = 'Full leg (fallback)'; return s; }, seed);
@@ -64,14 +66,15 @@ let D07fallback: (seed: number) => Scenario = () => { throw new Error('generator
 export function setDayFallback(f: (seed: number) => Scenario): void { D07fallback = f; }
 
 export const D12: Drill = {
-  id: 'D12', title: 'Full stage', objective: 'The whole day: tire warm-up, calibration run, transit, restart at base + ASP, timed portions with hidden checkpoints and free zones, End timed portion and TA points, lunch transit, restart, transit to the Observation Checkpoint. 150-250 instructions.', skills: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P11'], minutes: 150, kind: 'drive',
-  tiers: legalTiers(), unlock: [{ drill: 'D11', stars: 1 }, { drill: 'D15', stars: 1 }, { drill: 'D16', stars: 1 }],
+  id: 'D12', title: 'Full stage', objective: 'The whole day: tire warm-up, calibration run, transit, restart at base + ASP, timed portions with hidden checkpoints and free zones, End timed portion and TA points, lunch transit, restart, transit to the Observation Checkpoint. 150-250 instructions.', skills: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P11'], minutes: 320, kind: 'drive',
+  // EDU-006: D16 >= 2 stars (a launch with no lead caps D16 at 1)
+  tiers: legalTiers(), unlock: [{ drill: 'D11', stars: 1 }, { drill: 'D15', stars: 1 }, { drill: 'D16', stars: 2 }], readFirst: ['calibration', 'transits'],
   scenario(seed, t) { return dayScenario(seed, t, 'D12', aspForSeed(seed, 12)); },
   rubric(r, sc) { const rb = basicRubric(r, [13, 25, 46], [`Benchmark: ${r.score.benchmark}. Champions ~1 s per leg; a good rookie day is 13-21 s; 20-46 s is a normal rookie day.`], undefined, sc); const raw = r.score.raw; rb.stars = r.offCourseCount > 1 ? 0 : raw <= 13 ? 3 : raw <= 25 ? 2 : raw <= 46 ? 1 : 0; return rb; },
 };
 export const D13: Drill = {
-  id: 'D13', title: 'Campaign: the Great Race', objective: 'Trophy Run plus nine stages in the 1939 Ford with age factor 0.845. Each stage draws its own starting position (ASP); the division discards its worst legs of stages 1-7 and the Trophy Run is only a tie-break.', skills: ['P11'], minutes: 1500, kind: 'drive',
-  tiers: legalTiers(), unlock: [{ drill: 'D12', stars: 1 }],
+  id: 'D13', title: 'Campaign: the Great Race', objective: 'Trophy Run plus nine stages in the 1939 Ford with age factor 0.845. Each stage draws its own starting position (ASP); the division discards its worst legs of stages 1-7 and the Trophy Run is only a tie-break.', skills: ['P11'], minutes: 320, kind: 'drive',
+  tiers: legalTiers(), unlock: [{ drill: 'D12', stars: 1 }], readFirst: ['four-s'],
   scenario(seed, t) { return dayScenario(seed * 100 + 1, t, 'D13', campaignAsp(seed === 10 ? 0 : seed)); },
   rubric(r, sc) { return D12.rubric(r, sc); },
 };

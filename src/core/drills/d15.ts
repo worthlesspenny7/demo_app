@@ -63,8 +63,9 @@ function parseTimes(t: string): number[] { return [...t.matchAll(/(\d{1,2}):(\d{
 const sameTime = (a: number, b: number): boolean => { const d = Math.abs(((a - b) % 43200 + 43200) % 43200); return Math.min(d, 43200 - d) <= 1; };
 
 export const D15: Drill = {
-  id: 'D15', title: 'Pre-read triage', objective: 'The book arrives 30 minutes early. Mark it up with the six notations (speed carried to each page top, every speed not shown, "comes quick" on the previous page, the chart pause time at every pause, the restart time = base + ASP, the exact-transit OUT time), then run it cold.', skills: ['P7'], minutes: 40, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [],
+  id: 'D15', title: 'Pre-read triage', objective: 'The book arrives 30 minutes early. Mark it up with the six notations (speed carried to each page top, every speed not shown, "comes quick" on the previous page, the chart pause time at every pause, the restart time = base + ASP, the exact-transit OUT time), then run it cold.', skills: ['P7'], minutes: 50, kind: 'drive',
+  // EDU-005: the restart time (base + ASP) and the exact-transit OUT time are taught in "Transits and restarts" (LESSON-004): read it first
+  tiers: tiers([2, 1, 0]), unlock: [], readFirst: ['markup', 'transits'], lessonGate: ['transits'],
   scenario(seed, t) {
     const tier = tierOf(D15, t); const r = rng(seed * 4513 + 15); const asp = aspForSeed(seed, 15);
     const b = base('D15', 'Pre-read triage', seed, tier, { prereadSeconds: 600, asp, startTime: 8 * 3600 + 55 * 60, bookStyle: bookStyleFor(tier.aids) }).start(35);
@@ -106,9 +107,9 @@ export const D15: Drill = {
   rubric(r, sc) {
     const startTick = r.actions.find(a => a.action.type === 'start')?.tick ?? Infinity;
     const ann = (n: number, before: boolean): string[] => r.actions.filter(a => a.action.type === 'line.annotate' && a.action.n === n && (!before || a.tick <= startTick)).map(a => (a.action as { text: string }).text).filter(t => t.trim() !== '');
-    const c = context(sc); const miss: string[] = [];
+    const c = context(sc); const miss: string[] = []; const missBy = new Map<string, string>();
     const tally: Record<NotationId, { good: number; total: number }> = { carry: { good: 0, total: 0 }, speeds: { good: 0, total: 0 }, quick: { good: 0, total: 0 }, pause: { good: 0, total: 0 }, restart: { good: 0, total: 0 }, transit: { good: 0, total: 0 } };
-    const grade = (k: NotationId, ok: boolean, why: string): void => { tally[k].total++; if (ok) tally[k].good++; else miss.push(why); };
+    const grade = (k: NotationId, ok: boolean, why: string): void => { tally[k].total++; if (ok) tally[k].good++; else { miss.push(why); if (!missBy.has(NOTATION_NAMES[k])) missBy.set(NOTATION_NAMES[k], why); } };
     for (const ins of sc.book) {
       const vIn = c.speedBefore.get(ins.n) ?? 0; const texts = ann(ins.n, true);
       const hasSpeed = (xs: string[]): boolean => xs.some(t => numbers(t).some(x => Math.abs(x - vIn) < 0.5));
@@ -130,8 +131,15 @@ export const D15: Drill = {
     const ids = Object.keys(tally) as NotationId[];
     // PREREAD-001: checkpoint arrival times ("CP3 09:14:22", within 2 s) and chart losses beside stops and turns (within 1 s); graded only when the player wrote them
     const cpN = gradeCheckpointNotes(r), clN = gradeChartLossNotes(r, sc); const extra = [cpN, clN].filter(g => g.attempted && g.total > 0);
+    const items = [...ids.map(i => ({ name: NOTATION_NAMES[i], good: tally[i].good, total: tally[i].total })), ...extra.map((g, j) => ({ name: j === 0 && cpN.attempted ? 'checkpoint times' : 'chart losses', good: g.good, total: g.total }))].filter(x => x.total > 0);
     const worst = Math.min(...ids.map(pct), ...extra.map(g => g.good / g.total));
-    const markStars: 0 | 1 | 2 | 3 = worst >= 0.9 ? 3 : worst >= 0.7 ? 2 : worst >= 0.5 ? 1 : 0;
+    const minStars: 0 | 1 | 2 | 3 = worst >= 0.9 ? 3 : worst >= 0.7 ? 2 : worst >= 0.5 ? 1 : 0;
+    // EDU-010: no cliff for one small notation. 5 of 6 notations right, the missed one a one- or two-line notation, with >= 85 % of the lines marked
+    // is 2 stars (a missed restart line); 4 of 6 with >= 70 % is 1. Missing the chart pause times (11 lines) still scores 0: they are the triage's first job.
+    const passed = items.filter(x => x.good / x.total >= 0.9).length; const weighted = items.reduce((a, x) => a + x.good, 0) / Math.max(1, items.reduce((a, x) => a + x.total, 0));
+    const smallMisses = items.filter(x => x.good / x.total < 0.9).every(x => x.total <= 2);   // only one-line or two-line notations (restart, transit OUT, comes quick) are forgiven
+    const softStars: 0 | 1 | 2 = !smallMisses ? 0 : passed >= items.length - 1 && weighted >= 0.85 ? 2 : passed >= items.length - 2 && weighted >= 0.7 ? 1 : 0;
+    const markStars = Math.max(minStars, softStars) as 0 | 1 | 2 | 3;
     const errs = legErrors(r); const mean = meanAbs(errs); const k = driverScale(sc.driver.skill);
     const exec: 1 | 2 | 3 = r.offCourseCount > 0 ? 1 : starsFromMeanAbs(mean, [8 * k, 16 * k, 1e9]) >= 3 ? 3 : starsFromMeanAbs(mean, [8 * k, 16 * k, 1e9]) >= 2 ? 2 : 1;
     const stars = Math.min(markStars, exec) as 0 | 1 | 2 | 3;
@@ -141,7 +149,15 @@ export const D15: Drill = {
     else feedback.push('Optional (PREREAD-001): number each timing checkpoint and write its exact arrival time in Column D ("CP3 09:14:22", within 2 s), and pre-write the chart loss beside stops and turns ("10.2", "-2.3", within 1 s).');
     if (clN.attempted) feedback.push(`Chart losses beside stops and turns (PREREAD-001): ${clN.good}/${clN.total} within 1 s.`, ...clN.lines.slice(0, 3));
     if (exec < markStars) feedback.push(r.offCourseCount ? 'Cold run: you went off course; markings do not help if the turn is missed.' : `Cold run: leg errors averaged ${mean.toFixed(1)} s, which holds the stars down.`);
-    feedback.push(headlineTip(r, sc), ...instrumentFindingLines(r.instrumentDiscipline.filter(f => f.kind === 'clockForTimeOfDay')).slice(0, 1));
-    return { score: Math.round(worst * 100), stars, headline: `${summary}; cold run ${mean.toFixed(1)} s mean error`, feedback };
+    // EDU-002: the tip names the weakest notation when the marks held the stars down, the cold run's cause otherwise; never "Clean run" under three stars
+    const weakest = [...items].sort((a, b) => a.good / a.total - b.good / b.total)[0];
+    const legTip = headlineTip(r, sc, { stars });
+    const tip = markStars < 3 && markStars <= exec && weakest
+      ? (ids.every(i => tally[i].good === 0) ? 'No pre-read marks were made before the start: use the 30 minutes for the six notations (lesson "Marking up the instructions"): the chart pause time beside every pause, the restart time (base + ASP), the speed at every page top and every line that prints none, "comes quick" on the page before.'
+        : `Pre-read notation "${weakest.name}" ${weakest.good}/${weakest.total}${missBy.get(weakest.name) ? `. ${missBy.get(weakest.name)}` : ''}`)
+      : legTip;
+    feedback.unshift(tip);
+    feedback.push(legTip, ...instrumentFindingLines(r.instrumentDiscipline.filter(f => f.kind === 'clockForTimeOfDay')).slice(0, 1));
+    return { score: Math.round(worst * 100), stars, tip, headline: `${summary}; cold run ${mean.toFixed(1)} s mean error`, feedback: [...new Set(feedback)] };
   },
 };

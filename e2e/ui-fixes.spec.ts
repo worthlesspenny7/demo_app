@@ -15,7 +15,7 @@ test('C2 no false storage banner on a direct load; Home shows Start here', async
   await expect(page.locator('#navnote')).toHaveText('');
   await page.goto('/#/');
   await expect(page.locator('#starthere-panel')).toBeVisible();
-  await expect(page.locator('#starthere-panel li.current')).toContainText(/ghost car/i);
+  await expect(page.locator('#starthere-panel li.current')).toContainText(/Four S's/i);   // EDU-005: the path starts with the Four S's
   await expect(page.locator('.card[data-drill="D03"] .pips .tier.gold')).toBeVisible();
 });
 
