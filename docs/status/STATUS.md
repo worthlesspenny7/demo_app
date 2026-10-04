@@ -14,7 +14,8 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): PT-11 playability replay (Opus, read-only) on the fix-sprint PT-10 commit (621 unit, 90 e2e,
+- In flight (2026-10-04): PT-11 playability replay (Opus, read-only) and REVALIDATION-v4-realism (Sonnet, read-only,
+  preview on port 4182) on db0837c (621 unit, 90 e2e,
   348/348, ENGINE 3.3.0). When it lands: commit the report; if its top fixes are small, one more fix sprint, five checks,
   commit, push. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14; N-C10 start bucket on on-time runs;
   lesson-check answers still guessable by length; campaign benchmark totals unverified.

@@ -242,3 +242,4 @@ One agent, no sub-agents (no Agent tool in this session). New SPECS section "Fro
 - Checks: tsc clean, 621 unit (was 591), build clean, 348/348 specs (was 338), 90 e2e (was 80).
 - Not done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14; the D06 "Bronze is 19 min of driving to be graded on copying" (the run is still driven); "Start / restart +9" on a run whose departures were all on the second (N-C10, only the residual line was fixed); the campaign benchmark totals; the printable book still has no hand marks; a lesson's check can still be answered by length (only the option order is shuffled); PT-11 replay.
 
+- Fix sprint PT-10 landed (db0837c, ENGINE 3.3.0). Launched PT-11 replay (Opus) and REVALIDATION-v4-realism (Sonnet).
