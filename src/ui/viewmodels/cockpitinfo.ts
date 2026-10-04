@@ -5,7 +5,7 @@
  *  - what the legal (aids rung <= 1) cockpit hides: digital readouts and the computed answer card
  */
 import type { Scenario, Instruction, AidsConfig } from '../../core/course.js';
-import { transitPaceMph } from '../../core/course.js';
+import { transitPaceMph, isMeasureRun } from '../../core/course.js';
 import { stopLoss, rampLead, accelLoss, turnLoss, buildPerfTable } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
 import { formatInterval } from '../../core/griid.js';
@@ -111,7 +111,11 @@ export interface PerfCard {
   transitPace?: { mph: number; miles: number; minutes: number; text: string };
   /** Non-stop turn loss (seconds the car loses slowing for the turn and re-accelerating), from the car's performance table. */
   turnLoss?: TurnLossBlock;
+  /** PLAY-027: a measuring run (D06): no launch lead and no early call on the card, only this line */
+  measure?: string;
 }
+/** PLAY-027: what the card says on a measuring run instead of the leads. */
+export const MEASURE_TEXT = 'Measure, do not compensate: leave restarts ON the second and call each speed AT its sign; lap the stopwatch at every MARK and note the seconds lost against the ghost.';
 export interface TurnLossBlock {
   /** Common speeds, 25..45 mph. */
   speeds: number[];
@@ -146,9 +150,11 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
   const node = sc.course.nodes.find(n => n.id === ins.nodeId);
   const card: PerfCard = { line, text: ins.text, mode: policy.computedCard ? 'answers' : 'own' };
   const rl = restartLabel(ins);
+  const measuring = isMeasureRun(sc);
+  if (measuring) card.measure = MEASURE_TEXT;
   if (rl) {
     let accel: number | null = null;
-    if (policy.computedCard) { try { accel = r1(accelLoss(lineSpeeds(sc, line).vOut ?? ins.speed ?? 30, sc.car)); } catch { accel = null; } }
+    if (policy.computedCard && !measuring) { try { accel = r1(accelLoss(lineSpeeds(sc, line).vOut ?? ins.speed ?? 30, sc.car)); } catch { accel = null; } }
     card.restart = { label: rl, accel };
     return card;
   }
@@ -166,9 +172,9 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
       // N5: on a STOP + timed line the same anchor as timedAnchorTod (the Debrief and the D04 stars): the ghost's departure = the car's stop + the pause - the braking part of the stop loss
       if (ins.pause) { const vi = sp.vIn && sp.vIn > 0 ? sp.vIn : ins.timed.holdSpeed; let brake = 0; try { brake = Math.max(0, stopLoss(vi, ins.timed.holdSpeed, sc.car) - accelLoss(ins.timed.holdSpeed, sc.car)); } catch { brake = 0; } const afterStopped = r1(ins.pause - brake); card.timed.fromGhost = { pause: ins.pause, afterStopped, callAfterStopped: r1(afterStopped + call) }; }
     }
-    else if (sp.vIn !== null && sp.vOut !== null && sp.vIn !== sp.vOut && !ins.pause && node?.control !== 'STOP') { const lead = r1(rampLead(sp.vIn, sp.vOut, sc.car)); card.speedChange = { from: sp.vIn, to: sp.vOut, lead, ft: Math.round(sp.vIn * 1.4667 * lead) }; }
+    else if (!measuring && sp.vIn !== null && sp.vOut !== null && sp.vIn !== sp.vOut && !ins.pause && node?.control !== 'STOP') { const lead = r1(rampLead(sp.vIn, sp.vOut, sc.car)); card.speedChange = { from: sp.vIn, to: sp.vOut, lead, ft: Math.round(sp.vIn * 1.4667 * lead) }; }
     if (ins.turn && ins.turn !== 'S' && !ins.pause && node?.control !== 'STOP') card.turnLoss = turnLossBlock(sc, line);   // PLAY-008: a stop's turn-capped loss already includes the turn
-    if (ins.section === 'start' && ins.speed) card.start = { speed: ins.speed, early: Math.round(accelLoss(ins.speed, sc.car)) }; // PLAY-009: the launch lead, rounded like every launch time
+    if (ins.section === 'start' && ins.speed && !measuring) card.start = { speed: ins.speed, early: Math.round(accelLoss(ins.speed, sc.car)) }; // PLAY-009: the launch lead, rounded like every launch time
   } catch { /* partial card */ }
   return card;
 }
@@ -202,8 +208,8 @@ export interface HoldCard {
   start?: boolean;
 }
 /** N6: the lead at a hold: the standing-start loss to the speed the car leaves at, rounded to the whole second like every launch time. */
-function holdLead(sc: Pick<Scenario, 'book'> & { car?: Scenario['car'] }, line: number): number | null {
-  if (!sc.car) return null;
+function holdLead(sc: Pick<Scenario, 'book'> & { car?: Scenario['car']; tags?: string[] }, line: number): number | null {
+  if (!sc.car || isMeasureRun(sc)) return null;   // PLAY-027: a measuring run leaves ON the second
   const ins = sc.book[line - 1]; const v = lineSpeeds(sc as Scenario, line).vOut ?? ins?.speed ?? null; if (!v || v <= 0) return null;
   try { return Math.round(accelLoss(v, sc.car)); } catch { return null; }
 }
@@ -219,7 +225,7 @@ export function holdCardFor(sc: Pick<Scenario, 'book' | 'course' | 'asp'> & { ca
     const base = ins.baseTime ?? ins.restartTime - asp * 60;
     // N9: the start line is a start, not a restart, and the launch card says when to leave (your time minus the standing-start loss)
     if (ins.section === 'start') return { kind: 'restart', line, title: `Start, line ${line}`, goTod: ins.restartTime, lead: holdLead(sc, line), start: true, text: `base ${formatClock(base)} + ASP ${asp} min = your time ${formatClock(ins.restartTime)}; do not pull up before the car ahead has left` };
-    return { kind: 'restart', line, title: `Restart, line ${line}`, goTod: ins.restartTime, lead: holdLead(sc, line), text: `base ${formatClock(base)} + ASP ${asp} min = your time ${formatClock(ins.restartTime)}, leave at that second, do not pull up before your minute` };
+    return { kind: 'restart', line, title: `Restart, line ${line}`, goTod: ins.restartTime, lead: holdLead(sc, line), text: `base ${formatClock(base)} + ASP ${asp} min = your time ${formatClock(ins.restartTime)}: launch on the count (your time minus the standing-start loss), do not pull up before your minute` };   // PLAY-032: never "leave at that second" under a launch lead
   }
   if (ins.transit?.exact) {
     const begin = ins.transit.end ? exactTransitBegin(sc.book, sc.book.indexOf(ins)) : ins;
@@ -257,13 +263,38 @@ export function openTransitCard(sc: Pick<Scenario, 'book' | 'course' | 'asp'>, s
   return null;
 }
 
+/** PLAY-029: the exact-transit IN prompt shows from this many seconds before the IN sign (inside the 60 s window the Debrief accepts) to this many after it. */
+export const IN_PROMPT_SECONDS = 45;
+export const IN_PROMPT_AFTER = 20;
+/** PLAY-029: seconds until the car reaches route position `s` at its current speed (null when stopped or past it by more than the window). */
+export function secondsToReach(carS: number, carV: number, s: number): number | null {
+  const d = s - carS; if (d < 0) return carV > 0.5 ? d / carV : null;
+  return carV > 0.5 ? d / carV : null;
+}
 /**
  * N7: at Bronze (computed card) the hold cards ask for the clock read the Debrief grades (a read within the last minute before an out time, and a read as the IN sign
  * goes by). `secondsToOut` is the time to the out time when the car waits at that hold, null otherwise.
  */
-export function clockReadPrompt(hold: HoldCard | null, secondsToOut: number | null): string | null {
+export function clockReadPrompt(hold: HoldCard | null, secondsToOut: number | null, secondsToSign: number | null = null): string | null {
   if (!hold || hold.start) return null;
-  if (hold.kind === 'transit' && /^Exact transit,/.test(hold.title)) return 'Read the clock now (K) as you pass this sign: that is your IN time.';
+  // PLAY-029: the IN prompt shows only once the IN sign is close (within the minute the Debrief accepts a read in), never from the start line
+  if (hold.kind === 'transit' && /^Exact transit,/.test(hold.title)) return secondsToSign !== null && secondsToSign <= IN_PROMPT_SECONDS && secondsToSign >= -IN_PROMPT_AFTER ? `Read the clock now (K) as you pass this sign${secondsToSign > 2 ? ` (about ${Math.round(secondsToSign)} s ahead)` : ''}: that is your IN time.` : null;
   if (secondsToOut !== null && secondsToOut <= 60 && secondsToOut > -30) return `Read the clock now (K): the out time is ${Math.max(0, Math.round(secondsToOut))} s away; the time of day comes from the clock, never a running chrono.`;
   return null;
+}
+
+/** PLAY-032: the alert chip goes after 3.5 s of real time OR `simSeconds` of sim time, whichever comes first, so a fast-forward never leaves a stale alert up. */
+export function alertExpired(nowMs: number, untilMs: number, tod: number, sinceTod: number, simSeconds = 8): boolean {
+  return nowMs > untilMs || tod - sinceTod > simSeconds;
+}
+
+/**
+ * PLAY-032: the ledger's Time Allowance line. Only a train, an accident scene, a tractor with nowhere to pass or an emergency speed is a TA (REG V.H.1, V.H.5);
+ * a slow truck, a light or traffic is made up with the 10 % rule; a wrong turn never is; a drill with no TA point never suggests one.
+ */
+export function ledgerTaHint(ta: { hasTaPoints: boolean; windowOpen: boolean }, offCourse: boolean): string {
+  if (offCourse) return 'Off course: a wrong turn is never a Time Allowance. Run the lost procedure and rejoin.';
+  if (!ta.hasTaPoints) return 'No TA point in this drill: time any delay on the watch and make it up with the 10 % rule.';
+  if (ta.windowOpen) return 'TA window open: file the request in the form on the road view (T).';
+  return 'Held by a train, an accident scene or a tractor with nowhere to pass? At the yellow TA box press T for the form (15 minutes). A slow truck, a light or traffic is made up with the 10 % rule.';
 }

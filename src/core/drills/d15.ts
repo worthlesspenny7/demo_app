@@ -58,6 +58,27 @@ export function idealNotes(sc: Scenario): { n: number; text: string }[] {
 }
 
 const numbers = (t: string): number[] => (t.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+/** ENG-022: more than this many candidate numbers for one notation in one note is a number spray, worth nothing. */
+const SPRAY = 2;
+const timesRemoved = (t: string): string => t.replace(/\d{1,2}:\d{2}(?::\d{2})?/g, ' ');
+/** ENG-022: the speed a note states: numbers marked mph, or the note's only number ("30", the carried-speed mark). */
+export function speedCandidates(t: string): number[] { return bySegment(t, speedCandidates1); }
+/** ENG-022: a note may carry several marks ("30; P10.2"): each segment states its own number; more than SPRAY in all is a spray. */
+function bySegment(t: string, f: (x: string) => number[]): number[] { const all = String(t ?? '').split(/[;|\n]/).flatMap(f); return all.length > SPRAY ? [] : all; }
+function speedCandidates1(t: string): number[] {
+  const x = timesRemoved(t); const mph = [...x.matchAll(/(\d+(?:\.\d+)?)\s*mph\b/gi)].map(m => Number(m[1]));
+  if (mph.length) return mph.length > SPRAY ? [] : mph;
+  const all = numbers(x); return all.length === 1 && all[0]! > 0 && Number.isInteger(all[0]) && !/[-+]\s*\d/.test(x) ? all : [];   // a lone whole number (a lone decimal is a pause or a loss)
+}
+/** ENG-022: the chart pause time a note states: the number after P / pause / dwell / sit / go at ("P10.2", "pause 10.2 s", "go at 7.3s"), or the note's only decimal. */
+export function pauseCandidates(t: string): number[] { return bySegment(t, pauseCandidates1); }
+function pauseCandidates1(t: string): number[] {
+  const x = timesRemoved(t); const tagged = [...x.matchAll(/(?:\bP|\bpause|\bdwell|\bsit|\bgo\s*at|\bgo)\s*[:=]?\s*(\d+(?:\.\d+)?)/gi)].map(m => Number(m[1]));
+  if (tagged.length) return tagged.length > SPRAY ? [] : tagged;
+  const all = numbers(x); return all.length === 1 && !Number.isInteger(all[0]) && all[0]! > 0 && !/[-+]\s*\d/.test(x) ? all : [];   // a lone unsigned decimal ("10.2"); "-2.9" is a loss, "30" a speed
+}
+/** ENG-022: of several notes on one line, the last that states this notation counts (what is written last is what the book says), so a pile of guesses earns nothing. */
+const lastStated = (xs: string[], f: (t: string) => number[]): number[] => { for (let i = xs.length - 1; i >= 0; i--) { const c = f(xs[i]!); if (c.length) return c; } return []; };
 /** "9:41:00", "09:41", "9:41:00 AM": seconds into a 12-hour day. */
 function parseTimes(t: string): number[] { return [...t.matchAll(/(\d{1,2}):(\d{2})(?::(\d{2}))?/g)].map(m => ((Number(m[1]) % 12) * 3600 + Number(m[2]) * 60 + Number(m[3] ?? 0))); }
 const sameTime = (a: number, b: number): boolean => { const d = Math.abs(((a - b) % 43200 + 43200) % 43200); return Math.min(d, 43200 - d) <= 1; };
@@ -94,7 +115,7 @@ export const D15: Drill = {
     b.restart(35, restartAt - asp * 60);
     expect(34);
     land(); sign(30); expect(36);                                                             // page 6 bottom: a speed change
-    b.advanceMiles(0.4).checkpoint();
+    b.advanceMiles(0.9).checkpoint();   // ENG-025: outside the 2-minute free zone after the restart (120 s of the ghost's time)
     land(); stopP(30); turn(); stopP(15, 40); land(); stopP(20); expect(42);                  // page 7
     land(); turn(); land(); stopP(15); land(); expect(47);                                    // page 8
     b.advanceMiles(0.35).checkpoint().advanceMiles(0.2);
@@ -112,14 +133,15 @@ export const D15: Drill = {
     const grade = (k: NotationId, ok: boolean, why: string): void => { tally[k].total++; if (ok) tally[k].good++; else { miss.push(why); if (!missBy.has(NOTATION_NAMES[k])) missBy.set(NOTATION_NAMES[k], why); } };
     for (const ins of sc.book) {
       const vIn = c.speedBefore.get(ins.n) ?? 0; const texts = ann(ins.n, true);
-      const hasSpeed = (xs: string[]): boolean => xs.some(t => numbers(t).some(x => Math.abs(x - vIn) < 0.5));
+      // ENG-022: a note counts only for the number it states for this notation, within tolerance of this line's truth (no number spray)
+      const hasSpeed = (xs: string[]): boolean => lastStated(xs, speedCandidates).some(x => Math.abs(x - vIn) < 0.5);
       if (isPageTop(ins.n) && vIn > 0) grade('carry', hasSpeed(texts), `Line ${ins.n} heads page ${pageOf(ins.n)}: write the speed carried from the page before (${vIn} mph).`);
       if (needsSpeed(ins, c)) grade('speeds', hasSpeed(texts), `Line ${ins.n} prints no speed: write the speed in force (${vIn} mph).`);
       if (isQuick(ins)) {
         const prev = isPageTop(ins.n) ? ann(ins.n - 1, true) : texts; const where = isPageTop(ins.n) ? `the last row of page ${pageOf(ins.n) - 1} (line ${ins.n - 1})` : `line ${ins.n}`;
         grade('quick', prev.some(t => /quick|cq|comes/i.test(t)), `"Comes quick" at line ${ins.n}${isPageTop(ins.n) ? ` heads page ${pageOf(ins.n)}` : ''}: flag it on ${where}.`);
       }
-      if (ins.pause) { const ideal = chartPause(sc, ins, vIn); grade('pause', texts.some(t => numbers(t).some(x => Math.abs(x - ideal) <= 1 && x !== vIn)), `Line ${ins.n} pause ${ins.pause} s: write the chart pause time (${ideal.toFixed(1)} s for ${vIn} in / ${ins.timed ? ins.timed.holdSpeed : ins.speed ?? vIn} out).`); }
+      if (ins.pause) { const ideal = chartPause(sc, ins, vIn); grade('pause', lastStated(texts, pauseCandidates).some(x => Math.abs(x - ideal) <= 1 && x !== vIn), `Line ${ins.n} pause ${ins.pause} s: write the chart pause time (${ideal.toFixed(1)} s for ${vIn} in / ${ins.timed ? ins.timed.holdSpeed : ins.speed ?? vIn} out).`); }
       if (ins.section === 'restart' && ins.restartTime !== undefined) grade('restart', texts.some(t => parseTimes(t).some(x => sameTime(x, ins.restartTime!))), `Line ${ins.n} restart: write base ${formatClock(ins.baseTime ?? ins.restartTime)} + ASP ${sc.asp} min = ${formatClock(ins.restartTime)}.`);
       if (ins.transit?.end && ins.transit.exact && ins.restartTime === undefined) {
         const begin = exactTransitBegin(sc.book, sc.book.indexOf(ins)); const inEv = begin ? r.events.find(e => e.type === 'transit.in' && e.detail?.n === begin.n) : undefined;

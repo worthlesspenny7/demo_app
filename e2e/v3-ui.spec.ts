@@ -200,7 +200,7 @@ test('LESSON-008 the Reference page has a "Rally school" panel with the TA web f
 
 test('LESSON-002 LESSON-006 the team protocol lesson teaches ICE and "keep counting", and the clock lesson is the director\'s method', async ({ page }) => {
   await page.goto('/#/school/protocol');
-  await expect(page.locator('.lesson')).toContainText('ICE: identify, confirm, execute'); await expect(page.locator('.lesson')).toContainText('keep counting'); await expect(page.locator('.printcard li')).toHaveCount(12);   // EDU-007
+  await expect(page.locator('.lesson')).toContainText('ICE: identify, confirm, execute'); await expect(page.locator('.lesson')).toContainText('keep counting'); await expect(page.locator('.printcard li')).toHaveCount(21);   // EDU-007; PLAY-031: 21 short lines
   await page.goto('/#/school/which-timer');
   await expect(page.locator('.lesson')).toContainText('one-minute mistake'); await expect(page.locator('.lesson')).toContainText('time-of-day (TOD) mode');
 });
@@ -225,7 +225,8 @@ test('UI-037 PROTO-001 W warns the driver, the count beats are echoed in the dri
 
 test('UI-037 START-001 a late launch is listed on its own in the debrief, with the start against its launch time and no warning to the driver', async ({ page }) => {
   await openDrill(page, 'D16');
-  await page.evaluate(() => { const r = window.__rally!; r.act({ type: 'skipPreread', secondsBefore: 0 } as never); r.act({ type: 'start' }); r.advance(5); r.finish(); });   // leaves on its own time instead of the launch second
+  // leaves on its own time instead of the launch second (PLAY-026: a skip stops before the launch second, so step on to the own time first)
+  await page.evaluate(() => { const r = window.__rally!; r.act({ type: 'skipPreread', secondsBefore: 0 } as never); const o = r.observe(); r.advance(o.startTime - o.tod); r.act({ type: 'start' }); r.advance(5); r.finish(); });
   await expect(page.locator('#debrief')).toBeVisible({ timeout: 15000 });
   await expect(page.locator('#finding-lateLaunch li')).toContainText(/line 1: Start \(line 1\) left [\d.]+ s after the launch time/);
   await expect(page.locator('#finding-oneMinuteMistake li')).toHaveCount(0); await expect(page.locator('#finding-timedIntervalDisturbed li')).toHaveCount(0);

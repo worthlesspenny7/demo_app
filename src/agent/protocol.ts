@@ -108,9 +108,10 @@ export class Session {
           }
           this.sim.act(req.action); return { type: 'ack', ok: true, observation: this.obs() };
         case 'observe': return { type: 'observation', observation: this.obs() };
-        case 'result': return { type: 'result', result: this.sim.result() };
+        // ENG-025: at aids rung <= 1 the run's answers (perfect times, the true pace) are not available until the finish: the same redaction as observe (ENG-018)
+        case 'result': if (this.scenario.aids.rung <= 1 && this.sim.phase !== 'finished') return { type: 'error', message: 'result is available after the finish at aids rung <= 1' }; return { type: 'result', result: this.sim.result() };
         case 'cancel': { const n = this.scheduled.length; this.scheduled = []; return { type: 'cancelled', count: n }; }
-        case 'truth': return { type: 'truth', pace: this.sim.pace(), carS: this.sim.car.s, carMph: this.sim.car.mph() };
+        case 'truth': if (this.scenario.aids.rung <= 1 && this.sim.phase !== 'finished') return { type: 'error', message: 'truth is available after the finish at aids rung <= 1' }; return { type: 'truth', pace: this.sim.pace(), carS: this.sim.car.s, carMph: this.sim.car.mph() };
         case 'advance': {
           // ENG-015: with untilEvent, `seconds` (when given) also bounds the advance
           const want = req.untilEvent ? Math.min(req.maxSeconds ?? 120, req.seconds ?? Infinity) : (req.seconds ?? 1);

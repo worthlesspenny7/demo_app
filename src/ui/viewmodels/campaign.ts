@@ -48,9 +48,11 @@ export function recordCampaignStage(e: Omit<CampaignStage, 'at'>, store: Campaig
   const d = loadCampaign(store);
   const stage = e.stage === TROPHY_RUN_SEED ? 0 : e.stage;
   if (!(Number.isInteger(stage) && stage >= 0 && stage <= CAMPAIGN_STAGES)) return d;
+  // ENG-025: a score that is not a finite, non-negative number is never stored (it would lock the stage: NaN < x is never true)
+  if (!(typeof e.score === 'number' && Number.isFinite(e.score) && e.score >= 0) || !(typeof e.raw === 'number' && Number.isFinite(e.raw) && e.raw >= 0)) return d;
   const t = (d.tiers[String(e.tier)] ??= {});
   const prev = t[String(stage)];
-  if (!prev || e.score < prev.score) t[String(stage)] = { ...e, stage, at: now };
+  if (!prev || !(typeof prev.score === 'number' && Number.isFinite(prev.score)) || e.score < prev.score) t[String(stage)] = { ...e, stage, at: now };
   save(d, store);
   return d;
 }

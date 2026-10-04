@@ -163,16 +163,17 @@ export class OracleBot implements Bot {
     if (!this.departed) { this.departed = true; if (this.o.useWatch) sim.act({ type: 'watch.start' }); }
     const s = car.s;
     this.calibrate();
+    const turnLeadFt = Math.max(600, car.v * 9);
     for (const p of this.plans) {
       if (p.ins.section === 'start') continue;
       const d = p.s - s;
       if (d < -30 && p.crossedTod === null) p.crossedTod = sim.tod;
       if (d < -100) continue; // already passed: nothing below applies (keeps a 250-line stage O(active lines) per tick)
-      if (d > 900) break;
+      if (d > Math.max(900, turnLeadFt + 50)) break;
       const node = nodeById(sc.course, p.ins.nodeId);
       const isStop = node.control === 'STOP' || isHoldIns(p.ins) || (p.ins.section === 'finish');
       // turn callout
-      if (p.ins.turn && !p.turnCalled && d <= 600) {
+      if (p.ins.turn && !p.turnCalled && d <= turnLeadFt) {   // ENG-024: the turn call leads by 600 ft or 9 s at the current speed, whichever is longer
         // do not arm while an intervening real-road exit would match the callout (the driver would take it)
         const band = bandOf(p.ins.turn);
         const decoy = sc.course.nodes.some(nd => nd.s > car.s - 1 && nd.s < p.s - 5 && nd.kind === 'intersection' && (nd.exits ?? []).some(e => e.kind !== 'driveway' && e.kind !== 'lot' && e.kind !== 'private' && e.angle >= band[0] && e.angle <= band[1] && (Math.abs(e.angle) >= 20 || p.ins.turn === 'S')));

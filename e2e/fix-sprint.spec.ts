@@ -19,7 +19,7 @@ test.use({ viewport: { width: 1366, height: 768 } });
 test('PLAY-001 EDU-005 a Bronze star moves the Start-here path on: Next opens D03 at Bronze, and the protocol lesson leads to the D09 quiz', async ({ page }) => {
   await page.goto('/#/settings');
   const p1 = (stars: number, tiers: number[]) => ({ stars, tierStars: tiers, aces: 0, runs: 1, bestScore: 0.2, lastScore: 0.2, bestRaw: 0, lastPlayed: Date.now() });
-  const read = { 'four-s': true, 'griid-cameo': true, protocol: true, lost: true, transits: true, 'ghost-car': true };
+  const read = { 'four-s': true, 'griid-cameo': true, protocol: true, lost: true, transits: true, 'ghost-car': true, 'which-timer': true, 'pause-arithmetic': true };   // PLAY-023: the path now carries which-timer and pause-arithmetic before D03
   await page.evaluate(([k, v]) => localStorage.setItem(k!, v!), [PROGRESS_KEY, JSON.stringify({ version: 1, drills: { D09: p1(1, [1]), D10: p1(1, [1, 0, 0]), D16: p1(1, [1, 0, 0]), D01: p1(3, [3, 0, 0]) }, lessons: read, runs: [], maneuvers: {} })]);
   await page.goto('/#/');
   await expect(page.locator('#starthere-panel li[data-step="D01"]')).toHaveClass(/done/);
@@ -27,7 +27,8 @@ test('PLAY-001 EDU-005 a Bronze star moves the Start-here path on: Next opens D0
   await page.locator('#starthere').click();
   await expect(page).toHaveURL(/#\/cockpit\/drill\/D03\/0\/1$/);
   await page.evaluate(([k]) => localStorage.removeItem(k!), [PROGRESS_KEY]);
-  await page.evaluate(([k]) => localStorage.setItem(k!, JSON.stringify({ version: 1, drills: {}, lessons: { 'four-s': true, 'griid-cameo': true }, runs: [], maneuvers: {} })), [PROGRESS_KEY]);
+  // PLAY-023: start on time (transits, which timer, ghost car, D16) comes before the course block, so those are done here
+  await page.evaluate(([k]) => localStorage.setItem(k!, JSON.stringify({ version: 1, drills: { D16: { stars: 1, tierStars: [1, 0, 0], aces: 0, runs: 1, bestScore: 1, lastScore: 1, bestRaw: 1, lastPlayed: 1 } }, lessons: { 'four-s': true, transits: true, 'which-timer': true, 'ghost-car': true, 'griid-cameo': true }, runs: [], maneuvers: {} })), [PROGRESS_KEY]);
   await page.goto('/#/school/protocol'); await page.reload();
   await expect(page.locator('#next-path')).toHaveText(/Next on your path: D09/);
   await page.locator('#next-path').click(); await expect(page).toHaveURL(/#\/quiz\/D09$/);

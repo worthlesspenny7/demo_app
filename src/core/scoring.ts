@@ -202,11 +202,11 @@ export function roundFactored(raw: number, factor: number): number {
 }
 export function championshipTotal(stages: ChampionshipStageInput[], division: Division = DEFAULT_DIVISION, opts: { year?: number } = {}): ChampionshipTotal {
   // ENG-013: one entry per stage number (a repeated stage counts once: the later entry replaces the earlier)
-  const byStage = new Map<number, ChampionshipStageInput>(); for (const s of stages) if (s.stage >= 1 && s.stage <= 9) byStage.set(s.stage, s);
+  const byStage = new Map<number, ChampionshipStageInput>(); for (const s of stages) if (Number.isInteger(s.stage) && s.stage >= 1 && s.stage <= 9) byStage.set(s.stage, s);   // ENG-025: whole stage numbers only
   const counted = [...byStage.values()].sort((a, b) => a.stage - b.stage);
   const pool: number[] = []; let kept = 0; let raw = 0;
   for (const s of counted) {
-    const items = itemsOf(s.score); const sum = items.reduce((a, b) => a + b, 0); raw += sum;
+    const items = itemsOf(s.score).filter(x => Number.isFinite(x)); const sum = items.reduce((a, b) => a + b, 0); raw += sum;
     if (QUALIFYING_STAGES.includes(s.stage)) pool.push(...items); else kept += sum;
   }
   const n = DIVISION_DISCARDS[division];

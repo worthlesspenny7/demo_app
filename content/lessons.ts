@@ -98,7 +98,8 @@ const ALL_LESSONS: Lesson[] = [
       ] } },
       'Read the table with the priorities in mind: a missed checkpoint costs 180 s, ten wrong seconds on a stop costs ten. That is why the first three S\'s come first.',
     ],
-    check: { question: 'A farm tractor held you 0m45s. You made up 0m25s before the checkpoint. What do you request?', options: ['0m45s: the whole delay', 'Request 0m20s', 'Request 0m25s', 'Nothing: tractors never qualify'], answer: 1, explain: 'Delayed 0m45s, made up 0m25s: request 0m20s, a multiple of 10 s. The committee denies time you could have made up, so request only what you could not recover.' },
+    // PLAY-032: lesson 1 checks the priority order of the Four S's, the point of the lesson (the TA arithmetic is checked in the recovery lesson)
+    check: { question: 'You are 20 s late, and you are not sure the road coming up is your turn. Which comes first?', options: ['Speed up to make up the 20 s, then read the book', 'Read the book and confirm the turn first (stay on course); make up the seconds safely afterwards', 'Take the next road anyway to save time', 'Hold 10 mph over the assigned speed until you are on time'], answer: 1, explain: 'The order of the Four S\'s is the priority: Safety, Start on time, Stay on course, Stay on time. A wrong turn costs minutes (a missed checkpoint is 180 s); 20 s late is seconds, made up with the 10 % rule once you know where you are, and never by speeding.' },
   },
   {
     id: 'which-timer', title: 'Which timer, when', minutes: 4, source: 'docs/research/08-rookie-handbook-body.md §2, §5, §6, §8 (HB p.5, p.11-13); docs/research/09-event-regulations-2026.md §7.3, §8.5, §14 (REG V.C.1.b, V.C.1.c, VII.F, V.H.3); docs/research/10b-rally-school-classen-croker.md P1 46:31; docs/research/10c-short-videos.md Clock and Stopwatch [00:37]-[02:41]; docs/research/10b-rally-school-classen-croker.md P2 13:08; docs/research/10a-training-sessions-2024-2026.md 2026 101:15',
@@ -253,7 +254,7 @@ const ALL_LESSONS: Lesson[] = [
         '           ... a few minutes later, unprompted ...',
         'Driver:    "Okay, I\'m holding 35."   Navigator: "Confirmed, 35."',
       ], caption: 'ICE with the read-back, "mark" and "holding 35" (2026 Training Session [10:53], [80:03]; Croker [15:45]; video, not in the documents)' },
-      'The stop count, as the 2026 session runs it (2026 Training Session [121:20]; video, not in the documents): the navigator announces the stop before it happens ("coming in at 20, out 35, holding for nine"), the driver says "stopped" when the car rocks back (2026 [38:54]; 2024 [53:20]), and she counts from the rock-back, "9, 8, 7, 6 ... 1, go 35". If he is watching cross traffic he says "keep counting", and she carries on "0, 1, 2" until he goes, which tells her how long the stop really was. Croker counts the other way, up from the rock-back to the chart time, but also always ends on the word GO (Rally School Part 2 [19:57]; video, not in the documents).',
+      'The stop count, as the 2026 session runs it (2026 Training Session [121:20]; video, not in the documents): the navigator announces the stop before it happens ("coming in at 20, out 35, holding for nine"), the driver says "stopped" when the car rocks back (2026 [38:54]; 2024 [53:20]), and the navigator counts from the rock-back, "9, 8, 7, 6 ... 1, go 35". If the driver is watching cross traffic, the driver says "keep counting", and the navigator carries on "0, 1, 2" until the car goes, which tells the navigator how long the stop really was. Croker counts the other way, up from the rock-back to the chart time, but also always ends on the word GO (Rally School Part 2 [19:57]; video, not in the documents).',
       { pre: [
         'Navigator: "Coming in at 20, out 35, holding for nine."',
         'Driver:    "Stopped."                      (the car rocks back: the navigator starts the watch)',
@@ -273,18 +274,28 @@ const ALL_LESSONS: Lesson[] = [
         'Rule 10 (simulator convention, not in the documents): if a landmark does not appear when it should, do not keep driving into the unknown. Slow and read before the leading edge of the next intersection; if we must stop to work out where we are, pull off where it is safe, never in the lane and never in sight of a green checkpoint sign (stopping or 5 MPH or slower there is 30 s, REG V.E.3.a), and run the lost procedure (lesson "When you are lost"). A wrong turn is the biggest loss in the game (the handbook says a wrong or missed turn "usually costs several minutes"). If the driver has to ask "left or right?", the call was late: our house habit is to call turns 500-600 ft out, a number from our own research notes, not the handbook or regulations.',
       ] },
       { card: { title: 'Card for the driver (print and keep in the car)', lines: [
-        'Safety beats seconds. Every STOP sign is a full stop, even with no pause in the book (not stopping is a DNF). Never speed, pass blind or run a light to catch up: hold the speed; we take the loss or file a Time Allowance.',
-        'Eyes on the road: the navigator has the book. Look far ahead and say at once when a train, tractor, school bus or slow truck holds us, so she starts the stopwatch.',
-        'Say back every turn and every speed: "Right, 35." Every few minutes, unprompted: "Holding 35." Never guess a speed ("I\'ll do 37"): hold the number until she changes it.',
-        'ICE: the navigator names the sign. Whoever sees it first says "I see it"; the other answers "I see it too". Say "mark" as you pass it.',
-        'Say "Stopped" when the car rocks back. Do not move until you hear GO: "9 ... 1, GO". Watching traffic? Say "keep counting": the count goes 0, 1, 2 until you go.',
-        'Starts and restarts: wait back among the cars; pull up only after the car ahead has left (if it sits, go around it). About 30 seconds before, ask "how long?" if you have not heard "about 30 seconds". The count ends on the launch second: go on GO, never on your own reading of the clock. No rolling starts.',
-        'Green sign = timing checkpoint: do nothing. Never stop, never 5 mph or slower in sight of it (30 s); a wave is fine, no talking to the crew. Red GREAT RACE STOP board: stop, and always at the finish.',
-        'Calibration run: hold the indicated speed exactly, say nothing about early or late, keep right, and tell her about lane endings and traffic. She does the arithmetic afterwards, parked.',
-        'In a timed section talk only about the instructions; never ask "are we early or late?". "Comes quick": eyes up, ready for the next two.',
-        'Not sure where we are: say so. Pull off only where it is safe (never in the lane, never in sight of a green sign), no U-turn in traffic, no speeding to catch up. No score is worth an accident.',
-        'A Day-Glo "GR" sign or an emergency sheet overrides the book: its instruction number or arrow; "I" = ignore that sign; "End Leg" = leg cancelled, carry on safely. Off the clock (hourglass, camera with a slash): any safe speed, but early at the restart.',
-        'Phones off and out of reach from the start line to the finish (warning, then 10 s, then 1 min); no GPS, no digital watch, odometer covered. Any mistake is ours: fix it together and move on.',
+        // PLAY-031: one rule per line, under 25 words, "the navigator" / "the driver" (no pronouns); the clock has no digital readout, the stopwatch may be digital
+        'Safety beats seconds. Never speed, pass blind or run a light to catch up. No score is worth an accident.',
+        'Every STOP sign is a full stop, even with no pause in the book. Not stopping is a DNF.',
+        'Eyes on the road. Call out a train, tractor, school bus or slow truck at once: the navigator starts the stopwatch.',
+        'Say back every turn and every speed: "Right, 35." Every few minutes, unprompted: "Holding 35."',
+        'Never guess a speed ("I\'ll do 37"). Hold the number until the navigator calls a new one.',
+        'ICE: the navigator names the sign. Whoever sees it first says "I see it"; the other answers "I see it too".',
+        'Say "mark" as the sign goes by. At a stop, say "Stopped" when the car rocks back.',
+        'Do not move until GO: "9 ... 1, GO". Watching traffic? Say "keep counting": the count goes 0, 1, 2.',
+        'Starts and restarts: wait back among the cars; pull up only after the car ahead has left. If it sits, go around it.',
+        'Starts and restarts: about 30 seconds before, ask "how long?" if no warning came. The count ends on the launch second: go on GO.',
+        'Green sign = timing checkpoint: do nothing. Never stop, never 5 mph or slower in sight of it (30 s).',
+        'Red GREAT RACE STOP board: stop, and always at the finish. A wave to the crew is fine; no talking.',
+        'Calibration run: hold the indicated speed exactly, say nothing about early or late, keep right. The navigator works it out parked.',
+        'In a timed section talk only about the instructions; never ask "are we early or late?". "Comes quick": eyes up for two signs.',
+        'Not sure where we are: say so. Pull off only where safe, never in the lane, never in sight of a green sign.',
+        'Lost: no U-turn in traffic and no speeding to catch up. The navigator runs the lost procedure.',
+        'A Day-Glo "GR" sign overrides the book. "I" = ignore that sign; "End Leg" = leg cancelled, carry on safely.',
+        'Off the clock (an hourglass, or a camera with a slash): any safe speed, but be early at the restart.',
+        'Instruments: the dash clock is analog with no digital readout; the stopwatch may be digital. No GPS. The odometer stays covered.',
+        'Phones off and out of reach from the start line to the finish: warning, then 10 s, then 1 min.',
+        'Any mistake is ours: fix it together and move on.',
       ] } },
     ],
     check: { question: 'The navigator counts "3, 2, 1" and then says nothing. What should the driver do, and what should the count have been?', options: ['Go at "1"; the count was fine', 'Wait: the count must end with the word GO, and GO is the only signal to move', 'Go after one second of silence'], answer: 1, explain: 'The navigator always ends a countdown with GO (HB Appendix B). GO is the one word that tells the driver to execute, so the driver does not move without it.' },
@@ -513,5 +524,6 @@ const ALL_LESSONS: Lesson[] = [
  * EDU-005: the School order follows the Four S's (HB p.13-14): safety and the priorities first, then reading the page and the team protocol (stay on course),
  * what to do when lost, starts and restarts with the clock (start on time), and only then the stay-on-time arithmetic.
  */
-export const LESSON_ORDER = ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'which-timer', 'ghost-car', 'pause-arithmetic', 'timed-leads', 'recovery', 'measure-car', 'calibration', 'markup', 'rally-school'] as const;
+/** PLAY-023: the handbook's Four S's order (HB p.13-14): safety, start on time, stay on course, stay on time; the path's lessons in the path's order. */
+export const LESSON_ORDER = ['four-s', 'transits', 'which-timer', 'ghost-car', 'griid-cameo', 'protocol', 'markup', 'lost', 'pause-arithmetic', 'timed-leads', 'measure-car', 'recovery', 'calibration', 'rally-school'] as const;
 export const LESSONS: Lesson[] = LESSON_ORDER.map(id => { const l = ALL_LESSONS.find(x => x.id === id); if (!l) throw new Error(`lesson ${id} missing`); return l; });

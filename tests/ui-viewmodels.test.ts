@@ -706,7 +706,7 @@ describe('UI-019 first-run clarity and the curriculum order', () => {
   it('UI-019 EDU-005 Start here: the Four S\'s lesson first; the current step is the first one not done', () => {
     const none = startPathState({}, () => false);
     expect(none[0]!.step.id).toBe('four-s'); expect(none[0]!.current).toBe(true); expect(none.filter(x => x.current).length).toBe(1);
-    const lessonsRead = (id: string) => ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'ghost-car'].includes(id);
+    const lessonsRead = (id: string) => ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'ghost-car', 'which-timer', 'pause-arithmetic'].includes(id);   // PLAY-023: the path now carries which-timer and pause-arithmetic before D03
     const some = startPathState({ D09: 1, D10: 1, D16: 1, D01: 1 }, lessonsRead);
     expect(some.find(x => x.current)!.step.id).toBe('D03');
     expect(startPathState({}, () => true).some(x => x.current)).toBe(true);   // drills still pending
@@ -815,7 +815,7 @@ describe('UI-028 Start-here path and pace aid polish', () => {
   it('UI-028 PLAY-001 Start-here: a Bronze star ticks a drill step and the path moves on (no D01 loop), while unlocks still need Silver or Gold; lessons use lessonDone', () => {
     const ds = allDrills();
     const early = { D09: { stars: 1, tierStars: [1] }, D10: { stars: 1, tierStars: [1, 0, 0] }, D16: { stars: 1, tierStars: [1, 0, 0] } };
-    const read = (id: string) => ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'ghost-car'].includes(id);
+    const read = (id: string) => ['four-s', 'griid-cameo', 'protocol', 'lost', 'transits', 'ghost-car', 'which-timer', 'pause-arithmetic'].includes(id);   // PLAY-023: two more lessons on the path before D03
     const bronze = { drills: { ...early, D01: { stars: 3, tierStars: [3, 0, 0] } } };
     const afterBronze = startPathFromProgress(ds, bronze, read);
     expect(afterBronze.find(x => x.step.id === 'D01')!.done).toBe(true);
@@ -826,7 +826,7 @@ describe('UI-028 Start-here path and pace aid polish', () => {
     const afterSilver = startPathFromProgress(ds, silver, read);
     expect(afterSilver.find(x => x.step.id === 'D01')!.done).toBe(true);
     expect(afterSilver.find(x => x.step.id === 'D03')!.done).toBe(true);
-    expect(afterSilver.find(x => x.current)!.step.id).toBe('D04');
+    expect(afterSilver.find(x => x.current)!.step.id).toBe('timed-leads');   // PLAY-023: the lesson D04 reads first comes before it
     expect(afterSilver.find(x => x.step.id === 'ghost-car')!.done).toBe(true);
   });
   it('UI-028 pace aid shows no number while the car waits at a restart line (hold), the signed number otherwise', () => {
@@ -918,7 +918,7 @@ describe('LESSON-001 The Four S\'s', () => {
     const t = lessonText(lesson('four-s'));
     hasAll(t, ['What qualifies', 'What never does', 'multiples of 10 s', 'within 15 minutes', 'TA point', 'could have made up', TA_PATTERN, 'Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.']);
     hasAll(t, ['1 s per second', '2 min late, 5 min early', 'Missed timing checkpoint', '3 min', 'More than 30 min', 'Failure to stop at a STOP sign', 'DNF']);
-    const l = lesson('four-s'); expect(l.check.options[l.check.answer]).toContain('0m20s');
+    const l = lesson('four-s'); expect(l.check.options[l.check.answer]).toMatch(/stay on course/);   // PLAY-032 (fix sprint PT-08): the check now tests the S priority; the TA arithmetic stays in the text
   });
   it('LESSON-001 every lesson keeps a source citing the research files and has one check question', () => {
     expect(LESSONS.length).toBeGreaterThanOrEqual(10);
@@ -940,7 +940,7 @@ describe('LESSON-002 Team protocol', () => {
   });
   it('LESSON-002 PLAY-011 EDU-007 carries a printable card for the driver of twelve lines: who says "I see it" / "I see it too", the start routine, and rule 6 launches early by the start loss', () => {
     const card = lesson('protocol').body.find((b): b is Extract<typeof b, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
-    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(12);
+    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(21);   // PLAY-031 (fix sprint PT-08): one rule per line under 25 words, so 21 lines instead of 12 long ones
     const all = card.card.lines.join(' ');
     expect(all).toMatch(/Whoever sees it first says "I see it"; the other answers "I see it too"/);
     expect(all).toMatch(/Starts and restarts: .*30 seconds.*count ends on the launch second.*go on GO/);
@@ -1278,7 +1278,7 @@ describe('UI-032 restart, exact-transit and promoted-stop cards', () => {
     const rs = sc.book.find(i => i.section === 'restart')!;
     const card = holdCardFor(sc, null, rs.n, sc.asp)!;
     expect(card.kind).toBe('restart'); expect(card.goTod).toBe(rs.restartTime);
-    expect(card.text).toBe(`base ${formatClock(rs.baseTime!)} + ASP 17 min = your time ${formatClock(rs.baseTime! + 17 * 60)}, leave at that second, do not pull up before your minute`);
+    expect(card.text).toBe(`base ${formatClock(rs.baseTime!)} + ASP 17 min = your time ${formatClock(rs.baseTime! + 17 * 60)}: launch on the count (your time minus the standing-start loss), do not pull up before your minute`);   // PLAY-032 (fix sprint PT-08): the card no longer says "leave at that second" under a launch lead
     expect(sc.asp).toBe(17); expect(rs.restartTime).toBe(rs.baseTime! + 17 * 60);
   });
   it('UI-032 exact-transit card: IN + 20m00s = OUT, from sim.transitIn / transitOutFor; before the sign it says to read the clock', () => {
@@ -1434,7 +1434,7 @@ describe('LESSON-002 LESSON-003 LESSON-004 LESSON-006 and the recovery and calib
     const l = lesson('protocol'); const t = lessonText(l);
     hasAll(t, ['ICE: identify, confirm, execute', 'I see it too', '"Mark."', 'holding 35', 'rock-back', 'keep counting', '0, 1, 2', 'coming in at 20, out 35, holding for nine', '9, 8, 7, 6', 'Rally School Part 2 [15:45]', '2026 Training Session [121:20]', 'video, not in the documents']);
     const card = l.body.find((b): b is Extract<LessonBlock, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
-    expect(card.card.lines).toHaveLength(12); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);
+    expect(card.card.lines).toHaveLength(21); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);   // PLAY-031: 21 short lines
   });
   it('LESSON-003 PREREAD-001 adds the Column D checkpoint number and arrival time, the pre-written chart losses and "page n of m" (and keeps the six notations)', () => {
     const l = lesson('markup'); const t = lessonText(l);

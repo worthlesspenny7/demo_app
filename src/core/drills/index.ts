@@ -14,7 +14,7 @@ import { D18, D11, D12, D13, setDayFallback } from './staged.js';
 import type { Drill, Rubric } from './types.js';
 import type { StageResult } from '../sim.js';
 import type { Scenario } from '../course.js';
-import { basicRubric, legErrors, meanAbs, callErrors, driverScale, headlineTip, withSkillTip, starsFromMeanAbs } from './rubrics.js';
+import { basicRubric, legErrors, meanAbs, callErrors, driverScale, headlineTip, withSkillTip, starsFromMeanAbs, withRecoveryGate } from './rubrics.js';
 import { lostProcedure, LOST_GUIDANCE } from './lost.js';
 import { formatClock } from '../units.js';
 
@@ -50,9 +50,12 @@ const D04: Drill = {
     const rb = basicRubric(r, [1, 2.5, 5], ['Compound lines ("STOP P15, 25 for 40 then 45"): the 40 s starts when the ghost leaves, 15 s after arrival, not at your go.'], sc.driver.skill, sc);
     const k = driverScale(sc.driver.skill);
     const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.6 * k ? 3 : perChange <= 1.2 * k ? 2 : perChange <= 2.5 * k ? 1 : 0;
-    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · timed-change calls ${perChange.toFixed(1)} s off each (average ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'})`;
+    // ENG-022: the STOP + timed lines are the drill's point (count from the ghost's departure, not your go), graded on their own so averaging over the plain lines cannot hide them
+    const stopErrs = callErrors(r, sc, 'timed', 5, ins => !!ins.pause); const perStop = meanAbs(stopErrs); const stopBias = stopErrs.length ? stopErrs.reduce((a, b) => a + b, 0) / stopErrs.length : 0;
+    const stopStars: 0 | 1 | 2 | 3 = !stopErrs.length ? 3 : perStop <= 1.0 * k ? 3 : perStop <= 1.3 * k ? 2 : perStop <= 2.5 * k ? 1 : 0;
+    rb.stars = Math.min(rb.stars, changeStars, stopStars) as 0 | 1 | 2 | 3; rb.headline += ` · timed-change calls ${perChange.toFixed(1)} s off each (average ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'})${stopErrs.length ? ` · STOP + timed lines ${perStop.toFixed(1)} s off each` : ''}`;
     // EDU-002: the call error is the drill's own skill: it heads "Fix this next" whenever it held the stars down
-    const tip = changeStars < 3 ? `Timed-change calls were ${perChange.toFixed(1)} s off each, ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'} on average: start the count when the ghost leaves the line (the moment you pass it, or arrival plus the printed pause at a STOP, never your own GO) and call the new speed half a ramp before the count ends.` : null;
+    const tip = stopStars < 3 && stopStars <= changeStars ? `At the STOP + timed lines your calls were ${perStop.toFixed(1)} s off each, ${Math.abs(stopBias).toFixed(1)} s ${stopBias >= 0 ? 'late' : 'early'} on average: ${stopBias < 0 ? 'you counted from your own GO. ' : ''}The count starts when the ghost leaves = arrival + the printed pause (the card's "s after Stopped"), never at your go.` : changeStars < 3 ? `Timed-change calls were ${perChange.toFixed(1)} s off each, ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'} on average: start the count when the ghost leaves the line (the moment you pass it, or arrival plus the printed pause at a STOP, never your own GO) and call the new speed half a ramp before the count ends.` : null;
     return withSkillTip(rb, r, sc, tip);
   },
 };
@@ -90,12 +93,12 @@ const D08: Drill = {
     b.hazard({ kind: 'signal', redSeconds: 20 + r.int(0, 15), greenSeconds: 40, offset: T0 + r.int(0, 60) });
     b.advanceMiles(2.0).checkpoint().advanceMiles(1.2).checkpoint().advanceFt(300).finish();
     return b.build(); },
-  rubric(r, sc) { return basicRubric(r, [2, 5, 10], ['10 % rule (HB p.10): 10 % faster for 10 x the seconds lost (4 s lost at 35: 38.5 mph for 40 s); the same rule burns off time you are ahead. Finish before likely checkpoint spots.'], sc.driver.skill, sc); },
+  rubric(r, sc) { return withRecoveryGate(basicRubric(r, [2, 5, 10], ['10 % rule (HB p.10): 10 % faster for 10 x the seconds lost (4 s lost at 35: 38.5 mph for 40 s); the same rule burns off time you are ahead. Finish before likely checkpoint spots.'], sc.driver.skill, sc), r, sc); },   // ENG-022: no recovery, at most one star
 };
 
 // ---------- D09 trap quiz (static) ----------
 const D09: Drill = {
-  id: 'D09', title: 'Trap quiz: which way?', objective: 'Read the instruction and the CAMEO/road view; pick the exit. 20 cards from the trap library.', skills: ['P8'], minutes: 5, kind: 'quiz',
+  id: 'D09', title: 'Trap quiz: which way?', objective: 'Read the line and the CAMEO, then decide what you do: which way, where, and whether you stop. 20 cards from the trap library; each one is a decision, never a rule to recite.', skills: ['P8'], minutes: 5, kind: 'quiz',
   tiers: [{ name: 'Cards', aids: aidsForRung(3), driver: DRIVER_EXPERT, description: '20 cards' }], unlock: [], readFirst: ['griid-cameo'],
   scenario(seed, t) { return D10.scenario(seed, t); }, rubric(r, sc) { return basicRubric(r, [1, 3, 6], [], sc.driver.skill, sc); },
 };
@@ -175,8 +178,9 @@ export function elapsedAfterReset(r: StageResult, sc: Scenario): { resetTod: num
   const before = anchors.filter(a => a.tod <= lost.tod).sort((a, b) => b.tod - a.tod)[0] ?? anchors[0]!;
   const t0 = sc.startTime - sc.prereadSeconds;   // the action log is in ticks of 0.1 s from the start of the pre-read (SIM-025)
   const notes = r.actions.filter(a => a.action.type === 'note').map(a => ({ tod: t0 + a.tick * 0.1, text: (a.action as { text: string }).text })).filter(n => n.tod >= lost.tod);
+  // ENG-023: only the FIRST "elapsed" note written after the reset counts (a pile of guesses earns nothing)
   let best: { v: number; tod: number; err: number } | null = null;
-  for (const n of notes) { const m = /elapsed\s*[=:]?\s*([0-9][0-9ms:.]*)/i.exec(n.text); const v = m ? parseDuration(m[1]!) : null; if (v === null) continue; const err = Math.abs(v - (n.tod - before.tod)); if (!best || err < best.err) best = { v, tod: n.tod, err }; }
+  for (const n of notes) { const m = /elapsed\s*[=:]?\s*([0-9][^,;()]*)/i.exec(n.text); const v = m ? parseDuration(m[1]!) : null; if (v === null) continue; best = { v, tod: n.tod, err: Math.abs(v - (n.tod - before.tod)) }; break; }
   const restarted = r.instrumentLog.some(e => e.kind === 'watch.start' && e.tod >= lost.tod);
   return { resetTod: lost.tod, anchorTod: before.tod, anchorLabel: before.label, noted: best?.v ?? null, noteTod: best?.tod ?? null, truth: best ? best.tod - before.tod : (r.events[r.events.length - 1]?.tod ?? lost.tod) - before.tod, err: best?.err ?? null, restarted };
 }

@@ -49,7 +49,7 @@ describe('EDU-002 never "Clean run" under three stars', () => {
       expect(vm.tip, id).toBe(rb.tip); expect(vm.tip, id).toMatch(re);
     };
     { const sc = drillById('D05')!.scenario(1, 0); check('D05', sc, play(sc, rookie), /Landmark calls were .* late on average: you call at the sign/); }
-    { const sc = drillById('D04')!.scenario(2, 0); check('D04', sc, play(sc, s => new OracleBot(s, { goCount: true })), /Timed-change calls were/); }
+    { const sc = drillById('D04')!.scenario(2, 0); check('D04', sc, play(sc, s => new OracleBot(s, { goCount: true })), /Timed-change calls were|At the STOP \+ timed lines your calls/); }   // ENG-022 (fix sprint PT-09): the STOP + timed lines are graded on their own and name goCount's error
     { const sc = drillById('D06')!.scenario(1, 0); check('D06', sc, play(sc, oracle), /No chart cells were noted/); }
     { const sc = drillById('D15')!.scenario(1, 0); const r = play(sc, s => { let done = false; return withHook(oracle(s), ss => { if (done) return; done = true; for (const x of idealNotes(sc)) { const ins = sc.book.find(b => b.n === x.n)!; ss.act({ type: 'line.annotate', n: x.n, text: ins.pause ? x.text.replace(/pause [\d.]+ s/, `pause ${ins.pause} s`) : x.text } as Action); } }); });
       check('D15', sc, r, /^Pre-read notation "chart pause time next to each pause" 0\/\d+/); }
@@ -100,16 +100,18 @@ describe('EDU-005 the Four S\'s order: lessons, path, links and gates', () => {
   it('EDU-005 lessons run safety and course first, then start on time, then stay on time; the path follows and every drive drill links its lesson', () => {
     expect([...LESSON_ORDER]).toEqual(LESSONS.map(l => l.id));
     const at = (id: string) => LESSONS.findIndex(l => l.id === id);
-    expect(at('four-s')).toBe(0); expect(at('griid-cameo')).toBeLessThan(at('pause-arithmetic')); expect(at('protocol')).toBeLessThan(at('ghost-car')); expect(at('lost')).toBeLessThan(at('transits'));
+    // PLAY-023 (fix sprint PT-08): the handbook's own order: safety, start on time, stay on course, stay on time
+    expect(at('four-s')).toBe(0); expect(at('griid-cameo')).toBeLessThan(at('pause-arithmetic')); expect(at('transits')).toBeLessThan(at('griid-cameo')); expect(at('ghost-car')).toBeLessThan(at('protocol')); expect(at('lost')).toBeLessThan(at('pause-arithmetic'));
     expect(at('transits')).toBeLessThan(at('which-timer')); expect(at('which-timer')).toBeLessThan(at('pause-arithmetic')); expect(at('measure-car')).toBeLessThan(at('calibration'));
     const p = START_PATH.map(s => s.id); const pi = (id: string) => p.indexOf(id);
     expect(p[0]).toBe('four-s'); for (const early of ['griid-cameo', 'protocol', 'D09', 'lost', 'D10', 'transits', 'D16']) expect(pi(early), early).toBeLessThan(pi('D01'));
+    expect(pi('D16')).toBeLessThan(pi('D09'));   // PLAY-023: start on time before stay on course
     expect(pi('lost')).toBeLessThan(pi('D10')); expect(pi('transits')).toBeLessThan(pi('D16')); expect(pi('D06')).toBeGreaterThan(pi('D05')); expect(p[p.length - 1]).toBe('D18');
     for (const s of START_PATH) if (s.kind === 'lesson') expect(LESSONS.some(l => l.id === s.id), s.id).toBe(true);
     expect(pathStepHash({ kind: 'drill', id: 'D09', label: '' })).toBe('#/quiz/D09'); expect(pathStepHash({ kind: 'drill', id: 'D10', label: '' })).toBe('#/cockpit/drill/D10/0/1');
     expect(startPathState({}, () => false).find(x => x.current)!.step.id).toBe('four-s');
     for (const d of allDrills()) { const links = readFirstOf(d); expect(links.length, `${d.id} links a lesson`).toBeGreaterThan(0); for (const l of links) expect(LESSONS.some(x => x.id === l.id), `${d.id} -> ${l.id}`).toBe(true); }
-    expect(CURRICULUM.indexOf('D10')).toBeLessThan(CURRICULUM.indexOf('D01')); expect(CURRICULUM.indexOf('D16')).toBeLessThan(CURRICULUM.indexOf('D03'));
+    expect(CURRICULUM.indexOf('D10')).toBeLessThan(CURRICULUM.indexOf('D01')); expect(CURRICULUM.indexOf('D16')).toBeLessThan(CURRICULUM.indexOf('D03')); expect(CURRICULUM.indexOf('D16')).toBeLessThan(CURRICULUM.indexOf('D09'));
   });
   it('EDU-005 gates: D10 needs the lost lesson, D15 the transits lesson, Gold D03/D04/D05 need D06, D18 needs D16', () => {
     const none = () => false, all = () => true;
@@ -156,7 +158,7 @@ describe('EDU-006 the soft gates', () => {
 
 describe('EDU-007 Dad\'s card and the first morning', () => {
   it('EDU-007 the twelve-line card carries safety, the full stop, the checkpoint signs, calibration conduct, the restart queue, lost, the phone and the emergency signs; no "stop short of the intersection"', () => {
-    const c = card(); expect(c.length).toBe(12); const t = c.join('\n');
+    const c = card(); expect(c.length).toBe(21); const t = c.join('\n');   // PLAY-031 (fix sprint PT-08): one rule per line, so 21 short lines
     for (const phrase of ['Safety beats seconds', 'Every STOP sign is a full stop, even with no pause in the book', 'DNF', 'Never speed', 'Green sign = timing checkpoint: do nothing', 'never 5 mph or slower in sight of it (30 s)', 'Red GREAT RACE STOP board: stop', 'Calibration run: hold the indicated speed exactly, say nothing about early or late', 'Never guess a speed', 'train, tractor, school bus', 'wait back among the cars; pull up only after the car ahead has left', 'go around it', 'Not sure where we are: say so', 'never in sight of a green sign', 'no U-turn in traffic', 'No score is worth an accident', 'Day-Glo "GR" sign', '"End Leg"', 'Off the clock', 'Phones off and out of reach', 'warning, then 10 s, then 1 min'])
       expect(t, phrase).toContain(phrase);
     expect(lessonText(lesson('protocol'))).not.toMatch(/stop short of the intersection/i); expect(lessonText(lesson('protocol'))).toMatch(/Rule 10 .*never in sight of a green checkpoint sign/);

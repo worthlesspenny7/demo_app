@@ -157,7 +157,7 @@ test('UI-032 the cockpit shows the restart card (base + ASP = your time), the ex
   const lines = await page.evaluate(() => { const b = window.__rally!.observe().book; return { restart: b.find(i => i.section === 'restart')!.n, transit: b.find(i => i.transit?.exact && !i.transit.end && i.section !== 'start' && i.section !== 'warmup')?.n ?? null, promoted: b.find(i => i.promotedStop)?.n ?? null }; });
   await depart(page);
   await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.restart);
-  await expect(page.locator('#holdcard')).toContainText(/base \d\d:\d\d:\d\d \+ ASP \d+ min = your time \d\d:\d\d:\d\d, leave at that second, do not pull up before your minute/);
+  await expect(page.locator('#holdcard')).toContainText(/base \d\d:\d\d:\d\d \+ ASP \d+ min = your time \d\d:\d\d:\d\d: launch on the count \(your time minus the standing-start loss\), do not pull up before your minute/);   // PLAY-032: wording
   if (lines.transit !== null) { await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.transit); await expect(page.locator('#holdcard')).toContainText(/IN .* \+ \d+m00s = OUT|IN \(read the clock/); }
   if (lines.promoted !== null) { await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.promoted); await expect(page.locator('#holdcard')).toContainText(/leave AT (\d\d:\d\d:\d\d \(not before \d\d:\d\d:\d\d - 5 min penalty window; )?\d+m00s prior to (your )?end/); }
 });

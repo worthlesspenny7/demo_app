@@ -4,7 +4,7 @@ import type { Scenario } from '../course.js';
 import { rng } from '../rng.js';
 import type { Drill } from './types.js';
 import { tiers, legalTiers, tierOf, base, T0, generatorHook, aspForSeed, bookStyleFor } from './common.js';
-import { basicRubric } from './rubrics.js';
+import { basicRubric, withRecoveryGate } from './rubrics.js';
 
 /** The ASP of a campaign stage (CAMP-001): drawn once per stage, shown on the card and the campaign table. */
 export function campaignAsp(stage: number): number { return aspForSeed(stage, 13); }  // stage 0 is the Trophy Run (played as seed 10)
@@ -34,7 +34,7 @@ export const D18: Drill = {
     sc.tags = [...(sc.tags ?? []), 'd18', `asp:${asp}`, 'timed-portion:1'];
     return sc;
   },
-  rubric(r, sc) { return basicRubric(r, [4, 8, 14], ['Left at base + ASP, one timed portion, End timed portion: the shape of every stage in miniature. No TA point here, so a light or a truck is made up with the 10 % rule.'], sc.driver.skill, sc); },
+  rubric(r, sc) { return withRecoveryGate(basicRubric(r, [4, 8, 14], ['Left at base + ASP, one timed portion, End timed portion: the shape of every stage in miniature. No TA point here, so a light or a truck is made up with the 10 % rule.'], sc.driver.skill, sc), r, sc); },   // ENG-022: no recovery, at most one star
 };
 
 // ---------- generator-backed drills ----------

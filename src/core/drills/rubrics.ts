@@ -84,6 +84,31 @@ export function stopCauses(r: StageResult): { pause: number; noPause: number } {
   return { pause, noPause };
 }
 
+/**
+ * ENG-022: the D08 / D18 gates teach recovery. `owed` = the seconds the run lost that the navigator must make up (hazards, turns, speed changes,
+ * the start and STOPs with no pause); `shown` = the navigator called a speed above the assigned one at least once (sim event call.over or
+ * makeUp.begin) or the committee credited a Time Allowance. A run that owed 5 s or more and never tried to recover earns at most one star.
+ */
+export function recoveryCheck(r: StageResult): { owed: number; shown: boolean; capped: boolean } {
+  const t: Record<string, number> = {}; for (const a of r.attribution ?? []) for (const [k, v] of Object.entries(a.buckets)) t[k] = (t[k] ?? 0) + v;
+  const owed = ['hazard', 'turn', 'speedChange', 'start'].reduce((x, k) => x + Math.max(0, t[k] ?? 0), 0) + Math.max(0, stopCauses(r).noPause);
+  const shown = (r.events ?? []).some(e => e.type === 'call.over' || e.type === 'makeUp.begin') || taCreditTotal(r) > 0;
+  return { owed: Math.round(owed * 10) / 10, shown, capped: owed >= 5 && !shown };
+}
+export function withRecoveryGate(rb: Rubric, r: StageResult, sc: Scenario): Rubric {
+  const c = recoveryCheck(r); if (!c.capped || rb.stars <= 1) return rb;
+  rb.stars = 1;
+  const tip = `You lost about ${Math.round(c.owed)} s to the hazard, the stops and the turns and never called a make-up speed: the leg came out close only because errors cancelled. Time each loss, then hold 10 % over for 10 x the seconds lost (HB p.10), and back to the assigned speed.`;
+  return withSkillTip(rb, r, sc, tip);
+}
+
+/** PLAY-028: printed-pause stops where the navigator sat more than 1 s past the chart pause time (the only case for "go earlier"). */
+export function longDwells(r: StageResult, over = 1): { line: number | null; seconds: number }[] {
+  const out: { line: number | null; seconds: number }[] = [];
+  for (const a of r.attribution ?? []) for (const st of a.stops ?? []) if (st.pause > 0 && st.actualCost - Math.max(0, st.trafficWait ?? 0) > over) out.push({ line: st.line, seconds: Math.round((st.actualCost - Math.max(0, st.trafficWait ?? 0)) * 10) / 10 });
+  return out;
+}
+
 /** Largest-bucket headline tip (DEBRIEF-001 at engine level). */
 export function headlineTip(r: StageResult, sc?: Scenario, opts: TipOptions = {}): string {
   const totals: Record<string, number> = {};
@@ -138,8 +163,14 @@ function tipForStop(late: boolean): string {
 function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[], r?: StageResult): string {
   switch (k) {
     case 'stop': {
-      // N3: stops with no printed pause lose the stop and go time whatever the dwell is: the tip is to make it up, not to "go earlier"
-      if (late && r) { const c = stopCauses(r); if (c.noPause >= 1.5 && c.pause < 1.5) return `Your stops cost ${Math.round(c.noPause + Math.max(0, c.pause))} s, but your dwells were right: the loss is at STOP signs with no pause printed, where the stop and go costs the car time that no dwell can save. Go as soon as it is safe and make the seconds up with the 10 % rule (10 % faster for 10 x the seconds lost).`; }
+      // PLAY-028: "go earlier" only when a dwell at a printed pause was really long (more than 1 s over the chart pause time at some stop)
+      if (late && r) { const long = longDwells(r); const c = stopCauses(r);
+        const pauseStops = (r.attribution ?? []).some(a => (a.stops ?? []).some(st => st.pause > 0));
+        if (!long.length && (pauseStops || c.noPause >= 1.5)) {
+          if (c.noPause >= 1.5) return `Your stops cost ${Math.round(c.noPause + Math.max(0, c.pause))} s, but your dwells were right (every printed pause within 1 s): the loss is at STOP signs with no pause printed, where the stop and go costs the car time that no dwell can save. Go as soon as it is safe and make the seconds up with the 10 % rule (10 % faster for 10 x the seconds lost).`;
+          return `Your dwells were right (every printed pause within 1 s of the chart pause time); the ${Math.round(c.pause)} s in the stop bucket is small overruns added up: keep counting from "Stopped" on the stopwatch and say GO on the chart second.`;
+        }
+        if (c.noPause >= 1.5 && c.pause < 1.5) return `Your stops cost ${Math.round(c.noPause + Math.max(0, c.pause))} s, but your dwells were right: the loss is at STOP signs with no pause printed, where the stop and go costs the car time that no dwell can save. Go as soon as it is safe and make the seconds up with the 10 % rule (10 % faster for 10 x the seconds lost).`; }
       return tipForStop(late);
     }
     case 'start': return late ? 'You left the start late: leave early by the standstill acceleration loss (the 0 > speed cell of your acceleration chart; about 4-5 s for the simulator\'s Ford, a simulator default: measure your car).' : 'You left the start too early: lead by the acceleration loss only (about 4-5 s for the simulator\'s Ford), not more.';
@@ -194,7 +225,7 @@ export function withSkillTip(rb: Rubric, r: StageResult, sc: Scenario, skillTip:
  * should have been (timed: T - half the ramp after the line; landmark: half the ramp before the sign). + = late. A change never called counts as
  * `missedPenalty` seconds late. These are the same numbers the Debrief's bias row prints, so the stars and the bias row agree.
  */
-export function callErrors(r: StageResult, sc: Scenario, kind: 'timed' | 'landmark', missedPenalty = 5): number[] {
+export function callErrors(r: StageResult, sc: Scenario, kind: 'timed' | 'landmark', missedPenalty = 5, only?: (ins: Instruction) => boolean): number[] {
   const ev = r.events; const out: number[] = []; let assigned: number | undefined = undefined; let prevTimed = false;
   for (const ins of sc.book) {
     const vBefore = assigned;
@@ -203,6 +234,7 @@ export function callErrors(r: StageResult, sc: Scenario, kind: 'timed' | 'landma
     const ci = ev.findIndex(e => e.type === 'node' && e.detail?.nodeId === ins.nodeId);
     const wasTimed = prevTimed; prevTimed = !!ins.timed;
     if (ci < 0) continue;
+    if (only && !only(ins)) continue;
     const cross = ev[ci]!;
     if (kind === 'timed' && ins.timed) {
       const T = ins.timed.seconds; const lead = rampLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car);

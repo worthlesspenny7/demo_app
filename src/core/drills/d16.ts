@@ -32,7 +32,7 @@ export function d16Plan(seed: number, trap = false): { asp: number; start: numbe
 
 export const D16: Drill = {
   id: 'D16', title: 'Start on the second', objective: 'Your start is the printed time plus your ASP minutes. Leave on that second, take exactly 20 minutes where told (OUT = IN + 20m00s), leave lunch 45 minutes before the restart, and restart on your minute. One wrong minute fails the drill, and a start or restart with no launch lead (leaving on the minute itself, so the car is still accelerating at it) holds it at one star.', skills: ['P9'], minutes: 85, kind: 'drive',
-  tiers: tiers([2, 1, 0]), unlock: [], readFirst: ['transits', 'which-timer'],
+  tiers: tiers([2, 1, 0]), unlock: [], readFirst: ['transits', 'which-timer', 'ghost-car'],
   scenario(seed, t) {
     const tier = tierOf(D16, t); const trap = tier.aids.rung <= 1; const p = d16Plan(seed, trap);
     const b = new ScenarioBuilder({ id: `D16-${seed}-${tier.name}`, name: 'Time of day', seed, startTime: p.base, asp: p.asp, timeZone: 'CDT', bookStyle: bookStyleFor(tier.aids), driver: tier.driver, aids: tier.aids, speedo: PERFECT_TIMEWISE, car: FORD_1939, prereadSeconds: 180 }).start(V);

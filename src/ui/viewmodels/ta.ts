@@ -214,8 +214,17 @@ export interface TaHelper {
   makeUp: number;
   claim: number;
   text: string;
+  /** PLAY-032: the navigator's own lapped delay (the stopwatch), when there is one */
+  own?: number | null;
 }
-export function taHelper(advice: { measuredDelay: number; measured?: number; stoppedSeconds?: number; chartLoss?: number; otherDelay?: number; makeUpToRound?: number; claim?: number; suggested?: number } | null | undefined): TaHelper {
+/** PLAY-032: the delay the navigator's own stopwatch shows: the reading of a stopped watch, else the last lap split. */
+export function ownLappedDelay(sw: { running: boolean; reading: number; laps: number[] } | null | undefined): number | null {
+  if (!sw) return null;
+  if (!sw.running && sw.reading > 0) return sw.reading;
+  const l = sw.laps.length ? sw.laps[sw.laps.length - 1]! - (sw.laps.length > 1 ? sw.laps[sw.laps.length - 2]! : 0) : null;
+  return l !== null && l > 0 ? l : null;
+}
+export function taHelper(advice: { measuredDelay: number; measured?: number; stoppedSeconds?: number; chartLoss?: number; otherDelay?: number; makeUpToRound?: number; claim?: number; suggested?: number } | null | undefined, ownWatch: number | null = null): TaHelper {
   const num = (x: unknown): number | null => (typeof x === 'number' && Number.isFinite(x) ? x : null);
   const measured = Math.max(0, Math.round(num(advice?.measured) ?? advice?.measuredDelay ?? 0));
   const stopped = num(advice?.stoppedSeconds);
@@ -228,8 +237,11 @@ export function taHelper(advice: { measuredDelay: number; measured?: number; sto
     : `measured ${formatInterval(measured)} = stopped time + chart stop-and-go loss`;
   const suggested = num(advice?.suggested);
   const denied = suggested !== null && suggested < claim ? ` The committee denies what you could have made up (V.H.5): suggested request ${formatInterval(suggested)}.` : '';
-  const text = measured <= 0 ? 'No delay measured: nothing to claim.' : (makeUp === 0 ? `${parts}; already a multiple of 10 s, claim ${formatInterval(claim)}.` : `${parts}; make up the odd ${makeUp} s, claim ${formatInterval(claim)}.`) + denied;
-  return { measured, stopped, chartLoss, makeUp, claim, text };
+  // PLAY-032: at Bronze the worksheet puts the navigator's own lapped delay beside the engine's number
+  const own = ownWatch !== null && Number.isFinite(ownWatch) && ownWatch > 0 ? Math.round(ownWatch) : null;
+  const ownText = own === null ? '' : `Your watch ${formatInterval(own)} beside the engine's ${formatInterval(measured)}${Math.abs(own - measured) > 2 ? ` (off by ${Math.abs(own - measured)} s: start the watch when the car is held and stop it when it is back at speed)` : ' (agrees)'}. `;
+  const text = ownText + (measured <= 0 ? 'No delay measured: nothing to claim.' : (makeUp === 0 ? `${parts}; already a multiple of 10 s, claim ${formatInterval(claim)}.` : `${parts}; make up the odd ${makeUp} s, claim ${formatInterval(claim)}.`) + denied);
+  return { measured, stopped, chartLoss, makeUp, claim, text, own };
 }
 
 /** The cause as the engine names it (sim.TA_CAUSES: train, tractor, schoolBus, construction, combine, accident) when the text names one, else the text as typed. */

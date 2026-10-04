@@ -120,7 +120,8 @@ describe('generator', () => {
       if (card.distractors?.length) { expect(d).not.toBeNull(); expect(d!.beforeFt).toBeGreaterThanOrEqual(300); expect(d!.beforeFt).toBeLessThanOrEqual(900); }
       else expect(d).toBeNull();
     }
-    for (const id of ['stop-vs-yield', 'not-a-t', 'y-vs-fork', 'bear-vs-turn', 'acute-vs-turn', 'jog-left-at-stop', 'first-paved-road', 'first-paved-vs-gravel', 'quoted-sign-mismatch', 'straight-as-possible-fork', 'side-road-stop-facing-away', 'hidden-speed-sign', 'forgotten-pause', 'missing-pause', 'after-sign', 'at-sign', 'second-occurrence', 'onto-follows-name', 'off-course-loop', 'comes-quick', 'cp-after-stop']) expect(trapById(id).id).toBe(id);
+    // PLAY-025: the spelling trap (quoted-sign-mismatch) is gone: REG VII.D says there are no spelling traps
+    for (const id of ['stop-vs-yield', 'not-a-t', 'y-vs-fork', 'bear-vs-turn', 'acute-vs-turn', 'jog-left-at-stop', 'first-paved-road', 'first-paved-vs-gravel', 'straight-as-possible-fork', 'side-road-stop-facing-away', 'hidden-speed-sign', 'forgotten-pause', 'missing-pause', 'after-sign', 'at-sign', 'second-occurrence', 'onto-follows-name', 'off-course-loop', 'comes-quick', 'cp-after-stop']) expect(trapById(id).id).toBe(id);
     expect(() => trapCameo({ ...trapById('not-a-t'), exits: trapById('not-a-t').exits.map(e => ({ ...e, isRoute: true })) })).toThrow();
     expect(turnBand('BL')).toEqual([-60, -20]);
   });

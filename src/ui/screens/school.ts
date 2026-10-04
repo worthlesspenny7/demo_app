@@ -2,7 +2,7 @@
 import { LESSONS, lessonIntro, type LessonBlock } from '../../../content/lessons.js';
 import { app, el } from '../state.js';
 import { allDrills } from '../../core/drills/index.js';
-import { startPathFromProgress, currentPathStep, pathStepHash, START_PATH } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, pathNext, unlockBest, START_PATH, type PathNext } from '../viewmodels/curriculum.js';
 
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
 export function renderBlock(b: LessonBlock): HTMLElement {
@@ -16,9 +16,23 @@ export function renderBlock(b: LessonBlock): HTMLElement {
     return el('figure', { class: 'lesson-fig' }, t, b.caption ? el('figcaption', { class: 'cite' }, b.caption) : null);
   }
   const ol = el('ol', {}); for (const t of b.card.lines) ol.append(el('li', {}, t));
-  const print = el('button', { class: 'noprint' }, 'Print this card');
-  print.onclick = () => { const root = document.documentElement; root.classList.add('print-card-only'); try { window.print(); } finally { root.classList.remove('print-card-only'); } };
-  return el('div', { class: 'printcard' }, el('h3', {}, b.card.title), ol, print);
+  const print = el('button', { class: 'noprint', id: 'print-card' }, 'Print this card');
+  const card = el('div', { class: 'printcard' }, el('h3', {}, b.card.title), ol, print);
+  print.onclick = () => { const undo = mountPrintCard(card); window.addEventListener('afterprint', undo, { once: true }); window.print(); };
+  return card;
+}
+
+/**
+ * PLAY-031: printing the driver's card prints only the card, on one page: a copy of it is mounted as the only visible child of <body>
+ * (everything else is display:none in print, so no blank pages follow), in black on white. Undone after printing (afterprint) or on navigation.
+ */
+export function mountPrintCard(card: HTMLElement): () => void {
+  document.getElementById('print-root')?.remove();
+  const root = el('div', { id: 'print-root' }); const copy = card.cloneNode(true) as HTMLElement; copy.querySelectorAll('.noprint').forEach(n => n.remove()); root.append(copy);
+  document.body.append(root); document.documentElement.classList.add('print-card-only');
+  let done = false; const undo = (): void => { if (done) return; done = true; root.remove(); document.documentElement.classList.remove('print-card-only'); window.removeEventListener('hashchange', undo); };
+  window.addEventListener('hashchange', undo, { once: true });
+  return undo;
 }
 
 export function renderSchool(root: HTMLElement, lessonId?: string): void {
@@ -57,13 +71,13 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
     quiz.append(fb); box.append(quiz);
     const nav = el('div', { class: 'actions', style: 'display:flex;gap:8px;margin-top:12px' });
     const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/school'; }; nav.append(back);
-    // PLAY-001: a lesson on the Start-here path leads to the path's next step (lesson 1 -> D01), the next lesson stays one click away
-    let onPath: ReturnType<typeof currentPathStep> = null;
+    // PLAY-001 / PLAY-023: a lesson on the Start-here path leads to the path's next step (the next lesson when one is due, else the drill); the next lesson in the School stays one click away
+    let onPath: PathNext | null = null;
     if (START_PATH.some(s => s.kind === 'lesson' && s.id === lesson.id)) {
-      try { const steps = startPathFromProgress(allDrills(), app.progress.load(), id => id === lesson.id || app.progress.lessonDone(id)); onPath = currentPathStep(steps); } catch { onPath = null; }
+      try { const ds = allDrills(); const prog = app.progress.load(); const done = (id: string): boolean => id === lesson.id || app.progress.lessonDone(id); onPath = pathNext(startPathFromProgress(ds, prog, done), ds, unlockBest(ds, prog), done, id => LESSONS.find(l => l.id === id)?.title ?? id); } catch { onPath = null; }
     }
-    if (onPath && onPath.kind === 'drill') { const p = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${onPath.label}`); const step = onPath; p.onclick = () => { location.hash = pathStepHash(step); }; nav.append(p); }
-    if (LESSONS[idx + 1]) { const n = el('button', { class: onPath && onPath.kind === 'drill' ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
+    if (onPath && onPath.kind !== 'blocked') { const p = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${onPath.label}`); const h = onPath.hash; p.onclick = () => { location.hash = h; }; nav.append(p); }
+    if (LESSONS[idx + 1]) { const n = el('button', { class: onPath ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
     else { const n = el('button', { class: 'primary' }, 'To the drills'); n.onclick = () => { location.hash = '#/'; }; nav.append(n); }
     box.append(nav); page.append(box);
   }

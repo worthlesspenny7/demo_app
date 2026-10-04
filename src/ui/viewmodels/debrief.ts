@@ -9,7 +9,7 @@ import type { StageResult, Bucket, LegAttribution, SimEvent } from '../../core/s
 import type { Scenario, AidsConfig, Instruction } from '../../core/course.js';
 import { buildGhost, ghostTimeAt } from '../../core/ghost.js';
 import { stopLoss, rampLead, accelLoss } from '../../core/perf-table.js';
-import { headlineTip as engineHeadlineTip, timedAnchorTod, prevCrossTod, uncalledSpeeds } from '../../core/drills/rubrics.js';
+import { headlineTip as engineHeadlineTip, timedAnchorTod, prevCrossTod, uncalledSpeeds, longDwells } from '../../core/drills/rubrics.js';
 import { drillTip, drillRubric } from '../../core/drills/index.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { stopsFromEvents, speedsByNode, turnCap } from './counterfactual.js';
@@ -360,12 +360,25 @@ export function legAssignedSpeeds(scenario: Scenario): Map<number, { mph: number
   return out;
 }
 
+/** PLAY-032: the legs in which the navigator called a make-up (sim event makeUp.begin), with the first one's percentage and time. */
+export function makeUpByLeg(events: SimEvent[] | null | undefined): Map<number, { pct: number; from: string }> {
+  const out = new Map<number, { pct: number; from: string }>(); if (!Array.isArray(events)) return out;
+  let leg = 1;
+  for (const ev of events) {
+    if (ev?.type === 'checkpoint' && ev.detail?.kind === 'timing') { leg++; continue; }
+    if (ev?.type === 'makeUp.begin' && !out.has(leg)) out.set(leg, { pct: Number(ev.detail?.pct ?? 10), from: formatClockSafe(ev.tod) });
+  }
+  return out;
+}
+const formatClockSafe = (t: number): string => { const x = Math.round(Number(t) || 0); const h = Math.floor(x / 3600) % 24, m = Math.floor(x / 60) % 60, s = x % 60; return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; };
+
 export function workedCruise(attribution: LegAttribution[] | null | undefined, scenario?: Scenario | null, events?: SimEvent[] | null): CruiseRow[] {
   const out: CruiseRow[] = [];
   if (!Array.isArray(attribution)) return out;
   const fallback = scenario?.book?.find(i => typeof i.speed === 'number')?.speed ?? null;
   const perLeg = scenario ? legAssignedSpeeds(scenario) : new Map<number, { mph: number; mixed: boolean }>();
   const missed = scenario && events ? uncalledSpeeds(events, scenario) : [];
+  const makeUpLegs = makeUpByLeg(events);
   const perfectSpeedo = !!scenario && scenario.speedo.kind === 'timewise' && Math.abs(scenario.speedo.gain - 1) < 0.003 && Math.abs(scenario.speedo.offset) < 0.1;
   for (const a of attribution) {
     const ratio = num(a?.meanSpeedRatio, 1);
@@ -376,7 +389,9 @@ export function workedCruise(attribution: LegAttribution[] | null | undefined, s
     const meanTrue = assigned === null ? null : r1(assigned * ratio);
     const pct = ratio > 0 ? r1((1 / ratio - 1) * 100) : 0;
     const miss = missed.filter(m => m.legIndex === a.legIndex);
-    const cause = miss.length ? ` -> you never called ${miss.map(m => `${m.mph} at line ${m.line}`).join(', ')}: the driver kept the old speed (call every new speed; a stop that leaves at the speed it came in at needs no call)`
+    const madeUp = makeUpLegs.get(a.legIndex);
+    const cause = madeUp && pct < 0 ? ` -> you called a deliberate make-up (+${madeUp.pct} % from ${madeUp.from}): that is recovery by the 10 % rule, not the driver wandering`   // PLAY-032: a logged make-up is never blamed on the driver
+      : miss.length ? ` -> you never called ${miss.map(m => `${m.mph} at line ${m.line}`).join(', ')}: the driver kept the old speed (call every new speed; a stop that leaves at the speed it came in at needs no call)`
       : Math.abs(pct) >= 0.3 ? (perfectSpeedo ? ` -> the driver wandered ${pct > 0 ? 'under' : 'over'} the speed (the speedometer reads true): call ${pct > 0 ? '+1' : '-1'} sooner` : ` -> your card is ${Math.abs(pct).toFixed(1)} % ${pct > 0 ? 'low (call more)' : 'high (call less)'}`) : '';
     const text = `Leg ${a.legIndex}: mean true speed ${meanTrue === null ? `${(ratio * 100).toFixed(1)} % of assigned` : `${meanTrue.toFixed(1)} for assigned ${la?.mixed ? '~' : ''}${assigned}`} -> ratio ${ratio.toFixed(3)} -> ${signed1(secondsOver)} s over ${Math.round(cruiseSeconds)} s of cruise${cause}.`;
     out.push({ legIndex: a.legIndex, assigned, meanTrue, ratio, cruiseSeconds, secondsOver, cardCorrectionPct: pct, text, ...(miss.length ? { uncalled: miss.map(m => ({ line: m.line, mph: m.mph })) } : {}) });
@@ -512,7 +527,7 @@ function headlineTip(totals: Record<Bucket, number>, rows: CpRow[], result: Stag
   const n = Math.round(mag);
   const tips: Record<Bucket, string> = {
     cruise: late ? `You are running ${n} s slow at cruise: your indicated speed reads high. Correct the card (call about 0.5 mph more) or check the calibration factor.` : `You are running ${n} s fast at cruise: the speedometer reads low. Call half a mph less, or fix the card.`,
-    stop: late ? `Stops cost ${n} s net: you are dwelling longer than pause minus car loss. Compute the dwell before the stop (a \"0 MPH / 0m15s\" stop at 35 in / 35 out is about 15 - 7.5 = 7.5 s for the simulator's Ford, a simulator default: use your own chart) and call "go" on the count.` : `You are leaving stops ${n} s early: the pause is credited to the ghost in full; dwell = pause - car loss, not zero.`,
+    stop: late && result && !longDwells(result).length ? `Stops cost ${n} s net, but every dwell at a printed pause was within 1 s of the chart pause time: the seconds are STOP signs with no pause printed (make them up with the 10 % rule) and small overruns added up.` : late ? `Stops cost ${n} s net: you are dwelling longer than pause minus car loss. Compute the dwell before the stop (a \"0 MPH / 0m15s\" stop at 35 in / 35 out is about 15 - 7.5 = 7.5 s for the simulator's Ford, a simulator default: use your own chart) and call "go" on the count.` : `You are leaving stops ${n} s early: the pause is credited to the ghost in full; dwell = pause - car loss, not zero.`,
     speedChange: late ? `Speed changes cost ${n} s: start the change half a ramp early so the ramp straddles the landmark (ramp lead).` : `You are gaining ${n} s on speed changes: you call the new speed too early. Lead by half the ramp, not a full one.`,
     timedChange: late ? `Timed changes cost ${n} s: lap the watch at the start of the segment and call the new speed half a ramp before the count expires.` : `Timed changes run ${n} s early: the count starts when the ghost leaves the landmark, not when you call it.`,
     hazard: `Hazards cost ${n} s. Start the watch when you are held by a light or a train and write the delay in the ledger; a train blockage or an accident (V.H.1) can be requested as a Time Allowance at the TA point, a light is made up yourself.`,

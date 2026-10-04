@@ -157,15 +157,6 @@ export const TRAPS: TrapCard[] = [
     source: `${GR_REGS} (dead-end definition); ${R04} #6`,
   },
   {
-    id: 'quoted-sign-mismatch', name: 'Quoted sign must match exactly', category: 'signs',
-    instructionText: 'Right at "SMITH RD"', control: 'none', exits: EXITS.sideRoad('R', { route: 'turn', name: 'SMITH RD' }), turn: 'R',
-    distractors: [{ node: { exits: EXITS.sideRoad('R', { name: 'SMITH ROAD' }), sightDistance: 500, label: 'Blade reads SMITH ROAD' }, minBeforeFt: 650, maxBeforeFt: 900, why: '"SMITH ROAD" is not "SMITH RD": spelling inside quotes must match exactly' }],
-    wrongExits: [{ angle: 0, why: 'Missing the road' }],
-    tip: 'Quoted text must appear exactly (case and punctuation ignored, spelling not). Parts of words never count.',
-    visual: 'First right has a blade "SMITH ROAD"; the next right is "SMITH RD".',
-    source: `${RRH}; Rally WNY generals; ${R04} #10`,
-  },
-  {
     id: 'straight-as-possible-fork', name: 'Main Road Rule: paved curve vs gravel straight', category: 'main-road',
     instructionText: 'Follow pavement (Main Road Rule)', control: 'none',
     exits: [paved(-25, true), { angle: 0, surface: 'gravel', kind: 'road', isRoute: false }],
@@ -195,7 +186,7 @@ export const TRAPS: TrapCard[] = [
     id: 'forgotten-pause', name: 'Forgotten pause (column C)', category: 'timing',
     instructionText: 'Left at STOP at T', control: 'STOP', sign: octagon, exits: EXITS.tee('L'), turn: 'L', pause: 15,
     wrongExits: [{ angle: 90, why: 'Right at the T' }],
-    tip: 'Pause 15 rides in column C where eyes slide past it. Highlight every pause before the start and set the bezel to 15 minus your stop loss.',
+    tip: 'Pause 15 rides in column C where eyes slide past it. Highlight every pause before the start and write the GO time beside it: the pause minus your stop and go loss, counted on the stopwatch.',
     visual: 'Standard STOP at a T, route left; the pause is printed in the timing column.',
     source: `${GR_BASICS}; ronrowland.com bezel notes; ${R04} #3`,
   },
@@ -277,14 +268,45 @@ export const TRAPS: TrapCard[] = [
     source: `${GR_BASICS} (time allowance); Cascade guide (leading edge); HAZ-005`,
   },
   {
-    id: 'rr-crossing', name: 'Speed change at RR crossing', category: 'speed-change',
+    id: 'rr-crossing', name: 'Speed change at the rails (RR crossing)', category: 'speed-change',
     instructionText: 'At RR crossing', control: 'RR', exits: [], nodeKind: 'landmark', sign: { text: 'RR', shape: 'rr-advance', side: 'R' }, label: 'RR crossing', speedChange: true,
     wrongExits: [{ angle: 0, why: 'Changing speed at the crossbuck sign instead of the rails' }],
-    tip: 'A train is a Time Allowance: start the stopwatch when the gates drop, declare the measured wait at the checkpoint.',
+    tip: 'The new speed starts at the rails, not at the crossbuck sign. A train that holds you is a Time Allowance: time the wait on the stopwatch and file it on the 2026 web form at the TA point printed in the book, within 15 minutes (REG V.H.3, Example #18).',
     visual: 'Crossbuck and gates; rails cross the road at the node.',
-    source: `${GR_REGS} (TA for trains); HAZ-002`,
+    source: `${GR_REGS} (TA for trains, V.H.1, V.H.3, Example #18); HAZ-002`,
   },
 ];
+
+/**
+ * PLAY-025 (REG VII.D, PT-08 N-B5): the D09 question for each card is a decision, "which way / what do you do", never "which statement is right".
+ * One right action and three wrong ones a rookie would really take. REG VII.D: there are no spelling traps, so no card turns on spelling.
+ */
+export interface TrapQuiz { ask?: string; right: string; wrong: [string, string, string] }
+export const TRAP_QUIZ: Record<string, TrapQuiz> = {
+  'stop-vs-yield': { right: 'Drive on through the YIELD; full stop and turn right at the octagon', wrong: ['Turn right at the YIELD triangle', 'Stop at the YIELD and turn right there', 'Drive on past the octagon'] },
+  'stop-vs-blinker': { right: 'Drive on under the flasher; full stop and turn left at the octagon', wrong: ['Turn left under the flashing yellow', 'Stop under the flasher and turn left there', 'Drive straight on past the octagon'] },
+  'not-a-t': { right: 'Drive on past the road that ends at yours; turn left where your own road ends', wrong: ['Turn left into the first road on the left', 'Turn right where your road ends', 'Stop and ask the driver which way'] },
+  'y-vs-fork': { right: 'Keep straight past the side road; bear right at the true Y with both branches angled', wrong: ['Bear right into the first fork', 'Take the left branch of the first fork', 'Drive straight on through the Y'] },
+  'bear-vs-turn': { right: 'Take the road at about 45 degrees left', wrong: ['Take the road at 90 degrees left', 'Stay on the pavement straight ahead', 'Take the sharpest left you can see'] },
+  'acute-vs-turn': { right: 'Take the sharp right that doubles back (about 150 degrees)', wrong: ['Take the ordinary right at 90 degrees', 'Drive straight on', 'Make a U-turn in the road'] },
+  'jog-left-at-stop': { right: 'Full stop, left at the T, then right about 100 ft on to carry on', wrong: ['Full stop and left at the T, then stay on that road', 'Full stop and right at the T', 'Left at the T without stopping'] },
+  'first-paved-road': { right: 'Skip the driveway and the lot; turn right at the first real paved road', wrong: ['Turn right into the paved driveway', 'Turn right at the parking-lot entrance', 'Drive on to the second paved road'] },
+  'first-paved-vs-gravel': { right: 'Skip the gravel road and the dead end; turn right at the first paved through road', wrong: ['Turn right onto the gravel road', 'Turn right into the DEAD END street', 'Drive on to the next intersection with a sign'] },
+  'straight-as-possible-fork': { right: 'Follow the paved curve to the left', wrong: ['Drive straight onto the gravel', 'Stop and wait for a sign', 'Turn around and re-read the line'] },
+  'side-road-stop-facing-away': { right: 'Drive on past the back of the side road\'s octagon; full stop and turn right at the 4-way', wrong: ['Stop at the first octagon and turn right', 'Turn right into the side road', 'Drive straight through the 4-way'] },
+  'hidden-speed-sign': { right: 'Pre-brief the driver and call the new speed at the near edge of the sign as it appears', wrong: ['Call the new speed after the bend is behind you', 'Ignore it: a CURVE sign is only a warning', 'Call the new speed at the next intersection'] },
+  'forgotten-pause': { right: 'Full stop, sit the pause minus your stop loss, GO, then left at the T', wrong: ['Full stop and go at once, then left', 'Sit the full 15 s, then left', 'Roll through and turn left'] },
+  'missing-pause': { right: 'Full stop (the law), go as soon as it is safe, turn right, and make up the stop loss with the 10 % rule', wrong: ['Roll through the STOP to keep time', 'Sit 15 s as if a pause were printed', 'File a Time Allowance for the stop'] },
+  'after-sign': { right: 'Pass the church sign and its driveway; turn right at the first real road after it', wrong: ['Turn right into the church driveway', 'Turn right at a road before the sign', 'Turn right at the second road after the sign'] },
+  'at-sign': { right: 'Turn right at the intersection where the church sign stands', wrong: ['Drive past the sign and turn at the next road', 'Turn right into the church lot', 'Stop at the sign and ask'] },
+  'second-occurrence': { right: 'Drive past OAK CT and the first OAK ST; turn right at the second OAK ST', wrong: ['Turn right at OAK CT', 'Turn right at the first OAK ST', 'Turn left at the second OAK ST'] },
+  'onto-follows-name': { right: 'Bear right with OAK RD', wrong: ['Stay on the wide road straight ahead', 'Turn left', 'Stop and wait for a GR sign'] },
+  'off-course-loop': { right: 'Full stop and turn left at the STOP', wrong: ['Drive straight on: LOOP RD comes back to the course', 'Turn right', 'Pull off and read the next line before deciding'] },
+  'comes-quick': { right: 'Read both lines to the driver now; full stop and turn right at the STOP 300 ft after the first', wrong: ['Finish the first line, then read the next one', 'Drive straight through the second intersection', 'Turn right at the first intersection'] },
+  'cp-after-stop': { ask: 'A green sign may stand just past this STOP. What do you do?', right: 'Full stop, go on your dwell, straight on, and drive past the green sign at speed', wrong: ['Stop again at the green sign', 'Slow to 5 mph at the green sign to read it', 'Turn at the STOP to look for the checkpoint'] },
+  'speed-at-signal': { right: 'Straight on at the signal; call the new speed at its leading edge; no pause (a red light is a Time Allowance, never both)', wrong: ['Sit a 15 s pause at the signal', 'Call the new speed after the signal', 'Make up a red light AND file a Time Allowance for it'] },
+  'rr-crossing': { ask: 'A speed change at the RR crossing, and a train may come. What do you do?', right: 'Call the new speed at the rails; if a train holds you, time it on the stopwatch and file a TA on the web form at the TA point within 15 min', wrong: ['Call the new speed at the crossbuck sign', 'Declare the train wait to the crew at the next checkpoint', 'Make up the train wait AND file a TA'] },
+};
 
 export function trapById(id: string): TrapCard {
   const c = TRAPS.find(t => t.id === id);

@@ -1,4 +1,6 @@
 /** Debrief (DEBRIEF-001..004): per-CP table, attribution bars, worked arithmetic, counterfactuals, ledger, bias/noise, timeline. */
+import { stageDisplayName } from '../viewmodels/book.js';
+import { LESSONS } from '../../../content/lessons.js';
 import { debriefViewModel, BUCKET_LABEL, type DebriefVm } from '../viewmodels/debrief.js';
 import type { Bucket } from '../../core/sim.js';
 import { counterfactuals, type CounterfactualRow } from '../viewmodels/counterfactual.js';
@@ -8,7 +10,7 @@ import { formatClock, formatSigned } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
 import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
 import { fmtMMSS } from '../viewmodels/book.js';
-import { nextDrill, unlockBest, startPathFromProgress, currentPathStep, pathStepHash } from '../viewmodels/curriculum.js';
+import { nextDrill, unlockBest, startPathFromProgress, pathNext } from '../viewmodels/curriculum.js';
 import { scorecardViewModel } from '../viewmodels/scorecard.js';
 import { scorecardPanel } from './scorecard.js';
 
@@ -26,7 +28,7 @@ export function renderDebrief(root: HTMLElement): void {
   let rubricHtml = '';
   if (run.drill) { try { const rb = run.drill.rubric(result, run.scenario); rubricHtml = `<div class="pill" style="font-size:16px;padding:6px 12px">${'★'.repeat(rb.stars)}${'☆'.repeat(3 - rb.stars)} ${escapeHtml(rb.headline)}</div><ul>${rb.feedback.map(f => `<li>${escapeHtml(f)}</li>`).join('')}</ul>`; } catch { rubricHtml = ''; } }
   const head = el('div', { class: 'head' });
-  const headline = el('div', { class: 'panel' }, el('h3', {}, run.drill ? `${run.drill.id} ${run.drill.title}` : run.scenario.name), el('div', { class: 'headline' }, vm.headline),
+  const headline = el('div', { class: 'panel' }, el('h3', {}, run.drill ? `${run.drill.id} ${run.drill.title}` : stageDisplayName(run.scenario.name)), el('div', { class: 'headline' }, vm.headline),
     el('p', { class: 'muted' }, `Raw ${vm.score.raw} s × age factor ${vm.score.ageFactor} = ${vm.score.score} · benchmark: ${escapeHtml(String((result.score as { benchmark?: string }).benchmark ?? '-'))} · ${vm.score.aces} ace${vm.score.aces === 1 ? '' : 's'} · driving ${formatMin(vm.drivingSeconds)}${vm.offCourseCount ? ` · off course ${vm.offCourseCount}x` : ''}${vm.observationMissed ? ' · observation checkpoint missed' : ''}`),
     el('div', { html: rubricHtml }));
   const sc = scorecardViewModel(result, run.scenario);
@@ -42,10 +44,13 @@ export function renderDebrief(root: HTMLElement): void {
   if (run.source.kind === 'drill') {
     try {
       const ds = allDrills(); const prog = app.progress.load(); const best = unlockBest(ds, prog);
-      // PLAY-001: while the Start-here path is open, Next opens the path's next step (a Bronze star moves it on)
-      const step = currentPathStep(startPathFromProgress(ds, prog, id => app.progress.lessonDone(id)));
-      const nd = step ? null : nextDrill(run.source.drillId, ds, best);
-      if (step && !(step.kind === 'drill' && step.id === run.source.drillId)) { const b = el('button', { id: 'nextdrill', class: 'primary' }, `Next on your path: ${step.label}`); b.onclick = () => { location.hash = pathStepHash(step); }; actions.append(b); }
+      // PLAY-001 / PLAY-023 / PLAY-024: while the Start-here path is open, Next opens the path's next step: a due lesson first, never a locked drill
+      const ld = (id: string): boolean => app.progress.lessonDone(id);
+      const steps = startPathFromProgress(ds, prog, ld);
+      const pn = pathNext(steps, ds, best, ld, id => LESSONS.find(l => l.id === id)?.title ?? id);
+      const nd = steps.some(s => s.current) ? null : nextDrill(run.source.drillId, ds, best);
+      if (pn && pn.kind !== 'blocked' && !(pn.kind === 'step' && pn.step.kind === 'drill' && pn.step.id === run.source.drillId)) { const b = el('button', { id: 'nextdrill', class: 'primary' }, `Next on your path: ${pn.label}`); b.onclick = () => { location.hash = pn.hash; }; actions.append(b); }
+      else if (pn && pn.kind === 'blocked') actions.append(el('span', { class: 'lockline', id: 'path-locked' }, pn.label));
       if (nd) {
         const b = el('button', { id: 'nextdrill', class: nd.locked ? 'locked-btn' : '' }, nd.locked ? `🔒 Next drill: ${nd.drill.id} (needs ${nd.needs})` : `Next drill: ${nd.drill.id}`);
         if (nd.locked) b.setAttribute('disabled', ''); else b.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: nd.drill.id, tier: 0, seed: 1 }); };

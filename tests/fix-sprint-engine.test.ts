@@ -49,8 +49,8 @@ describe('FIX SPRINT engine (PT-06 MEDIUM 1-8)', () => {
     expect(t).toBeLessThanOrEqual(s.sim.launchInfo()!.launchTime + 0.2);
     expect(s.sim.driverMsgs.find(m => /30 seconds before we go/.test(m.text))!.kind).toBe('question');
   });
-  it('ENG-004 cross-traffic holds come from a keyed stream per STOP: the same seed gives the same holds to every navigator; ENGINE_VERSION is 3.1.0', () => {
-    expect(ENGINE_VERSION).toBe('3.1.0');
+  it('ENG-004 cross-traffic holds come from a keyed stream per STOP: the same seed gives the same holds to every navigator; ENGINE_VERSION is 3.2.0', () => {
+    expect(ENGINE_VERSION).toBe('3.2.0');   // 3.2.0 since fix sprint PT-08/PT-09; the keyed streams of 3.1.0 are unchanged
     const holds = (bot: 'oracle' | 'rookie'): string => {
       const sc = { ...builtinScenario('varied', 2), trafficWaitProbability: 0.6 } as Scenario; const sim = new Simulator(sc);
       runBot(sim, bot === 'oracle' ? new OracleBot(sim) : new OracleBot(sim, { noRecovery: true, noPause: true } as never));

@@ -84,7 +84,7 @@ describe('PT-07 cards and prompts (N5, N6, N7, N8, N9)', () => {
   });
   it('PLAY-016 Bronze asks "Read the clock now (K)" at the exact-transit IN sign and 60 s before an out time, and D16 lists K among its keys', () => {
     const sc = drillById('D16')!.scenario(1, 0); const src = { transitIn: {}, transitOutFor: () => null, holdGoTod: () => hms(10, 27, 0) };
-    const begin = sc.book.find(i => i.transit?.exact && !i.transit.end)!; const inCard = holdCardFor(sc, src, begin.n)!; expect(clockReadPrompt(inCard, null)).toMatch(/Read the clock now \(K\)/);
+    const begin = sc.book.find(i => i.transit?.exact && !i.transit.end)!; const inCard = holdCardFor(sc, src, begin.n)!; expect(clockReadPrompt(inCard, null, 30)).toMatch(/Read the clock now \(K\)/); expect(clockReadPrompt(inCard, null, 138)).toBeNull();   // PLAY-029 (fix sprint PT-08): only as the IN sign comes up
     const meal = holdCardFor(sc, src, sc.book.find(i => i.promotedStop)!.n)!;
     expect(clockReadPrompt(meal, 59)).toMatch(/Read the clock now \(K\)/); expect(clockReadPrompt(meal, 61)).toBeNull(); expect(clockReadPrompt(meal, null)).toBeNull();
     expect(drillHint('D16').keys.some(([k]) => k === 'K')).toBe(true);

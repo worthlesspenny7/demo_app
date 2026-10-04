@@ -5,13 +5,13 @@ import { LESSONS } from '../../../content/lessons.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
 import { formatMinutes } from '../viewmodels/estimate.js';
-import { startPathFromProgress, unlockBest, pathStepHash, lockText, readFirstOf, cardMinutesText } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, unlockBest, pathStepHash, lockText, readFirstOf, cardMinutesText, pathNext, pathCompleteText, PATH_WHY, FOUR_S_TITLE, type FourS } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
-/** EDU-005: the tracks in the Four S's order (HB p.13-14): stay on course and start on time before stay on time. D02 is retired. */
+/** PLAY-023: the tracks in the handbook's Four S's order (HB p.13-14): start on time, stay on course, then stay on time. D02 is retired. */
 const TRACKS: { name: string; blurb: string; ids: string[] }[] = [
-  { name: 'Stay on course', blurb: 'reading the page, CAMEOs, traps, what to do when lost', ids: ['D09', 'D10'] },
   { name: 'Start on time', blurb: 'base + ASP, restarts, exact transits, the pre-read', ids: ['D16', 'D15'] },
+  { name: 'Stay on course', blurb: 'reading the page, CAMEOs, traps, what to do when lost', ids: ['D09', 'D10'] },
   { name: 'Stay on time', blurb: 'stopwatch, pauses, speed changes, your charts, recovery, Time Allowance, calibration', ids: ['D01', 'D03', 'D04', 'D05', 'D06', 'D08', 'D08b', 'D07', 'D17'] },
   { name: 'Arithmetic', blurb: 'the coffee-break track: no calculator', ids: ['D14'] },
   { name: 'Whole legs', blurb: 'put it together', ids: ['D18', 'D11', 'D12', 'D13'] },
@@ -62,21 +62,29 @@ function runLabel(r: { id: string; score: number; stars: number; raw?: number; u
 function safeDrills(): Drill[] { try { return allDrills(); } catch { return []; } }
 
 function startHerePanel(drills: Drill[], prog: ReturnType<typeof app.progress.load>): HTMLElement {
-  const steps = startPathFromProgress(drills, prog, id => app.progress.lessonDone(id));
-  const ol = el('ol', {});
+  const lessonDone = (id: string): boolean => app.progress.lessonDone(id);
+  const steps = startPathFromProgress(drills, prog, lessonDone);
+  const best = unlockBest(drills, prog);
+  // PLAY-023: the four headings in the handbook's order; PLAY-024: a locked drill shows its lock and what it needs
+  const list = el('div', { class: 'pathlist' });
+  let ol: HTMLElement | null = null; let lastS: FourS | null = null; let n = 0;
   for (const s of steps) {
-    const li = el('li', { class: `${s.done ? 'done' : ''} ${s.current ? 'current' : ''}`, 'data-step': s.step.id }, `${s.done ? '✓ ' : ''}${s.step.label}`);
-    li.style.cursor = 'pointer';
-    li.onclick = () => { location.hash = pathStepHash(s.step); };
-    ol.append(li);
+    if (s.step.s !== lastS) { lastS = s.step.s; list.append(el('div', { class: 'path-s muted', 'data-s': s.step.s }, FOUR_S_TITLE[s.step.s])); ol = el('ol', { start: String(n + 1) }); list.append(ol); }
+    n++;
+    const li = el('li', { class: `${s.done ? 'done' : ''} ${s.current ? 'current' : ''} ${s.locked ? 'locked' : ''}`, 'data-step': s.step.id, ...(s.locked ? { title: `Locked: needs ${s.needs}` } : {}) }, `${s.done ? '✓ ' : s.locked ? '🔒 ' : ''}${s.step.label}${s.locked && !s.done ? ` (needs ${s.needs})` : ''}`);
+    li.style.cursor = s.locked ? 'not-allowed' : 'pointer';
+    if (!s.locked) li.onclick = () => { location.hash = pathStepHash(s.step); };
+    ol!.append(li);
   }
-  const cur = steps.find(s => s.current);
-  const go = cur ? el('button', { class: 'primary', id: 'starthere' }, `Next: ${cur.step.label}`) : null;
-  if (go && cur) go.onclick = () => { location.hash = pathStepHash(cur.step); };
+  const nx = pathNext(steps, drills, best, lessonDone, lessonTitle);
+  let go: HTMLElement | null = null;
+  if (nx && nx.kind !== 'blocked') { const b = el('button', { class: 'primary', id: 'starthere', 'data-next': nx.kind }, `Next: ${nx.label}`); b.onclick = () => { location.hash = nx.hash; }; go = b; }
+  else if (nx) go = el('p', { class: 'lockline', id: 'starthere-locked' }, nx.label);
   return el('section', { class: 'panel startpath', id: 'starthere-panel' },
     el('h3', {}, 'Start here'),
-    el('p', {}, "New? Take the path in order. It follows the handbook's Four S's: safety and the priorities, reading the page and Dad's card, staying on course (the trap quiz, what to do when lost, D10), starting on time (restarts, D16), and only then the stay-on-time drills. Lessons tick when you pass their check question; a drill ticks with one star at any tier. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the whole-leg drills."),
-    ol, go ? el('div', { style: 'margin-top:10px' }, go) : el('p', { class: 'ok' }, 'Path complete. Take the whole-leg drills (D11) and the full stage (D12).'));
+    el('p', {}, "New? Take the path in order. It follows the handbook's Four S's in the handbook's order: safety, start on time, stay on course, stay on time. Each drill comes after the lessons on its \"Read first\" line. Lessons tick when you pass their check question; a drill ticks with one star at any tier. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the miniature leg and the whole legs."),
+    el('p', { class: 'muted', id: 'path-why' }, PATH_WHY),
+    list, go ? el('div', { style: 'margin-top:10px' }, go) : el('p', { class: 'ok', id: 'path-complete' }, pathCompleteText(drills, best)));
 }
 
 function resumePanel(drills: Drill[]): HTMLElement | null {

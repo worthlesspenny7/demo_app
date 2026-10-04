@@ -28,8 +28,8 @@ function stepTo(sim: Simulator, tod: number): void { while (sim.tod < tod - 1e-9
 const msgs = (sim: Simulator): string[] => sim.driverMsgs.map(m => m.text);
 
 describe('V3 engine version', () => {
-  it('INST-001 ENGINE_VERSION is 3.1.0 (ENG-004 keyed RNG streams) and the V3 actions are in the action list and validated', () => {
-    expect(ENGINE_VERSION).toBe('3.1.0');
+  it('INST-001 ENGINE_VERSION is 3.2.0 (ENG-004 keyed RNG streams, then the fix sprint PT-08/PT-09) and the V3 actions are in the action list and validated', () => {
+    expect(ENGINE_VERSION).toBe('3.2.0');   // fix sprint PT-08/PT-09 bumped it (ENG-020..ENG-024 change replayed results)
     for (const t of ['pullUp', 'call.warn', 'call.identify', 'count', 'clock.read', 'ledger.set', 'ta.request']) expect(ACTION_LIST).toContain(t);
     expect(validateAction({ type: 'call.identify', text: 'bridge' })).toBeNull(); expect(validateAction({ type: 'call.identify' })).not.toBeNull();
     expect(validateAction({ type: 'count', n: 9 })).toBeNull(); expect(validateAction({ type: 'count', n: 1.5 })).not.toBeNull();
@@ -181,7 +181,7 @@ describe('START-001 the start / restart procedure', () => {
     const r = runOracle(drillById('D16')!.scenario(3, 0)).r; expect(r.startDeltas.every(x => x.warned && x.pulledUp)).toBe(true);
     // at a restart too
     const rs = drillById('D16')!.scenario(3, 0); const sim3 = new Simulator(rs); runBot(sim3, new OracleBot(sim3, { useWatch: true }));
-    expect(sim3.driverMsgs.filter(m => /about 30 seconds, got it/i.test(m.text)).length).toBe(2);
+    expect(sim3.driverMsgs.filter(m => /about 30 seconds, got it/i.test(m.text)).length).toBe(4);   // ENG-021 (fix sprint PT-09): the exact-transit OUT and the lunch hold launch like a restart, so the oracle warns there too (start, OUT, lunch, restart)
   });
 });
 

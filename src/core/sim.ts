@@ -1,7 +1,7 @@
 /** The Simulator: world state machine. DESIGN §7, §9, §11. */
 import {
   type Scenario, type Node, type Exit, type TurnDir, type Checkpoint, type Hazard, type Instruction, type SlowHazard, type ConstructionHazard, type AccidentHazard, type TractorHazard, type CombineHazard, type SchoolBusHazard,
-  nodeById, instructionS, transitPaceMph,
+  nodeById, instructionS, transitPaceMph, isMeasureRun,
 } from './course.js';
 import { buildGhost, ghostTimeAt, exactTransitBegin, type GhostTable, type Leg } from './ghost.js';
 import { Car } from './car.js';
@@ -113,8 +113,9 @@ export const TA_CAUSES = ['train', 'tractor', 'schoolBus', 'construction', 'comb
 
 /** START-001: the launch plan of the next start / restart: leave early by the car's standing-start net loss (chart (a) 0 -> v). */
 export interface LaunchInfo {
-  line: number; kind: 'start' | 'restart';
-  /** Own time: printed base + ASP minutes. */
+  /** ENG-021: 'transitOut' = the end of an exact transit (IN + interval), 'lunch' = a promoted (meal, pit, refuel, rest) stop, while the car waits there */
+  line: number; kind: 'start' | 'restart' | 'transitOut' | 'lunch';
+  /** Own time: printed base + ASP minutes (a hold: its out time). */
   ownTime: number;
   /** Speed (mph) the car accelerates to, and its net loss from rest to that speed (chart (a)). */
   speed: number; netLoss: number;
@@ -221,7 +222,8 @@ export interface StageResult {
   findings: DebriefFinding[];
 }
 /** 3.1.0 (PT-06 bug 4): cross-traffic holds come from a keyed stream per STOP node and the driver's noise / ramps from their own streams. */
-export const ENGINE_VERSION = '3.1.0';
+/** 3.2.0 (fix sprint PT-08 / PT-09): measuring runs leave on the second, launchInfo covers exact-transit OUT and promoted stops, a turn called in time is made, the off-course rejoin is booked once, the call.over event. */
+export const ENGINE_VERSION = '3.2.0';
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
@@ -271,7 +273,7 @@ export function validateAction(a: unknown): string | null {
     case 'speed.emergency': return num(x.mph, 5, 60) ? null : 'speed.emergency.mph must be a finite number 5..60';
     case 'line.set': return num(x.n, 1, 10000) ? null : 'line.set.n must be a line number';
     case 'line.annotate': return num(x.n, 1, 10000) && Number.isInteger(x.n) && typeof x.text === 'string' && x.text.length <= 500 ? null : 'line.annotate needs a whole line number n and text (<= 500 chars)';
-    case 'note': return typeof x.text === 'string' && x.text.length <= 2000 ? null : 'note.text must be a string';
+    case 'note': return typeof x.text === 'string' ? null : 'note.text must be a string';   // ENG-025: a note over 2 000 characters is truncated (sanitizeAction), never refused
     case 'speedo.setFactor': return num(x.k, 0.5, 2) ? null : 'speedo.setFactor.k must be a finite number 0.5..2';
     case 'card.set': return x.card && typeof x.card === 'object' && Object.values(x.card as Record<string, unknown>).every(v => num(v, 0, 80)) ? null : 'card.set.card must map speeds to finite mph values';
     case 'skipPreread': return x.secondsBefore === undefined || num(x.secondsBefore, 0, 86400) ? null : 'skipPreread.secondsBefore must be a finite number';
@@ -286,6 +288,8 @@ const ACTION_KEYS: Record<string, string[]> = {
   'ta.declare': ['seconds', 'legIndex'], 'speed.emergency': ['mph'], 'call.warn': ['seconds'], 'call.identify': ['text'], count: ['n'], 'speedo.setFactor': ['k'], 'card.set': ['card'], skipPreread: ['secondsBefore'],
 };
 /** ENG-017: a copy of a (validated) action with only its documented fields; nested rows are rebuilt the same way. */
+/** ENG-025: the longest note kept; a longer one is cut to this length. */
+export const NOTE_MAX = 2000;
 export function sanitizeAction(a: Action): Action {
   const src = a as unknown as Record<string, unknown>; const out: Record<string, unknown> = { type: a.type };
   for (const k of ACTION_KEYS[a.type] ?? []) if (src[k] !== undefined) out[k] = src[k];
@@ -293,6 +297,7 @@ export function sanitizeAction(a: Action): Action {
   if (out.witnesses && typeof out.witnesses === 'object') { const w = out.witnesses as Record<string, unknown>; out.witnesses = { ...(w.ahead !== undefined ? { ahead: w.ahead } : {}), ...(w.behind !== undefined ? { behind: w.behind } : {}) }; }
   if (Array.isArray(out.witnessedBy)) out.witnessedBy = (out.witnessedBy as Record<string, unknown>[]).map(w => { const r: Record<string, unknown> = {}; if (w && typeof w === 'object') { if (typeof w.car === 'string' || (typeof w.car === 'number' && Number.isFinite(w.car))) r.car = w.car; if (typeof w.description === 'string') r.description = w.description.slice(0, 200); if (w.role === 'contestant' || w.role === 'official') r.role = w.role; } return r; });
   if (out.card && typeof out.card === 'object') out.card = { ...(out.card as Record<string, number>) };
+  if (a.type === 'note' && typeof out.text === 'string' && out.text.length > NOTE_MAX) out.text = out.text.slice(0, NOTE_MAX);   // ENG-025
   return out as unknown as Action;
 }
 const TURN_ZONE_FT = 60;
@@ -456,7 +461,13 @@ export class Simulator {
   /** Which instrument each timing action used: clock reads, stopwatch start/lap/stop, TOD-mode toggles. */
   instrumentLog: { tod: number; kind: 'clock.read' | 'watch.start' | 'watch.stop' | 'watch.lap' | 'watch.mode'; mode: WatchMode; /** clock.read only: which face was read (INST-002) */ source?: 'clock' | 'stopwatch' }[] = [];
   private findings: InstrumentFinding[] = [];
-  private anchors: { tod: number; line: number; kind: 'timed' | 'pause' | 'calibration' }[] = [];
+  private anchors: { tod: number; line: number; kind: 'timed' | 'pause' | 'calibration'; /** PLAY-030: a second instant whose lap also counts */ alt?: number }[] = [];
+  private stoppedTod = new Map<number, number>();
+  /** PLAY-030: the braking part of the stop loss before a STOP + timed line (the ghost arrives that much before the car stops): stop loss minus the standing-start loss. */
+  private brakeShare(ins: Instruction): number {
+    let vIn: number | undefined; for (const b of this.sc.book) { if (b === ins) break; if (b.timed) vIn = b.timed.thenSpeed; else if (b.speed !== undefined) vIn = b.speed; }
+    const hold = ins.timed!.holdSpeed; try { return Math.max(0, stopLoss(vIn ?? hold, hold, this.sc.car) - accelLoss(hold, this.sc.car)); } catch { return 0; }
+  }
   private instr(kind: 'clock.read' | 'watch.start' | 'watch.stop' | 'watch.lap' | 'watch.mode', source?: 'clock' | 'stopwatch'): void { this.instrumentLog.push({ tod: this.tod, kind, mode: this.watch.mode, ...(source ? { source } : {}) }); this.log('instrument', { kind, mode: this.watch.mode, ...(source ? { source } : {}) }); }
   /** Was the time of day read from the clock (or the watch in TOD mode) within the last 60 s? */
   private clockRecentlyRead(): boolean {
@@ -476,7 +487,7 @@ export class Simulator {
     }
     const near = (a: { tod: number }, t: number, before: number, after: number): boolean => a.tod >= t - before && a.tod <= t + after;
     for (const a of this.anchors) {
-      const used = this.instrumentLog.some(e => (e.kind === 'watch.start' || e.kind === 'watch.lap') && near(e, a.tod, 2, a.kind === 'calibration' ? 3 : 2));
+      const used = this.instrumentLog.some(e => (e.kind === 'watch.start' || e.kind === 'watch.lap') && (near(e, a.tod, 2, a.kind === 'calibration' ? 3 : 2) || (a.alt !== undefined && near(e, a.alt, 2, 2))));
       if (used) continue;
       if (a.kind === 'calibration') out.push({ kind: 'calibrationWithoutLap', line: a.line, text: `Calibration point at line ${a.line} was passed without a lap on the stopwatch` });
       else out.push({ kind: 'clockForInterval', line: a.line, text: `${a.kind === 'timed' ? 'Timed segment' : 'Pause'} at line ${a.line} had no stopwatch start or lap within 2 s of its anchor: count intervals on the stopwatch, not the clock` });
@@ -577,7 +588,8 @@ export class Simulator {
       }
       case 'speedo.setFactor': this.speedo.setFactor(a.k); this.log('speedo.setFactor', { k: a.k }); break;
       case 'card.set': this.card = { ...a.card }; this.useCard = true; break;
-      case 'skipPreread': if (this.phase === 'preread') { const target = this.sc.startTime - Math.max(0, a.secondsBefore ?? 0); if (target > this.tod) { const ticks = Math.round((target - this.tod) / TICK); this.tick += ticks; this.tod = this.tod0 + this.tick * TICK; } } break;
+      case 'skipPreread': if (this.phase === 'preread') { let target = this.sc.startTime - Math.max(0, a.secondsBefore ?? 0); { const li = this.launchInfo(); if (li) target = Math.min(target, li.launchTime - 1); }   // PLAY-026: a fast-forward never lands on or after the launch second
+        if (target > this.tod) { const ticks = Math.round((target - this.tod) / TICK); this.tick += ticks; this.tod = this.tod0 + this.tick * TICK; } } break;
       case 'start': this.depart(); break;
       case 'call.speed': {
         let mph = a.mph;
@@ -591,7 +603,7 @@ export class Simulator {
         this.beginRamp();
         break;
       }
-      case 'call.turn': this.pendingTurn = a.dir; this.say(`${turnWord(a.dir)} ahead, got it`, 'readback'); this.log('call.turn', { dir: a.dir });
+      case 'call.turn': this.pendingTurn = a.dir; this.turnArm = { s: this.car.s, v: this.car.v }; this.say(`${turnWord(a.dir)} ahead, got it`, 'readback'); this.log('call.turn', { dir: a.dir });
         if (this.waitingForGo && this.waitReason === 'ask') { this.release('ask'); }
         break;
       case 'call.stop': this.holdRequested = true; this.say('Stopping at the next one', 'readback'); this.log('call.stop'); break;
@@ -633,7 +645,8 @@ export class Simulator {
     const first = this.sc.book[0]!;
     if (first.speed !== undefined && this.targetIndicated === null) this.targetIndicated = this.useCard && this.card[String(first.speed)] !== undefined ? this.card[String(first.speed)]! : first.speed;
     if (this.targetIndicated === null) this.askSpeed(first); // PLAY-002: a warm-up / transit line with no printed speed: he asks instead of sitting silent
-    else this.say(early > 2 ? `Leaving ${Math.round(early)} s early` : early < -2 ? `Leaving ${Math.round(-early)} s late` : 'Rolling on time', 'info');
+    else { const li = this.launchInfo(first); const vsLaunch = li ? this.tod - li.launchTime : 0;   // PLAY-026: "on time" means on the launch second, not on the printed time
+      this.say(vsLaunch > 1.5 && early > -2 ? `Leaving ${Math.round(vsLaunch)} s after our launch second` : early > 2 ? `Leaving ${Math.round(early)} s early` : early < -2 ? `Leaving ${Math.round(-early)} s late` : 'Rolling on time', 'info'); }
     this.executed.add(1);
     // PLAY-008: the start line is done once the car leaves: the pointer (and the perf card) move to line 2 at once
     this.lastExecutedLine = 1; this.lastCrossedLine = 1;
@@ -688,7 +701,7 @@ export class Simulator {
       aids, notes: [...this.notes], legIndex: this.sc.aids.rung >= 2 ? this.legIndex : null, startTime: this.sc.startTime, rules: this.sc.rules,
       ta: this.taState(), asp: this.sc.asp, timeZone: this.sc.timeZone,
       clock: { hourAngle: hands.hourAngle, minuteAngle: hands.minuteAngle, secondAngle: hands.secondAngle, minuteAmbiguous: hands.minuteAmbiguous, hour: hands.hour, minute: this.sc.aids.rung <= 1 && hands.minuteAmbiguous ? null : hands.minute, second: hands.second },
-      launch, startQueue: lline && !(this.sc.startProcedure === 'drill' && lline.n === 1) ? this.startQueue(lline) : null,
+      launch, startQueue: lline && (launch!.kind === 'start' || launch!.kind === 'restart') && !(this.sc.startProcedure === 'drill' && lline.n === 1) ? this.startQueue(lline) : null,
       paceCars: calRun ? { ahead: null, behind: null } : { ahead: pace.ahead && pace.aheadVisible ? pace.ahead : null, behind: pace.behind && pace.behindVisible ? pace.behind : null }, // ENG-019: none in the calibration run
       cues: { gainingOnCarAhead: !calRun && pace.aheadVisible && this.gainingNow },
       ledgerEntries: this.ledgerEntries.map(e => ({ ...e })), makeUpTotal: makeUpTotal(this.ledgerEntries),
@@ -732,14 +745,16 @@ export class Simulator {
     this.driverStep(dt);
     this.speedo.step(dt, this.car.mph());
     this.tod = todNext;
+    const wasOff = !!this.off;
     if (this.off) this.offCourseStep(dt, sBefore);
     else this.routeStep(sBefore);
     this.v3Tick(dt);
     // attribution increment: de = dt - ds/vg (ghost speed where the car is on the route)
-    const ds = this.off ? 0 : this.car.s - sBefore;
+    // PLAY-032: the tick that rejoins the route moves car.s back to the junction: it is off-course time, never a huge negative ds booked to the turn bucket
+    const ds = this.off || wasOff ? 0 : this.car.s - sBefore;
     const vg = vgBefore > 0 ? vgBefore : 1e9;
     const de = dt - ds / vg;
-    this.buckets[this.currentBucket()] += de;
+    this.buckets[wasOff ? 'offCourse' : this.currentBucket()] += de;
     // TA-004: only an accident scene or a declared emergency reduced speed accrues qualifying delay while driving (trains and signals are booked at the stop)
     // ENG-010: a printed-pause stop (or any stop the book or the stop booking pays) inside a zone is not zone delay
     // (the dwell, the braking into the stop and the pull-away back up to the zone's speed are the stop's, which the pause and the chart pause time pay)
@@ -811,6 +826,8 @@ export class Simulator {
   }
   private startRamp = false;
   private turnRecovering = false;
+  /** ENG-024: where and how fast the car was when the last turn was called (judges "too late"). */
+  private turnArm: { s: number; v: number } | null = null;
   private announceAtSpeed = false;
   private currentBucket(): Bucket {
     if (this.off) return 'offCourse';
@@ -1079,7 +1096,7 @@ export class Simulator {
     else if (node.kind === 'intersection' && !this.pendingTurn) { this.waitReason = 'ask'; this.say('Left or right?', 'question'); }
     else { this.waitReason = 'hold'; }
     this.holdRequested = false;
-    { const pi = this.sc.book.find(i => i.nodeId === node.id); if (pi?.pause && pi.pause > 0) this.anchors.push({ tod: this.tod, line: pi.n, kind: 'pause' }); }
+    { const pi = this.sc.book.find(i => i.nodeId === node.id); if (pi?.pause && pi.pause > 0) { if (pi.timed) this.stoppedTod.set(pi.n, this.tod); else this.anchors.push({ tod: this.tod, line: pi.n, kind: 'pause' }); } }   // PLAY-030: a STOP + timed line has one anchor, the ghost's departure
     if (this.curStop) this.curStop.dwellStart = this.tod;
     this.log('wait', { nodeId: node.id, reason: this.waitReason });
   }
@@ -1213,6 +1230,13 @@ export class Simulator {
     }
     return null;
   }
+  /** ENG-021: the exact-transit OUT or promoted-stop line the car is waiting at (null elsewhere). */
+  private holdLaunchLine(): Instruction | null {
+    if (this.phase !== 'running' || !this.waitingForGo || !this.waitNodeId) return null;
+    const node = this.sc.course.nodes.find(n => n.id === this.waitNodeId); if (!node) return null;
+    const k = this.holdKind(node); if (k !== 'transitEnd' && k !== 'promoted') return null;
+    return this.sc.book.find(i => i.nodeId === node.id) ?? null;
+  }
   private launchSpeed(ins: Instruction): number {
     if (ins.speed !== undefined) return ins.speed;
     { const p = transitPaceMph(ins.transit); if (p !== null) return p; } // PLAY-009: the same speed the cockpit's launch plan uses
@@ -1226,12 +1250,17 @@ export class Simulator {
     return v;
   }
   /** START-001: own time, the standing-start net loss and the launch time (own time - net loss) of a start / restart line. */
-  launchInfo(ins: Instruction | null = this.launchLine()): LaunchInfo | null {
+  launchInfo(ins: Instruction | null = this.launchLine() ?? this.holdLaunchLine()): LaunchInfo | null {
     if (!ins) return null;
-    const ownTime = ins.restartTime ?? this.sc.startTime; const speed = this.launchSpeed(ins);
+    // ENG-021: an exact-transit OUT or a promoted stop the car is waiting at launches like a restart: its out time minus the standing-start loss
+    const holdNode = ins.restartTime === undefined && ins.n !== 1 ? this.sc.course.nodes.find(n => n.id === ins.nodeId) : undefined;
+    const holdK = holdNode ? this.holdKind(holdNode) : null;
+    if (holdNode && holdK !== 'transitEnd' && holdK !== 'promoted') return null;
+    const holdOut = holdNode ? this.holdGoTod(holdNode) : null; if (holdNode && holdOut === null) return null;
+    const ownTime = holdOut ?? ins.restartTime ?? this.sc.startTime; const speed = this.launchSpeed(ins);
     const raw = this.netLossFor(speed); const netLoss = Math.round(raw * 10) / 10;
-    const launchTime = ownTime - Math.round(raw); // PLAY-009: one rounding rule everywhere: launch on the whole second, own time minus the net loss rounded
-    return { line: ins.n, kind: ins.n === 1 ? 'start' : 'restart', ownTime, speed, netLoss, launchTime, secondsToLaunch: launchTime - this.tod, warned: this.launchStateFor(ins.n).warned };
+    const launchTime = ownTime - (isMeasureRun(this.sc) ? 0 : Math.round(raw)); // PLAY-009: one rounding rule everywhere: launch on the whole second, own time minus the net loss rounded; PLAY-027: a measuring run leaves ON the second
+    return { line: ins.n, kind: holdK === 'transitEnd' ? 'transitOut' : holdK === 'promoted' ? 'lunch' : ins.n === 1 ? 'start' : 'restart', ownTime, speed, netLoss, launchTime, secondsToLaunch: launchTime - this.tod, warned: this.launchStateFor(ins.n).warned };
   }
   /** The driver's expectation: "about 30 seconds" before we go. Said once when the navigator has not warned him within 45 s of the launch time. */
   private launchTick(): void {
@@ -1273,7 +1302,7 @@ export class Simulator {
     const li = this.launchInfo(ins)!; const st = this.launchStateFor(ins.n);
     const delta = Math.round((actual - li.launchTime) * 10) / 10;
     const arrivedLate = arrival !== undefined && arrival >= li.launchTime - 2;
-    this.startDeltas.push({ line: ins.n, kind: li.kind, ownTime: li.ownTime, netLoss: li.netLoss, launchTime: li.launchTime, actual, delta, warned: st.warned, pulledUp: st.pulledUp, refusedPullUps: st.refused, ...(arrivedLate ? { arrivedLate } : {}), ...(auto ? { auto } : {}) });
+    this.startDeltas.push({ line: ins.n, kind: li.kind as "start" | "restart", ownTime: li.ownTime, netLoss: li.netLoss, launchTime: li.launchTime, actual, delta, warned: st.warned, pulledUp: st.pulledUp, refusedPullUps: st.refused, ...(arrivedLate ? { arrivedLate } : {}), ...(auto ? { auto } : {}) });
     if (auto) return;
     const what = li.kind === 'start' ? 'Start' : 'Restart';
     // PLAY-005: leaving the pre-read early without running the launch procedure (no "about 30 seconds") is an early departure by choice, not a misread minute
@@ -1287,7 +1316,7 @@ export class Simulator {
     for (const ins of this.sc.book) {
       if (!(ins.n === 1 || (ins.section === 'restart' && ins.restartTime !== undefined)) || out.some(d => d.line === ins.n)) continue;
       const li = this.launchInfo(ins)!; const st = this.launchStateFor(ins.n);
-      out.push({ line: ins.n, kind: li.kind, ownTime: li.ownTime, netLoss: li.netLoss, launchTime: li.launchTime, actual: null, delta: null, warned: st.warned, pulledUp: st.pulledUp, refusedPullUps: st.refused });
+      out.push({ line: ins.n, kind: li.kind as "start" | "restart", ownTime: li.ownTime, netLoss: li.netLoss, launchTime: li.launchTime, actual: null, delta: null, warned: st.warned, pulledUp: st.pulledUp, refusedPullUps: st.refused });
     }
     return out.sort((a, b) => a.line - b.line);
   }
@@ -1351,6 +1380,7 @@ export class Simulator {
     let ref = assigned;
     { const bps = this.ghost.breakpoints; for (const bp of bps) { if (bp.s > here) { if (bp.s - here <= 1500) ref = Math.max(ref, fpsToMph(bp.v)); break; } } } // a lead call for the speed about to take effect is no make-up
     const trueMph = this.speedo.inverse(indicated);
+    if (assigned >= 10 && ref > 0 && trueMph >= ref + 0.9) this.log('call.over', { mph: Math.round(trueMph * 10) / 10, ref: Math.round(ref) });   // ENG-022: any call above the assigned speed is a recovery attempt (the D08/D18 gates)
     if (assigned >= 10 && ref > 0 && trueMph >= ref * 1.08 && trueMph - ref >= 3) { this.makeUp = { pct: Math.round((trueMph / ref - 1) * 1000) / 10, assigned: Math.round(assigned), calledMph: indicated, sinceTod: this.tod }; this.log('makeUp.begin', { pct: this.makeUp.pct, assigned: this.makeUp.assigned }); }
     else if (this.makeUp) { this.log('makeUp.end', {}); this.makeUp = null; }
   }
@@ -1552,7 +1582,10 @@ export class Simulator {
       if (ins.transit && !ins.transit.end) this.inTransit = true;
       if (ins.transit?.end || (ins.restartTime !== undefined && ins.section === 'restart')) this.inTransit = false;
       if (ins.transit && !ins.transit.end && ins.transit.exact === true) { this.transitIn[ins.n] = roundToSecond(this.nodeCrossTod); this.log('transit.in', { n: ins.n, tod: this.transitIn[ins.n] }); this.pendingInChecks.push({ tod: this.nodeCrossTod, line: ins.n, todMode: this.watch.kind === 'digital' && this.watch.mode === 'tod' }); }
-      if (ins.timed) this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'timed' });
+      if (ins.timed) { const st = ins.pause ? this.stoppedTod.get(ins.n) : undefined;
+        // PLAY-030: on a STOP + timed line the count starts when the ghost leaves = "Stopped" + the pause - the braking part of the stop loss (the card's anchor); a lap at "Stopped" counts too
+        if (st !== undefined) { const brake = this.brakeShare(ins); this.anchors.push({ tod: st + ins.pause! - brake, line: ins.n, kind: 'timed', alt: st }); }
+        else this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'timed' }); }
       if (ins.section === 'calibration') this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'calibration' });
       if (ins.restartTime !== undefined && ins.section === 'restart') {
         const early = ins.restartTime - this.tod; // tod here = departure from the restart line
@@ -1589,7 +1622,11 @@ export class Simulator {
       if (angle >= 20) {
         const cap = angle > 120 ? this.sc.car.turnSpeedMph.acute : angle >= 60 ? this.sc.car.turnSpeedMph.turn : this.sc.car.turnSpeedMph.bear;
         const capFps = mphToFps(cap);
-        if (this.car.v > capFps * 1.6 && angle >= 60) {
+        // ENG-024: a turn called in time (at the call there was room to brake to the turn speed, plus a second to react) is made, even from 50-55 mph:
+        // the driver arrives a little fast (an apex of 20-25 mph) and scrubs it in the turn. Only a call too late to brake for is "too late".
+        const arm = this.turnArm; const armDist = arm ? n.s - arm.s : -1;
+        const inTime = !!arm && turnCalledHere && armDist >= Math.max(0, (arm.v * arm.v - capFps * capFps) / (2 * this.car.aDec())) + arm.v * 1.0;
+        if (this.car.v > capFps * 1.6 && angle >= 60 && !inTime) {
           // Called too late: the driver cannot slow enough and misses the turn (straight-as-possible instead). Teaches "call turns early".
           this.say(`Too late, I can't make that ${turnWord(this.pendingTurn ?? 'L').toLowerCase()} at this speed`, 'question');
           this.log('turnMissed', { nodeId: n.id, speedMph: Math.round(this.car.mph()), angle: chosen.angle });

@@ -1,35 +1,33 @@
 /** Static drills: D09 trap quiz (CAMEO cards) and D14 mental math (generated question cards). */
 import { FORD_1939, type TurnDir } from '../../core/course.js';
-import { TRAPS } from '../../core/generator/traps.js';
+import { TRAPS, TRAP_QUIZ } from '../../core/generator/traps.js';
 import { stopLoss } from '../../core/perf-table.js';
 import { rng } from '../../core/rng.js';
 import { cameoSvg, type CameoExit } from '../viewmodels/cameo.js';
 import { app, el } from '../state.js';
+import { allDrills } from '../../core/drills/index.js';
+import { LESSONS } from '../../../content/lessons.js';
+import { pathNext, startPathFromProgress, unlockBest } from '../viewmodels/curriculum.js';
 
 export interface Card { prompt: string; svg?: string; options: string[]; answer: number; tip: string; category?: string }
 
-/** First sentence of a tip, capped, used as the statement an option makes. */
-function firstSentence(t: string, max = 150): string { const m = /^.*?[.!?](?=\s|$)/.exec(t); const x = (m ? m[0] : t).trim(); return x.length > max ? `${x.slice(0, max - 1)}…` : x; }
 
-/** 20 distinct cards from the 24-card trap library. The prompt shows the line and the scene; the options are rules, so the answer is never printed in the question. */
+/**
+ * PLAY-025: 20 distinct cards from the trap library. The prompt shows the line and the scene and asks what you do ("which way?"); the options are
+ * actions (TRAP_QUIZ), one right and three a rookie would really take, so the answer is a decision, never a rule to match.
+ */
 export function trapCards(seed: number): Card[] {
   const r = rng(seed);
-  const order = TRAPS.map((_, i) => i);
+  const deck = TRAPS.filter(t => TRAP_QUIZ[t.id]);
+  const order = deck.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) { const j = r.int(0, i); [order[i], order[j]] = [order[j]!, order[i]!]; }
   const out: Card[] = [];
   for (const idx of order.slice(0, 20)) {
-    const t = TRAPS[idx]!;
-    const right = firstSentence(t.tip);
-    const others = TRAPS.filter(o => o.id !== t.id).map(o => firstSentence(o.tip)).filter(x => x !== right);
-    const wrong: string[] = [];
-    const diffCat = TRAPS.filter(o => o.category !== t.category).map(o => firstSentence(o.tip));
-    const pool = [...new Set([...diffCat, ...others])].filter(x => x !== right);
-    for (let i = pool.length - 1; i > 0; i--) { const j = r.int(0, i); [pool[i], pool[j]] = [pool[j]!, pool[i]!]; }
-    for (const x of pool) { if (wrong.length >= 3) break; if (!wrong.includes(x)) wrong.push(x); }
-    const all = [right, ...wrong];
+    const t = deck[idx]!; const q = TRAP_QUIZ[t.id]!;
+    const all = [q.right, ...q.wrong];
     for (let i = all.length - 1; i > 0; i--) { const j = r.int(0, i); [all[i], all[j]] = [all[j]!, all[i]!]; }
     const turn = (t.turn ?? 'S') as TurnDir;
-    out.push({ prompt: `Line reads: "${t.instructionText}". ${t.visual} Which statement is right?`, svg: t.exits.length ? cameoSvg(t.exits as never, t.control, turn, 120, { sign: t.sign ?? null }) : undefined, options: all, answer: all.indexOf(right), tip: `${t.tip} (${t.name})`, category: t.category });
+    out.push({ prompt: `Line reads: ${t.instructionText}${t.hint ? ` (Column D: ${t.hint})` : ''}. ${t.visual} ${q.ask ?? 'Which way, and what do you do?'}`, svg: t.exits.length ? cameoSvg(t.exits as never, t.control, turn, 120, { sign: t.sign ?? null }) : undefined, options: all, answer: all.indexOf(q.right), tip: `${t.tip} (${t.name})`, category: t.category });
   }
   return out;
 }
@@ -67,7 +65,7 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
   const missed: string[] = [];
   let answered = false; let onKey: ((e: KeyboardEvent) => void) | null = null;
   const page = el('div', { class: 'page quiz', style: 'max-width:760px' });
-  const head = el('h1', {}, kind === 'quiz' ? `${drillId}: Trap quiz - what is the rule?` : `${drillId}: Mental math`);
+  const head = el('h1', {}, kind === 'quiz' ? `${drillId}: Trap quiz: which way, and what do you do?` : `${drillId}: Mental math`);
   const sub = el('p', { class: 'muted' });
   const box = el('div', { class: 'panel' });
   page.append(head, sub, box);
@@ -86,7 +84,10 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
       box.replaceChildren(el('h2', {}, `${correct} / 20 correct  ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`), el('p', {}, stars === 3 ? 'Sharp. Take it to the cockpit.' : 'Re-run the deck until it is automatic: the car does not wait for second guesses.'), ...(cats.length ? [el('p', { class: 'muted' }, `Missed topics: ${cats.join(', ')}`)] : []));
       const again = el('button', { class: 'primary' }, 'Again'); again.onclick = () => { renderQuiz(root, kind, drillId); };
       const home = el('button', {}, 'Home'); home.onclick = () => { location.hash = '#/'; };
-      box.append(el('div', { class: 'actions', style: 'display:flex;gap:8px' }, again, home));
+      const row = el('div', { class: 'actions', style: 'display:flex;gap:8px' }, again, home);
+      // PLAY-023: the result page leads on along the Start-here path like every Debrief
+      try { const ds = allDrills(); const prog = app.progress.load(); const ld = (id: string): boolean => app.progress.lessonDone(id); const pn = pathNext(startPathFromProgress(ds, prog, ld), ds, unlockBest(ds, prog), ld, id => LESSONS.find(l => l.id === id)?.title ?? id); if (pn && pn.kind !== 'blocked' && !(pn.kind === 'step' && pn.step.id === drillId)) { const b = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${pn.label}`); b.onclick = () => { location.hash = pn.hash; }; row.append(b); } } catch { /* registry unavailable */ }
+      box.append(row);
       sub.textContent = ''; return;
     }
     sub.textContent = `Card ${i + 1} of 20 · ${correct} correct · keys 1-${c.options.length} answer, Enter / Space next`;

@@ -663,6 +663,13 @@ class Generator {
   }
 
   // ---------- checkpoint placement (GEN-005 / GEN-007) ----------
+  /** ENG-025: the ghost's seconds from the leg start to `x` ft, at the speeds the planned rows assign (a printed pause adds its seconds; a timed row counts at its faster speed). */
+  private ghostSecondsAt(items: Item[], x: number, v0: number): number {
+    const fps = (mph: number): number => Math.max(1, mph) * 1.4666666666666666;
+    let t = 0, at = 0, v = v0;
+    for (const it of items) { if (it.at >= x) break; t += (it.at - at) / fps(v) + (it.ins?.pause ?? 0); at = it.at; const i = it.ins; if (i?.timed) v = Math.max(i.timed.holdSpeed, i.timed.thenSpeed); else if (i) v = it.speedAfter; }
+    return t + (x - at) / fps(v);
+  }
   private chooseCheckpoint(items: Item[], lastLeg: boolean, minX = 0): CpChoice {
     const ins = items.filter(i => i.ins);
     const last = ins[ins.length - 1]!;
@@ -674,7 +681,8 @@ class Generator {
       }
       // SIM-021: the sim ends 30 min after the last perfect CP time, so the final CP sits in the tail of the last leg
       if (lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600 || this.tailSeconds(items, x) > LATE_SURPRISE_S)) return false;
-      return x >= Math.max(600, minX) && this.debtAt(items, x) <= MAX_DEBT_AT_CP;
+      // ENG-025: after a transit or restart the first checkpoint is at least 2 minutes of the ghost's time out, at the speeds of the rows that follow
+      return x >= Math.max(600, minX) && (minX <= 0 || this.ghostSecondsAt(items, x, this.carry.length ? this.carrySpeed : this.legStartSpeed) >= 125) && this.debtAt(items, x) <= MAX_DEBT_AT_CP;
     };
     const nextAfter = (it: Item): number => items.find(j => j.at > it.at)?.at ?? last.at;
     const sample = (lo: number, hi: number): number | null => {

@@ -430,7 +430,8 @@ export function validateScenario(sc: Scenario): string[] {
       if (transitFrom !== null) bounds.push({ from: transitFrom, to: s0, why: 'transit' });
       transitFrom = null;
       const vEnd = ins.speed ?? assigned;
-      if (ins.transit?.end && vEnd > 0) bounds.push({ from: s0, to: s0 + vEnd * 1.4666666666666666 * 120, why: '2-minute free zone after the transit' });
+      // ENG-025: the 2-minute free zone is 120 s of the ghost's time from the transit end or the time-of-day restart, at the speeds of the rows that follow (not the end row's speed alone)
+      if (vEnd > 0) bounds.push({ from: s0, to: freeZoneEndS(sc, ins, vEnd), why: `2-minute free zone after the ${ins.transit?.end ? 'transit' : 'restart'}` });
     }
     if (ins.freeZone === 'begin') freeFrom = s0;
     if (ins.freeZone === 'end' && freeFrom !== null) { bounds.push({ from: freeFrom, to: s0, why: 'free zone' }); freeFrom = null; }
@@ -443,3 +444,22 @@ export function validateScenario(sc: Scenario): string[] {
   if (warm.length) { const lo = insS(warm[0]!), hi = insS(warm[warm.length - 1]!); for (const cp of timingCps) if (cp.s >= lo && cp.s <= hi) problems.push(`timing checkpoint ${cp.id} lies in the tire warm-up (free zone, V.B.2.a)`); }
   return problems;
 }
+
+/** ENG-025: where 120 s of the ghost's time after `from` ends: the rows that follow set the speed (a pause adds its seconds). */
+export function freeZoneEndS(sc: Pick<Scenario, 'book' | 'course'>, from: Instruction, vFrom: number, seconds = 120): number {
+  const fps = (mph: number): number => Math.max(1, mph) * 1.4666666666666666;
+  const sOf = (i: Instruction): number => nodeById(sc.course, i.nodeId).s;
+  let s = sOf(from), t = 0, v = vFrom;
+  for (const r of sc.book.slice(sc.book.indexOf(from) + 1)) {
+    const sr = sOf(r); const dt = (sr - s) / fps(v);
+    if (t + dt >= seconds) return s + (seconds - t) * fps(v);
+    t += dt + (r.pause ?? 0); s = sr;
+    if (r.timed) v = Math.max(r.timed.holdSpeed, r.timed.thenSpeed); else if (r.speed !== undefined) v = r.speed;
+    if (t >= seconds) return s;
+  }
+  return s + Math.max(0, seconds - t) * fps(v);
+}
+
+/** PLAY-027: a measuring run (D06): starts and restarts leave ON the second and speeds are called AT the sign, so the loss shows against the ghost (no launch lead, no ramp lead). */
+export const MEASURE_RUN_TAG = 'measure-run';
+export function isMeasureRun(sc: { tags?: string[] } | null | undefined): boolean { return !!sc?.tags?.includes(MEASURE_RUN_TAG); }

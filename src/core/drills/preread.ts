@@ -9,7 +9,8 @@ export interface NoteGrade { attempted: boolean; good: number; total: number; li
 /** "CP3 09:14:22" (or "CP 3 9:14:22 AM"): the checkpoint number and the exact time of day written in Column D at a Timing Checkpoint. */
 export function parseCpNotes(texts: string[]): { cp: number; tod: number }[] {
   const out: { cp: number; tod: number }[] = [];
-  for (const t of texts) for (const m of t.matchAll(/\bCP\s*#?\s*(\d+)\b\D{0,6}?(\d{1,2}):(\d{2}):(\d{2})/gi)) out.push({ cp: Number(m[1]), tod: (Number(m[2]) % 12) * 3600 + Number(m[3]) * 60 + Number(m[4]) });
+  // ENG-025: "CP1 arrived 9:14:22" and "Checkpoint 1 9:14:22" parse too (up to 12 filler characters)
+  for (const t of texts) for (const m of t.matchAll(/\b(?:CP|checkpoint)\s*#?\s*(\d+)\b\D{0,12}?(\d{1,2}):(\d{2}):(\d{2})/gi)) out.push({ cp: Number(m[1]), tod: (Number(m[2]) % 12) * 3600 + Number(m[3]) * 60 + Number(m[4]) });
   return out;
 }
 const sameWithin = (a: number, b: number, tol: number): boolean => { const d = Math.abs(((a - b) % 43200 + 43200) % 43200); return Math.min(d, 43200 - d) <= tol + 1e-9; };
@@ -56,9 +57,13 @@ export function chartLossFor(sc: Scenario, ins: Instruction, sp: LineSpeeds): nu
 }
 /** Numbers written as chart losses: "loss 10.2", "chart: 2.3", or a signed value like "-2.3" / "+10.2". */
 export function lossNumbers(text: string): number[] {
-  const out: number[] = [];
-  for (const m of text.matchAll(/(?:loss|lost|chart)\s*[:=]?\s*([-+]?\d+(?:\.\d+)?)/gi)) out.push(Math.abs(Number(m[1])));
-  for (const m of text.matchAll(/(?<![\d.:A-Za-z])[-+](\d+(?:\.\d+)?)(?![\d:])/g)) out.push(Number(m[1]));
+  const out: number[] = []; const used = new Set<number>();
+  for (const m of text.matchAll(/(?:loss|lost|chart)\s*[:=]?\s*([-+]?\d+(?:\.\d+)?)/gi)) { out.push(Math.abs(Number(m[1]))); used.add(m.index! + m[0].length - m[1]!.length); }
+  // ENG-025: a signed number counts once (not again after "loss:"), and never inside a note that carries a time of day ("restart 9:41:00 -2")
+  const hasTime = /\d{1,2}:\d{2}/.test(text);
+  if (!hasTime) for (const m of text.matchAll(/(?<![\d.:A-Za-z])[-+](\d+(?:\.\d+)?)(?![\d:])/g)) { if (used.has(m.index!)) continue; out.push(Number(m[1])); }
+  // ENG-025: the card's own example, a bare decimal on its own ("10.2"); a whole number alone is a carried speed ("30"), not a loss
+  if (!out.length) { const b = /^\s*(\d+\.\d+)\s*$/.exec(text); if (b) out.push(Number(b[1])); }
   return out;
 }
 /** Chart losses pre-written beside every stop and turn, graded within 1 s of the chart value. Graded only when the player wrote at least one loss. */

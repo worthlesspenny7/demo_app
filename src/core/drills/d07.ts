@@ -11,8 +11,12 @@ import { basicRubric, instrumentFindingLines, withSkillTip } from './rubrics.js'
 
 /** "5m32.0s", "5m32.0", "5:32.0", "332.0" -> seconds. */
 export function parseDuration(s: string): number | null {
-  const t = s.trim().toLowerCase().replace(/s$/, '');
-  let m = /^(\d+)m(\d+(?:\.\d+)?)$/.exec(t); if (m) return Number(m[1]) * 60 + Number(m[2]);
+  // ENG-023: "elapsed 4:05", "4:05." (trailing punctuation), "12 min 25 s", "4m05.0s", "0:04:05" (h:mm:ss), "245.3 s"
+  let t = String(s ?? '').trim().toLowerCase().replace(/^elapsed\s*[=:]?\s*/, '').replace(/[.,;:!]+$/, '').trim();
+  let m = /^(\d+)\s*(?:m|min|mins|minutes?)\s*(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds?)?$/.exec(t); if (m) return Number(m[1]) * 60 + Number(m[2]);
+  m = /^(\d+)\s*(?:m|min|mins|minutes?)$/.exec(t); if (m) return Number(m[1]) * 60;
+  t = t.replace(/\s*(?:s|sec|secs|seconds?)$/, '');
+  m = /^(\d+):(\d{1,2}):(\d{2}(?:\.\d+)?)$/.exec(t); if (m) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
   m = /^(\d+):(\d+(?:\.\d+)?)$/.exec(t); if (m) return Number(m[1]) * 60 + Number(m[2]);
   m = /^(\d+(?:\.\d+)?)$/.exec(t); if (m) return Number(m[1]);
   return null;

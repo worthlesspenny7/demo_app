@@ -12,7 +12,7 @@
  * gracefully against an engine that does not have them yet.
  */
 import type { Scenario, Instruction } from '../../core/course.js';
-import { transitPaceMph } from '../../core/course.js';
+import { transitPaceMph, isMeasureRun } from '../../core/course.js';
 import { accelLoss } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
 import { formatInterval } from '../../core/griid.js';
@@ -45,11 +45,11 @@ export function launchPlan(yourTime: number, loss: number): LaunchPlan {
 }
 
 /** The plan for a start or restart book line, from the car's chart (a); null when the line is not a start/restart with a time. */
-export function startLaunchFor(sc: Pick<Scenario, 'book' | 'car'>, line: number): LaunchPlan | null {
+export function startLaunchFor(sc: Pick<Scenario, 'book' | 'car'> & { tags?: string[] }, line: number): LaunchPlan | null {
   const ins = sc.book[line - 1];
   if (!ins || ins.restartTime === undefined || !(ins.section === 'start' || ins.section === 'restart' || ins.baseTime !== undefined)) return null;
   const vOut = ins.speed ?? transitPaceMph(ins.transit) ?? lineSpeeds(sc as Scenario, line).vOut ?? 30; // PLAY-009: the engine's launch speed rule
-  let loss = 0; try { loss = accelLoss(vOut, sc.car); } catch { loss = 0; }
+  let loss = 0; try { loss = isMeasureRun(sc) ? 0 : accelLoss(vOut, sc.car); } catch { loss = 0; }   // PLAY-027: a measuring run leaves ON the second
   return launchPlan(ins.restartTime, loss);
 }
 

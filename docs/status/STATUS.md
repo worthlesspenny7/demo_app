@@ -3,7 +3,7 @@
 ## HANDOFF (keep this block current; it is the resume point)
 - Branch: claude/rally-simulator-j3kqzq (remote demo_app, renamed TSD-simulator on GitHub; push works).
 - Verify: `npm install && npx tsc -p tsconfig.json && npm test && npm run build && npm run spec:check && npm run test:e2e`
-  (last known, after the PT-05/PT-06 fix sprint, NOT committed: tsc clean, 523 unit, 62 e2e, 300/300 specs, ENGINE_VERSION 3.1.0).
+  (last known, after the PT-08/PT-09 fix sprint, NOT committed: tsc clean, 591 unit, 80 e2e, 338/338 specs, ENGINE_VERSION 3.2.0).
 - Standing rules from Josh: the organizers' documents and videos override his preferences and ours; digital
   lap/split stopwatch with TOD mode is the default (HB p.5, REG II.H.1.d(3)); the dash clock has no digital
   readout (REG II.H.1.d(1)); mark simulator conventions as such in lessons; keep STATUS/LOG current; commit and
@@ -14,12 +14,13 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): fix sprint PT-08/PT-09 (Opus) on 5e31c12. PT-08 = 42/55, path must route through its
-  lessons in the handbook's S-order (Safety, Start on time, Stay on course, Stay on time), honest locks at the path end,
-  fast-forward stops 45 s before launch, D06 measure-vs-copy, D09 content, debrief leftovers, Dad's card print. PT-09 =
-  untilEvent at holds, gate leaks (D04 goCount, D08/D18 no-recovery, D15 spray), D17 first-note grading, Gold driver
-  turn braking. When it lands: five checks, commit, push, then PT-10 replay. Known not-done: PT-06 LOW 14, 20, 21,
-  25-27; 39-page day vs 13-26 real; Bronze stage sentences in Column D by design.
+- In flight (2026-10-04): fix sprint PT-08/PT-09 DONE on 5e31c12, NOT committed (five checks green: tsc clean, 591 unit,
+  80 e2e, 338/338 specs, build clean, ENGINE_VERSION 3.2.0; see LOG "Fix sprint PT-08/PT-09"). Next: commit, push, then
+  the PT-10 playability replay on the new path. Known not-done: PT-06 LOW 14 (unprinted nodes in timed intervals),
+  20, 21, 25-27; PT-09 LOW 10 (scheduling nits), 12 (oracle never laps at plain markers), 13 (D10 seed-decided
+  stars), 14 (D08 tip names hazard for a no-pause STOP); PT-08 N-B14 (500-ft call taken by a distractor, T check-off
+  wording), N-B16 campaign benchmark totals before a stage; lesson 1 still carries the TA procedure; 39-page day vs
+  13-26 real; Bronze stage sentences in Column D by design.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
