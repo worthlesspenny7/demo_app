@@ -3,7 +3,7 @@
 ## HANDOFF (keep this block current; it is the resume point)
 - Branch: claude/rally-simulator-j3kqzq (remote demo_app, renamed TSD-simulator on GitHub; push works).
 - Verify: `npm install && npx tsc -p tsconfig.json && npm test && npm run build && npm run spec:check && npm run test:e2e`
-  (last known, after the PT-08/PT-09 fix sprint, NOT committed: tsc clean, 591 unit, 80 e2e, 338/338 specs, ENGINE_VERSION 3.2.0).
+  (last known, after the PT-10 fix sprint, NOT committed: tsc clean, 621 unit, 90 e2e, 348/348 specs, ENGINE_VERSION 3.3.0).
 - Standing rules from Josh: the organizers' documents and videos override his preferences and ours; digital
   lap/split stopwatch with TOD mode is the default (HB p.5, REG II.H.1.d(3)); the dash clock has no digital
   readout (REG II.H.1.d(1)); mark simulator conventions as such in lessons; keep STATUS/LOG current; commit and
@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): fix sprint PT-10 (Sonnet) on b5e36af. PT-10 = 44/55, 0 regressed; path reads as the Four S's.
-  Fixing: D06 hides the hidden car's charts at Silver/Gold, D06 MARK wording, D09 red-light card (REG V.H.1), answer tells,
-  turning-stop loss on the simple chart, N-B14 (turn kept for its own intersection), path-complete Next, Silver replays
-  without printed dwell, lighter evening one (TA out of lesson 1, 8x transits in D16), text hygiene, Dad's card print.
-  When it lands: five checks, commit, push, PT-11 replay. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14.
+- In flight (2026-10-04): fix sprint PT-10 landed in the tree on b5e36af, NOT committed (see LOG.md "Fix sprint PT-10"): D06 hides the hidden car's charts at Silver/Gold and
+  its MARK lines give positive cells, D09 red-light card per REG V.H.1, balanced D09 options and shuffled lesson checks, turning-stop column (TS/G) and tip, N-B14 (a called
+  turn is kept for its own intersection), Next after the path (D18 and D07 at Silver, D11), Silver cards print no dwell/call times, lighter evening one (TA in the recovery
+  lesson, long lessons in two pages, D16 at 8x), text hygiene and Dad's card print. ENGINE_VERSION 3.3.0. Checks: tsc clean, 621 unit, build clean, 90 e2e, 348/348 specs.
+  Next: commit and push, then the PT-11 replay. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14; N-C10 "Start / restart +9" bucket on a clean run.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

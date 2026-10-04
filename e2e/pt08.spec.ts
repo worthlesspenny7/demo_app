@@ -2,6 +2,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { PROGRESS_KEY } from '../src/ui/viewmodels/progress.js';
 import { CHART_NOTES_KEY } from '../src/ui/viewmodels/chartnotes.js';
+import { LESSONS } from '../content/lessons.js';
 
 test.use({ viewport: { width: 1366, height: 768 } });
 
@@ -22,7 +23,7 @@ test('PLAY-023 Home prints the Four S headings in the handbook order, says why s
   await page.goto('/#/');
   await expect(page.locator('#starthere')).toHaveText(/Next: School: the ghost car/); await page.locator('#starthere').click(); await expect(page).toHaveURL(/#\/school\/ghost-car$/);
   // the lesson's own "Next on your path" then opens D16
-  await page.locator('.quiz .opt').nth(1).click();
+  await page.locator('.quiz .opt', { hasText: LESSONS.find(l => l.id === 'ghost-car')!.check.options[LESSONS.find(l => l.id === 'ghost-car')!.check.answer]! }).click();   // PT-10: the options are shuffled each time
   await expect(page.locator('#next-path')).toHaveText(/Next on your path: D16 Start on the second/);
 });
 
@@ -62,6 +63,7 @@ test('PLAY-027 D06 chart notes from the last run of the seed are kept on a retry
 test('PLAY-031 Dad\'s card prints on one page', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => { (window as unknown as { __printed: number }).__printed = ((window as unknown as { __printed?: number }).__printed ?? 0) + 1; }; });
   await page.goto('/#/school/protocol');
+  await page.locator('#lesson-next-page').click();   // PT-10: the card is on page 2 of the lesson
   const pagesOf = (b: Buffer): number => (b.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
   expect(pagesOf(await page.pdf({ format: 'Letter' }))).toBeGreaterThan(1);   // control: the whole lesson is several pages
   await page.locator('#print-card').click();

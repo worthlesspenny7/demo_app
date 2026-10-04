@@ -28,8 +28,8 @@ function stepTo(sim: Simulator, tod: number): void { while (sim.tod < tod - 1e-9
 const msgs = (sim: Simulator): string[] => sim.driverMsgs.map(m => m.text);
 
 describe('V3 engine version', () => {
-  it('INST-001 ENGINE_VERSION is 3.2.0 (ENG-004 keyed RNG streams, then the fix sprint PT-08/PT-09) and the V3 actions are in the action list and validated', () => {
-    expect(ENGINE_VERSION).toBe('3.2.0');   // fix sprint PT-08/PT-09 bumped it (ENG-020..ENG-024 change replayed results)
+  it('INST-001 ENGINE_VERSION is 3.3.0 (ENG-004 keyed RNG streams, the fix sprint PT-08/PT-09, then PT-10 N-B14) and the V3 actions are in the action list and validated', () => {
+    expect(ENGINE_VERSION).toBe('3.3.0');   // fix sprint PT-10 bumped it (ENG-026: a called turn is kept for its own intersection, which changes replayed results)
     for (const t of ['pullUp', 'call.warn', 'call.identify', 'count', 'clock.read', 'ledger.set', 'ta.request']) expect(ACTION_LIST).toContain(t);
     expect(validateAction({ type: 'call.identify', text: 'bridge' })).toBeNull(); expect(validateAction({ type: 'call.identify' })).not.toBeNull();
     expect(validateAction({ type: 'count', n: 9 })).toBeNull(); expect(validateAction({ type: 'count', n: 1.5 })).not.toBeNull();
@@ -572,7 +572,7 @@ describe('CHART-006 the D06 chart tool: runs, outliers, per-driver charts, stop 
     const truth = (p: ReturnType<typeof chartPairs>[number]): number => p.kind === 'stopMid' ? Math.round(stopLoss(p.vIn, p.vOut, sc.car) * 10) / 10 : Math.round((p.kind === 'stopGo' ? perf.stopGo : p.kind === 'accel' ? perf.accel : perf.turns).rows[p.vIn]![p.vOut]! * 10) / 10;
     const run = (prefix: string, extra: string[] = []) => { const sim = new Simulator(sc); for (const p of pairs) sim.act({ type: 'note', text: `${prefix}${p.kind === 'stopGo' ? 'stopgo' : p.kind} ${p.vIn}>${p.vOut} runs ${truth(p).toFixed(1)} ${(truth(p) + 0.2).toFixed(1)} ${(truth(p) - 0.2).toFixed(1)} ${truth(p).toFixed(1)}` }); for (const e of extra) sim.act({ type: 'note', text: e }); return d.rubric(runBot(sim, null), sc); };
     expect(run('B: ').stars).toBe(3); expect(run('').stars).toBe(3); const wrong = run('A: '); expect(wrong.stars).toBe(0); expect(wrong.feedback.join(' ')).toMatch(/tagged for the other driver were ignored/); expect(wrong.feedback.join(' ')).toMatch(/driver B/);
-    const out = run('', [`stopgo ${pairs.find(p => p.kind === 'stopGo')!.vIn}>${pairs.find(p => p.kind === 'stopGo')!.vOut} runs ${truth(pairs.find(p => p.kind === 'stopGo')!)} -0.4`]); expect(out.feedback.join(' ')).toMatch(/negative net loss, an outlier: delete it or re-run/);
+    const out = run('', [`stopgo ${pairs.find(p => p.kind === 'stopGo')!.vIn}>${pairs.find(p => p.kind === 'stopGo')!.vOut} runs ${truth(pairs.find(p => p.kind === 'stopGo')!)} -0.4`]); expect(out.feedback.join(' ')).toMatch(/is a negative cell\. Re-drive this pair/);   // PT-10: the cure inside the drill is to re-drive the pair
   });
   it('CHART-006 the stop-in-the-middle run is the tenth pair (a stop with no pause printed; the net loss is 15 s minus chart (b)); speeds run to 55; a "simple chart is enough"', () => {
     const d = drillById('D06')!; const speeds = new Set<number>(); let mid = 0;

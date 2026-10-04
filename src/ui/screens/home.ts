@@ -5,7 +5,7 @@ import { LESSONS } from '../../../content/lessons.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
 import { formatMinutes } from '../viewmodels/estimate.js';
-import { startPathFromProgress, unlockBest, pathStepHash, lockText, readFirstOf, cardMinutesText, pathNext, pathCompleteText, PATH_WHY, FOUR_S_TITLE, type FourS } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, unlockBest, pathStars, pathStepHash, lockText, readFirstOf, cardMinutesText, pathNext, pathCompleteText, PATH_WHY, FOUR_S_TITLE, type FourS } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
 /** PLAY-023: the tracks in the handbook's Four S's order (HB p.13-14): start on time, stay on course, then stay on time. D02 is retired. */
@@ -76,7 +76,7 @@ function startHerePanel(drills: Drill[], prog: ReturnType<typeof app.progress.lo
     if (!s.locked) li.onclick = () => { location.hash = pathStepHash(s.step); };
     ol!.append(li);
   }
-  const nx = pathNext(steps, drills, best, lessonDone, lessonTitle);
+  const nx = pathNext(steps, drills, best, lessonDone, lessonTitle, pathStars(prog));
   let go: HTMLElement | null = null;
   if (nx && nx.kind !== 'blocked') { const b = el('button', { class: 'primary', id: 'starthere', 'data-next': nx.kind }, `Next: ${nx.label}`); b.onclick = () => { location.hash = nx.hash; }; go = b; }
   else if (nx) go = el('p', { class: 'lockline', id: 'starthere-locked' }, nx.label);

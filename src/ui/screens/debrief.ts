@@ -1,7 +1,6 @@
 /** Debrief (DEBRIEF-001..004): per-CP table, attribution bars, worked arithmetic, counterfactuals, ledger, bias/noise, timeline. */
 import { stageDisplayName } from '../viewmodels/book.js';
-import { LESSONS } from '../../../content/lessons.js';
-import { debriefViewModel, BUCKET_LABEL, type DebriefVm } from '../viewmodels/debrief.js';
+import { debriefViewModel, showResidualLine, BUCKET_LABEL, type DebriefVm } from '../viewmodels/debrief.js';
 import type { Bucket } from '../../core/sim.js';
 import { counterfactuals, type CounterfactualRow } from '../viewmodels/counterfactual.js';
 import { drawTimeline } from '../render/timeline.js';
@@ -10,7 +9,7 @@ import { formatClock, formatSigned } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
 import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
 import { fmtMMSS } from '../viewmodels/book.js';
-import { nextDrill, unlockBest, startPathFromProgress, pathNext } from '../viewmodels/curriculum.js';
+import { debriefNext } from '../viewmodels/curriculum.js';
 import { scorecardViewModel } from '../viewmodels/scorecard.js';
 import { scorecardPanel } from './scorecard.js';
 
@@ -43,19 +42,11 @@ export function renderDebrief(root: HTMLElement): void {
   actions.append(retry, next, home);
   if (run.source.kind === 'drill') {
     try {
-      const ds = allDrills(); const prog = app.progress.load(); const best = unlockBest(ds, prog);
-      // PLAY-001 / PLAY-023 / PLAY-024: while the Start-here path is open, Next opens the path's next step: a due lesson first, never a locked drill
-      const ld = (id: string): boolean => app.progress.lessonDone(id);
-      const steps = startPathFromProgress(ds, prog, ld);
-      const pn = pathNext(steps, ds, best, ld, id => LESSONS.find(l => l.id === id)?.title ?? id);
-      const nd = steps.some(s => s.current) ? null : nextDrill(run.source.drillId, ds, best);
-      if (pn && pn.kind !== 'blocked' && !(pn.kind === 'step' && pn.step.kind === 'drill' && pn.step.id === run.source.drillId)) { const b = el('button', { id: 'nextdrill', class: 'primary' }, `Next on your path: ${pn.label}`); b.onclick = () => { location.hash = pn.hash; }; actions.append(b); }
-      else if (pn && pn.kind === 'blocked') actions.append(el('span', { class: 'lockline', id: 'path-locked' }, pn.label));
-      if (nd) {
-        const b = el('button', { id: 'nextdrill', class: nd.locked ? 'locked-btn' : '' }, nd.locked ? `🔒 Next drill: ${nd.drill.id} (needs ${nd.needs})` : `Next drill: ${nd.drill.id}`);
-        if (nd.locked) b.setAttribute('disabled', ''); else b.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: nd.drill.id, tier: 0, seed: 1 }); };
-        actions.append(b);
-      }
+      // PLAY-001 / PLAY-023 / PLAY-024 / PT-10 N-C6: while the Start-here path leads on, Next opens its next step (a due lesson first, a replay at Silver, D11); never a locked drill
+      const nx = debriefNext(run.source.drillId, allDrills(), app.progress.load(), id => app.progress.lessonDone(id));
+      if (nx.path) { const pn = nx.path; const b = el('button', { id: 'nextdrill', class: 'primary' }, `Next on your path: ${pn.label}`); b.onclick = () => { location.hash = pn.hash; }; actions.append(b); }
+      else if (nx.blocked) actions.append(el('span', { class: 'lockline', id: 'path-locked' }, nx.blocked));
+      if (nx.drill) { const d = nx.drill; const b = el('button', { id: 'nextdrill' }, `Next drill: ${d.id}`); b.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: d.id, tier: 0, seed: 1 }); }; actions.append(b); }
     } catch { /* none */ }
   }
   page.append(actions);
@@ -68,7 +59,7 @@ export function renderDebrief(root: HTMLElement): void {
     let posX = 50, negX = 50;
     for (const s of l.segments) { const w = Math.abs(s.seconds) / maxAbs * 50; const seg = el('div', { class: 'seg', title: `${s.label}: ${formatSigned(s.seconds)} s` }); seg.style.background = BUCKET_COLOR[s.bucket]; seg.style.width = `${w}%`; if (s.seconds >= 0) { seg.style.left = `${posX}%`; posX += w; } else { negX -= w; seg.style.left = `${negX}%`; } bar.append(seg); }
     bars.append(el('div', { class: 'bar-row' }, el('span', {}, `Leg ${l.legIndex}`), bar, el('span', { class: 'num mono' }, l.error === null ? 'missed' : `${formatSigned(l.error)} s`)));
-    if (Math.abs(l.residual) > 1.5) bars.append(el('div', { class: 'muted', style: 'font-size:12px' }, `(buckets sum ${formatSigned(l.sum)}, rounding residual ${formatSigned(l.residual)})`));
+    if (showResidualLine(l)) bars.append(el('div', { class: 'muted', style: 'font-size:12px' }, `(buckets sum ${formatSigned(l.sum)}, rounding residual ${formatSigned(l.residual)})`));
   }
   const legend = el('div', { class: 'legend' }); for (const b of Object.keys(BUCKET_LABEL) as Bucket[]) if (Math.abs(vm.totals[b]) >= 0.05) legend.append(el('span', {}, el('i', { style: `background:${BUCKET_COLOR[b]}` }), `${BUCKET_LABEL[b]} ${formatSigned(vm.totals[b])}`)); bars.append(legend);
   const tl = el('div', { class: 'panel timeline-wrap' }, el('h3', {}, 'Actual vs ghost'));

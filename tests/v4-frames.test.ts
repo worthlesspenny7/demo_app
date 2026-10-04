@@ -226,9 +226,9 @@ describe('INST-003 the Sawtooth-style rally clock is the default, the bezel cloc
 });
 
 describe('CHART-007 the simple chart derived from the car model', () => {
-  it('CHART-007 Speed | Dec | Acc | S/G | T@15 | T@20 for 55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10; S/G = Dec + Acc exactly; T@n is N/A at or below n', () => {
+  it('CHART-007 Speed | Dec | Acc | S/G | TS/G | T@15 | T@20 for 55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10; S/G = Dec + Acc exactly; T@n is N/A at or below n', () => {
     const c = simpleChart(FORD_1939);
-    expect(c.speeds).toEqual([55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10]); expect([...SIMPLE_CHART_SPEEDS]).toEqual(c.speeds); expect(c.columns).toEqual(['Dec', 'Acc', 'S/G', 'T@15', 'T@20']); expect(c.hasT20).toBe(true);
+    expect(c.speeds).toEqual([55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10]); expect([...SIMPLE_CHART_SPEEDS]).toEqual(c.speeds); expect(c.columns).toEqual(['Dec', 'Acc', 'S/G', 'TS/G', 'T@15', 'T@20']); expect(c.hasT20).toBe(true); expect(c.hasTS).toBe(true);   // PT-10: the turning-stop column
     for (const r of c.rows) { expect(r.sg).toBeCloseTo(r.dec + r.acc, 9); expect(r.text['S/G']).toBe(formatLoss(r.sg)); expect(r.dec).toBeGreaterThan(0); expect(r.acc).toBeGreaterThan(0); }
     expect(c.rows[0]!.dec).toBeGreaterThan(c.rows[c.rows.length - 1]!.dec); expect(c.rows[0]!.acc).toBeGreaterThan(c.rows[c.rows.length - 1]!.acc);     // faster costs more
     const r12 = c.rows.find(r => r.speed === 12)!, r15 = c.rows.find(r => r.speed === 15)!, r20 = c.rows.find(r => r.speed === 20)!;

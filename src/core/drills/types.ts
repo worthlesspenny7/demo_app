@@ -14,6 +14,8 @@ export interface Drill {
   id: string;                 // e.g. "D03"
   title: string;
   objective: string;          // one sentence, learner-facing
+  /** PT-10 N-C3: the objective as the pre-read shows it for one tier, when the tiers do different jobs (D06: Bronze copies the Packard, Silver and Gold measure) */
+  objectiveFor?: (tier: number) => string;
   skills: string[];           // P1..P13 ids from REQUIREMENTS §2
   /** Approximate minutes of sim time per run. */
   minutes: number;

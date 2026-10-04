@@ -91,7 +91,7 @@ describe('EDU-004 the tractor and the stop-and-go loss', () => {
     const d = drillById('D08b')!; expect(d.objective).not.toMatch(/A tractor is not a Time Allowance/); expect(d.objective).toMatch(/REG V\.H\.5 uses a farm tractor/); expect(d.objective).toMatch(/slow truck .* can be passed/);
     expect(d.scenario(1, 0).tags).toContain('ta:slowTruckLeg:2');
     const rec = lessonText(lesson('recovery')); expect(rec).not.toMatch(/only the wait itself is creditable/); expect(rec).toMatch(/stopped .* plus the stop-and-go loss for your speeds from your chart \(Time Delay Form \[01:38\], \[04:44\]/);
-    expect(lessonText(lesson('four-s'))).toMatch(/own worked example is a farm tractor \(V\.H\.5\)/);
+    expect(lessonText(lesson('recovery'))).toMatch(/own worked example is a farm tractor \(V\.H\.5\)/);   // PT-10: the TA procedure moved from lesson 1 to the recovery lesson
     const src = readFileSync('src/ui/screens/reference.ts', 'utf8'); expect(src).not.toMatch(/Only the wait is creditable/);
   });
 });
@@ -159,7 +159,7 @@ describe('EDU-006 the soft gates', () => {
 describe('EDU-007 Dad\'s card and the first morning', () => {
   it('EDU-007 the twelve-line card carries safety, the full stop, the checkpoint signs, calibration conduct, the restart queue, lost, the phone and the emergency signs; no "stop short of the intersection"', () => {
     const c = card(); expect(c.length).toBe(21); const t = c.join('\n');   // PLAY-031 (fix sprint PT-08): one rule per line, so 21 short lines
-    for (const phrase of ['Safety beats seconds', 'Every STOP sign is a full stop, even with no pause in the book', 'DNF', 'Never speed', 'Green sign = timing checkpoint: do nothing', 'never 5 mph or slower in sight of it (30 s)', 'Red GREAT RACE STOP board: stop', 'Calibration run: hold the indicated speed exactly, say nothing about early or late', 'Never guess a speed', 'train, tractor, school bus', 'wait back among the cars; pull up only after the car ahead has left', 'go around it', 'Not sure where we are: say so', 'never in sight of a green sign', 'no U-turn in traffic', 'No score is worth an accident', 'Day-Glo "GR" sign', '"End Leg"', 'Off the clock', 'Phones off and out of reach', 'warning, then 10 s, then 1 min'])
+    for (const phrase of ['Safety beats seconds', 'Every STOP sign is a full stop, even with no pause in the book', 'DNF', 'Never speed', 'Green sign = timing checkpoint: just drive on', 'Never stop or slow to 5 mph or less in sight of it: 30 second penalty', 'Red GREAT RACE STOP board: stop', 'Calibration run: hold the indicated speed exactly, say nothing about early or late', 'Never guess a speed', 'train, tractor, school bus', 'wait back among the cars; pull up only after the car ahead has left', 'go around it', 'Not sure where we are: say so', 'never in sight of a green sign', 'no U-turn in traffic', 'No score is worth an accident', 'Day-Glo "GR" sign', '"End Leg"', 'Off the clock', 'Phones off and out of reach', 'a warning, the next 10 seconds, then 1 minute'])
       expect(t, phrase).toContain(phrase);
     expect(lessonText(lesson('protocol'))).not.toMatch(/stop short of the intersection/i); expect(lessonText(lesson('protocol'))).toMatch(/Rule 10 .*never in sight of a green checkpoint sign/);
     expect(Math.max(...c.map(x => x.length))).toBeLessThan(330);   // printable: one short paragraph per line
@@ -191,7 +191,7 @@ describe('EDU-008 the slips', () => {
     // 10 Column D sentence; 11 stop shortening; 12 TA method; 13 glossary; 14 director; 15 exact transit stopwatch
     expect(L('griid-cameo')).toMatch(/on the race sheets shown in the 2024 and 2026 schools no sentence appears/);
     expect(L('recovery')).not.toMatch(/legal only on a pause that is printed/); expect(L('recovery')).toMatch(/5 MPH or faster near a checkpoint/);
-    expect(L('four-s')).toMatch(/in 2026 that is the web form on your phone/);
+    expect(L('recovery')).toMatch(/in 2026 that is the web form on your phone/);   // PT-10: the TA procedure lives in the recovery lesson
     expect(L('protocol')).toMatch(/crossroad, sideroad, T, Y and jog are simulator convention/);
     expect(L('rally-school')).not.toMatch(/the director no longer uses a watch for time of day/);
     expect(L('which-timer')).toMatch(/The sources differ .*Classen starts the stopwatch at the IN line \(Rally School Part 1 \[46:31\]\)/);

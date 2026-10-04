@@ -14,7 +14,7 @@ import { trapCards } from '../src/ui/screens/quiz.js';
 import { chartPairs, runMeasurement } from '../src/core/drills/d06.js';
 import { isMeasureRun, validateScenario, freeZoneEndS, instructionS, DRIVER_DAD_ROOKIE, aidsForRung } from '../src/core/course.js';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
-import { perfCardFor, instrumentPolicy, holdCardFor, clockReadPrompt, secondsToReach, alertExpired, ledgerTaHint, MEASURE_TEXT } from '../src/ui/viewmodels/cockpitinfo.js';
+import { perfCardFor, instrumentPolicy, holdCardFor, clockReadPrompt, secondsToReach, alertExpired, ledgerTaHint, MEASURE_TEXT, MEASURE_COPY_TEXT } from '../src/ui/viewmodels/cockpitinfo.js';
 import { startLaunchFor } from '../src/ui/viewmodels/v3.js';
 import { chartNoteLines, loadChartNotes, saveChartNotes } from '../src/ui/viewmodels/chartnotes.js';
 import { headlineTip, longDwells, recoveryCheck, callErrors } from '../src/core/drills/rubrics.js';
@@ -122,7 +122,7 @@ describe('PLAY-027 D06: measure, do not compensate; notes survive a retry; Bronz
       const sim = new Simulator(sc); const li = sim.launchInfo()!; expect(li.launchTime).toBe(li.ownTime);
       const restart = sc.book.find(i => i.section === 'restart')!; expect(restart.text).toMatch(/leave ON the second, no launch lead/); expect(startLaunchFor(sc, restart.n)!.minus).toBe(0);
       const pol = instrumentPolicy(sc.aids);
-      for (const ins of sc.book) { const c = perfCardFor(sc, ins.n, pol); if (!c || !pol.computedCard) continue; expect(c.speedChange, `line ${ins.n}`).toBeUndefined(); expect(c.start).toBeUndefined(); expect(c.measure).toBe(MEASURE_TEXT); if (c.restart) expect(c.restart.accel).toBeNull(); }
+      for (const ins of sc.book) { const c = perfCardFor(sc, ins.n, pol); if (!c || !pol.computedCard) continue; expect(c.speedChange, `line ${ins.n}`).toBeUndefined(); expect(c.start).toBeUndefined(); expect(c.measure).toBe(t === 0 ? MEASURE_COPY_TEXT : MEASURE_TEXT); if (c.restart) expect(c.restart.accel).toBeNull(); }
       expect(holdCardFor(sc, { transitIn: {}, transitOutFor: () => null, holdGoTod: () => null }, restart.n)!.lead).toBeNull();
       const marks = sc.book.filter(i => /^MARK \S+ in\b/.test(i.text ?? '')).map(i => i.text ?? '');
       for (const m of marks) expect(m).toMatch(t === 0 ? /Bronze: copy the Packard chart cell/ : /Measure, do not compensate/);

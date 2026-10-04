@@ -30,6 +30,7 @@ test('PLAY-001 EDU-005 a Bronze star moves the Start-here path on: Next opens D0
   // PLAY-023: start on time (transits, which timer, ghost car, D16) comes before the course block, so those are done here
   await page.evaluate(([k]) => localStorage.setItem(k!, JSON.stringify({ version: 1, drills: { D16: { stars: 1, tierStars: [1, 0, 0], aces: 0, runs: 1, bestScore: 1, lastScore: 1, bestRaw: 1, lastPlayed: 1 } }, lessons: { 'four-s': true, transits: true, 'which-timer': true, 'ghost-car': true, 'griid-cameo': true }, runs: [], maneuvers: {} })), [PROGRESS_KEY]);
   await page.goto('/#/school/protocol'); await page.reload();
+  await page.locator('#lesson-next-page').click();   // PT-10: the check and the Next button are on page 2
   await expect(page.locator('#next-path')).toHaveText(/Next on your path: D09/);
   await page.locator('#next-path').click(); await expect(page).toHaveURL(/#\/quiz\/D09$/);
 });
@@ -42,7 +43,7 @@ test('PLAY-002 the day stage moves: with no speed printed on the warm-up the dri
   await expect(page.locator('#transitpace')).toContainText(/No speed printed: call about \d+ mph \([\d.]+ mi \/ \d+ min\)/);
 });
 
-test('PLAY-003 PLAY-004 a restart hold runs at the chosen 8x until a minute before the launch; the restart count is outside the road view and fully on screen at 1366x768', async ({ page }) => {
+test('PLAY-003 PLAY-004 a restart hold runs at the chosen 8x until 45 s before the launch; the restart count is outside the road view and fully on screen at 1366x768', async ({ page }) => {
   await openDrill(page, 'D16');
   await page.locator('button[data-scale="8"]').click(); await hold(page);
   await page.evaluate(() => { const r = window.__rally!; r.act({ type: 'skipPreread', secondsBefore: 3 } as never); r.act({ type: 'start' }); });
@@ -55,9 +56,9 @@ test('PLAY-003 PLAY-004 a restart hold runs at the chosen 8x until a minute befo
   await page.locator('#pause').click();                                          // resume the loop: the hold runs at the chosen scale
   await expect(page.locator('#scale')).toHaveText(/^8x/);
   await hold(page);
-  await advance(page, left - 50);                                                // inside the last minute: 1x
+  await advance(page, left - 40);                                                // inside the last 45 s (PT-10: the hold stops fast-forwarding 45 s before the launch): 1x
   await page.locator('#pause').click(); await expect(page.locator('#scale')).toHaveText(/^1x/); await hold(page);
-  await advance(page, 44);                                                        // T-6: the count is running
+  await advance(page, 34);                                                        // T-6: the count is running
   const count = page.locator('#start-count-road'); await expect(count).toBeVisible();
   const box = (await count.boundingBox())!; const road = (await page.locator('.road').boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(0); expect(box.y + box.height).toBeLessThanOrEqual(768); expect(box.x + box.width).toBeLessThanOrEqual(1366);

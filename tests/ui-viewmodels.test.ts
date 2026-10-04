@@ -915,9 +915,10 @@ describe('LESSON-001 The Four S\'s', () => {
     expect(l.source).toMatch(/08-rookie-handbook-body/); expect(l.source).toMatch(/V\.H/);
   });
   it('LESSON-001 gives the TA rules in plain words with the farm-tractor example and the real penalties', () => {
-    const t = lessonText(lesson('four-s'));
+    const t = lessonText(lesson('recovery'));   // PT-10: the TA procedure moved from lesson 1 into the recovery lesson (one line points to it)
     hasAll(t, ['What qualifies', 'What never does', 'multiples of 10 s', 'within 15 minutes', 'TA point', 'could have made up', TA_PATTERN, 'Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.']);
-    hasAll(t, ['1 s per second', '2 min late, 5 min early', 'Missed timing checkpoint', '3 min', 'More than 30 min', 'Failure to stop at a STOP sign', 'DNF']);
+    expect(lessonText(lesson('four-s'))).toMatch(/Time allowances \(TA\): only a train blocking the route or an accident scene qualifies \(REG V\.H\.1\).*lesson "Early, late and the 10 % rule"/);
+    hasAll(lessonText(lesson('four-s')), ['1 s per second', '2 min late, 5 min early', 'Missed timing checkpoint', '3 min', 'More than 30 min', 'Failure to stop at a STOP sign', 'DNF']);
     const l = lesson('four-s'); expect(l.check.options[l.check.answer]).toMatch(/stay on course/);   // PLAY-032 (fix sprint PT-08): the check now tests the S priority; the TA arithmetic stays in the text
   });
   it('LESSON-001 every lesson keeps a source citing the research files and has one check question', () => {
@@ -1002,7 +1003,7 @@ describe('LESSON-007 lessons and reference follow the documents (REG V.H.1, V.H.
     hasAll(TA_STEPS.find(r => r.rule === 'V.H.1')!.text, ['train', 'accident', 'does not name traffic lights']);
   });
   it('LESSON-007 TA submission is "by the method printed in the day\'s instructions" (web page, phone, or at the Observation Checkpoint), in the Four S\'s lesson and the reference steps', () => {
-    hasAll(lessonText(lesson('four-s')), ['by the method printed in the day\'s instructions', 'a web page, a phone call, or at the Observation Checkpoint', 'within 15 minutes', 'Within 15m00s', 'cellular telephone']);
+    hasAll(lessonText(lesson('recovery')), ['by the method printed in the day\'s instructions', 'a web page, a phone call, or at the Observation Checkpoint', 'within 15 minutes', 'Within 15m00s', 'cellular telephone']);
     const v3 = TA_STEPS.find(r => r.rule === 'V.H.3')!.text; hasAll(v3, ['method printed in the day', 'web page, phone, or at the Observation Checkpoint', 'Within 15m00s', 'cellular telephone']); expect(v3).not.toContain('(the yellow box)');
   });
   it('LESSON-007 EDU-008 the GRIID lesson puts both watch faces in Column C; a plain interval is official (only parentheses make it advisory) and "take exactly" (2026 Example #31) makes you leave on IN + interval; the transits lesson and the Column C reference agree', () => {

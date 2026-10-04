@@ -2,7 +2,8 @@
 import { LESSONS, lessonIntro, type LessonBlock } from '../../../content/lessons.js';
 import { app, el } from '../state.js';
 import { allDrills } from '../../core/drills/index.js';
-import { startPathFromProgress, pathNext, unlockBest, START_PATH, type PathNext } from '../viewmodels/curriculum.js';
+import { shuffleCheck } from '../viewmodels/lessoncheck.js';
+import { startPathFromProgress, pathNext, unlockBest, pathStars, START_PATH, type PathNext } from '../viewmodels/curriculum.js';
 
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
 export function renderBlock(b: LessonBlock): HTMLElement {
@@ -50,36 +51,49 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
   } else {
     const idx = LESSONS.indexOf(lesson);
     const box = el('div', { class: 'lesson panel' }, el('h3', {}, `Lesson ${idx + 1} of ${LESSONS.length}`), el('h1', {}, lesson.title));
-    const body = el('div', { class: 'body' }); for (const b of lesson.body) body.append(renderBlock(b)); box.append(body);
-    box.append(el('p', { class: 'cite' }, `Source: ${lesson.source}`));
+    // PT-10: a long lesson is read as two pages (page 2 holds the source, the check and the Next buttons)
+    const split = lesson.splitAt !== undefined && lesson.splitAt > 0 && lesson.splitAt < lesson.body.length ? lesson.splitAt : null;
+    const body = el('div', { class: 'body', id: 'lesson-page-1' }); for (const b of lesson.body.slice(0, split ?? lesson.body.length)) body.append(renderBlock(b)); box.append(body);
+    const rest = el('div', { class: 'lesson-rest' });
+    if (split !== null) {
+      const body2 = el('div', { class: 'body', id: 'lesson-page-2' }); for (const b of lesson.body.slice(split)) body2.append(renderBlock(b)); body2.style.display = 'none';
+      const pageNote = el('p', { class: 'muted', id: 'lesson-pageno' }, 'Page 1 of 2');
+      const nextPage = el('button', { class: 'primary', id: 'lesson-next-page' }, 'Next page'); const prevPage = el('button', { id: 'lesson-prev-page' }, 'Previous page'); prevPage.style.display = 'none';
+      const show = (n: 1 | 2): void => { body.style.display = n === 1 ? '' : 'none'; body2.style.display = n === 2 ? '' : 'none'; rest.style.display = n === 2 ? '' : 'none'; nextPage.style.display = n === 1 ? '' : 'none'; prevPage.style.display = n === 2 ? '' : 'none'; pageNote.textContent = `Page ${n} of 2`; window.scrollTo(0, 0); };
+      nextPage.onclick = () => show(2); prevPage.onclick = () => show(1);
+      box.append(body2, el('div', { class: 'actions', style: 'display:flex;gap:8px;align-items:center;margin:10px 0' }, prevPage, nextPage, pageNote)); rest.style.display = 'none';
+    }
+    box.append(rest);
+    rest.append(el('p', { class: 'cite' }, `Source: ${lesson.source}`));
     // EDU-005: the drills that read this lesson first, one click away
     try {
       const ds = allDrills().filter(d => (d.readFirst ?? []).includes(lesson.id) || (d.lessonGate ?? []).includes(lesson.id));
-      if (ds.length) { const p = el('p', { class: 'muted', id: 'lesson-drills' }, 'Practise it: '); ds.forEach((d, i) => p.append(...(i ? [', '] : []), el('a', { href: d.kind === 'drive' ? `#/cockpit/drill/${d.id}/0/1` : `#/${d.kind}/${d.id}`, 'data-drill-link': d.id }, `${d.id} ${d.title}`), ...((d.lessonGate ?? []).includes(lesson.id) ? [' (this lesson unlocks it)'] : []))); box.append(p); }
+      if (ds.length) { const p = el('p', { class: 'muted', id: 'lesson-drills' }, 'Practise it: '); ds.forEach((d, i) => p.append(...(i ? [', '] : []), el('a', { href: d.kind === 'drive' ? `#/cockpit/drill/${d.id}/0/1` : `#/${d.kind}/${d.id}`, 'data-drill-link': d.id }, `${d.id} ${d.title}`), ...((d.lessonGate ?? []).includes(lesson.id) ? [' (this lesson unlocks it)'] : []))); rest.append(p); }
     } catch { /* registry unavailable */ }
     const quiz = el('div', { class: 'quiz' }, el('h3', {}, 'Check'), el('p', {}, lesson.check.question));
     const fb = el('p', { class: 'muted' });
-    lesson.check.options.forEach((o, i) => {
+    const sh = shuffleCheck(lesson.check, Math.floor(Math.random() * 1e9));   // PT-10 N-C4: a fresh order each time the lesson is drawn; the answer follows the right option
+    sh.options.forEach((o, i) => {
       const b = el('button', { class: 'opt' }, o);
       b.onclick = () => {
         quiz.querySelectorAll('.opt').forEach(x => x.classList.remove('right', 'wrong'));
-        if (i === lesson.check.answer) { b.classList.add('right'); fb.textContent = `Right. ${lesson.check.explain}`; fb.className = 'ok'; app.progress.markLesson(lesson.id); }
+        if (i === sh.answer) { b.classList.add('right'); fb.textContent = `Right. ${lesson.check.explain}`; fb.className = 'ok'; app.progress.markLesson(lesson.id); }
         else { b.classList.add('wrong'); fb.textContent = `Not quite. ${lesson.check.explain}`; fb.className = 'danger'; }
       };
       quiz.append(b);
     });
-    quiz.append(fb); box.append(quiz);
+    quiz.append(fb); rest.append(quiz);
     const nav = el('div', { class: 'actions', style: 'display:flex;gap:8px;margin-top:12px' });
     const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/school'; }; nav.append(back);
     // PLAY-001 / PLAY-023: a lesson on the Start-here path leads to the path's next step (the next lesson when one is due, else the drill); the next lesson in the School stays one click away
     let onPath: PathNext | null = null;
     if (START_PATH.some(s => s.kind === 'lesson' && s.id === lesson.id)) {
-      try { const ds = allDrills(); const prog = app.progress.load(); const done = (id: string): boolean => id === lesson.id || app.progress.lessonDone(id); onPath = pathNext(startPathFromProgress(ds, prog, done), ds, unlockBest(ds, prog), done, id => LESSONS.find(l => l.id === id)?.title ?? id); } catch { onPath = null; }
+      try { const ds = allDrills(); const prog = app.progress.load(); const done = (id: string): boolean => id === lesson.id || app.progress.lessonDone(id); onPath = pathNext(startPathFromProgress(ds, prog, done), ds, unlockBest(ds, prog), done, id => LESSONS.find(l => l.id === id)?.title ?? id, pathStars(prog)); } catch { onPath = null; }
     }
     if (onPath && onPath.kind !== 'blocked') { const p = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${onPath.label}`); const h = onPath.hash; p.onclick = () => { location.hash = h; }; nav.append(p); }
     if (LESSONS[idx + 1]) { const n = el('button', { class: onPath ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
     else { const n = el('button', { class: 'primary' }, 'To the drills'); n.onclick = () => { location.hash = '#/'; }; nav.append(n); }
-    box.append(nav); page.append(box);
+    rest.append(nav); page.append(box);
   }
   root.replaceChildren(page);
 }

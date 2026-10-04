@@ -31,6 +31,9 @@ export interface CpRow {
 }
 
 export interface BucketSeg { bucket: Bucket; label: string; seconds: number }
+/** PT-10 N-C10: the "buckets sum / rounding residual" line is shown only for a leg that is NOT within 1 s of the ghost (a leg that came out right needs no apology), and only when the residual is over 1.5 s. */
+export function showResidualLine(l: { error: number | null; residual: number }): boolean { return Math.abs(l.residual) > 1.5 && !(l.error !== null && Math.abs(l.error) <= 1); }
+
 export interface LegAttributionVm { legIndex: number; cpId: string; error: number | null; segments: BucketSeg[]; sum: number; residual: number; cruiseSeconds: number; meanSpeedRatio: number }
 
 /** Worked stop arithmetic (DEBRIEF-001). `net`/`delta` = yourDwell + carLoss - pause (seconds late, + = late). */
@@ -475,6 +478,7 @@ export function rankTips(result: StageResult | null | undefined, scenario: Scena
     const turnSeconds = Math.abs((row?.mean ?? 0) * (row?.n ?? 0));
     if (Math.abs(totals.stop) > turnSeconds || Math.abs(totals.stop) > Math.abs(totals.turn)) return tips;
   }
+  if (/^D10-/.test(scenario?.id ?? '') && /10 ?%/.test(bias.tip)) return tips;   // PT-10 N-C8: D10 comes before the lesson that teaches the 10 % rule
   if (!tips.includes(bias.tip)) tips.push(bias.tip);
   return tips;
 }

@@ -21,7 +21,7 @@ export function goldCar(seed: number, base = FORD_1939): typeof FORD_1939 { cons
 export function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3, 2, 1]): DrillTier[] {
   const drivers: DriverSpec[] = [DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE];
   const names = ['Bronze', 'Silver', 'Gold'];
-  return names.map((name, i) => ({ name, aids: aidsForRung(rungs[i]!), driver: drivers[i]!, description: `${name}: aids rung ${rungs[i]}, ${drivers[i]!.skill} driver` }));
+  return names.map((name, i) => ({ name, aids: i === 0 && rungs[0] === 2 ? { ...aidsForRung(2), printsTimes: true } : aidsForRung(rungs[i]!), driver: drivers[i]!, description: `${name}: aids rung ${rungs[i]}, ${drivers[i]!.skill} driver` }));
 }
 /** B20: the legal day drills (D12, D13) name their tiers Bronze / Silver / Gold like every drill: Rookie / Sportsman / Expert are the campaign's DIVISIONS, a different choice. */
 export function legalTiers(): DrillTier[] {

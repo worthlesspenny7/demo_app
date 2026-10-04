@@ -111,15 +111,15 @@ export function tenPercentRule(assignedMph: number, lostSeconds: number): { mph:
 
 /** The speeds of the simple chart: 55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10 (11a section 2.2). */
 export const SIMPLE_CHART_SPEEDS = [55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10] as const;
-export type SimpleColumn = 'Dec' | 'Acc' | 'S/G' | 'T@15' | 'T@20';
+export type SimpleColumn = 'Dec' | 'Acc' | 'S/G' | 'TS/G' | 'T@15' | 'T@20';
 export interface SimpleChartRow {
   speed: number;
   /** Time lost braking to a stop, accelerating from a stop, their sum, and the loss of a turn taken at 15 / 20 mph (null: N/A, the approach speed is at or below the turn speed). */
-  dec: number; acc: number; sg: number; t15: number | null; t20: number | null;
+  dec: number; acc: number; sg: number; /** PT-10 N-C5: a stop and go that turns 90 degrees out of the stop (the car leaves at its turn speed); null for a table car (the Packard prints none) */ tsg: number | null; t15: number | null; t20: number | null;
   /** The printed texts: one decimal, "+x.x" for a gain (a negative loss), "N/A". */
   text: Record<SimpleColumn, string>;
 }
-export interface SimpleChart { speeds: number[]; columns: SimpleColumn[]; /** the car has a T@20 column (a model-driven car; the Packard booklet prints only the 15 mph turn) */ hasT20: boolean; rows: SimpleChartRow[]; note: string }
+export interface SimpleChart { speeds: number[]; columns: SimpleColumn[]; /** the car has a T@20 column (a model-driven car; the Packard booklet prints only the 15 mph turn) */ hasT20: boolean; /** the car has a turning-stop column (a model-driven car) */ hasTS: boolean; rows: SimpleChartRow[]; note: string }
 
 /** A time lost as the simple chart prints it: "3.7"; a gain (negative loss) as "+0.3"; null as "N/A". */
 export function formatLoss(v: number | null): string {
@@ -135,12 +135,14 @@ export function formatLoss(v: number | null): string {
  */
 export function simpleChart(car: CarSpec): SimpleChart {
   const r1 = (x: number): number => Math.round(x * 10) / 10;
-  const hasT20 = !car.tables;
+  const hasT20 = !car.tables; const hasTS = !car.tables;
   const turn = (v: number, apex: number): number | null => (v < apex ? null : r1(speedChangeLoss(v, apex, car) + speedChangeLoss(apex, v, car)));
   const rows: SimpleChartRow[] = SIMPLE_CHART_SPEEDS.map(speed => {
     const dec = r1(speedChangeLoss(speed, 0, car)), acc = r1(speedChangeLoss(0, speed, car)), sg = r1(dec + acc);
+    const tsg = hasTS ? r1(stopLoss(speed, speed, car, car.turnSpeedMph.turn)) : null;   // stop & go through a 90 degree turn: brake to a stop, turn out at the car's turn speed, accelerate
     const t15 = turn(speed, 15), t20 = hasT20 ? turn(speed, 20) : null;
-    return { speed, dec, acc, sg, t15, t20, text: { Dec: formatLoss(dec), Acc: formatLoss(acc), 'S/G': formatLoss(sg), 'T@15': formatLoss(t15), 'T@20': hasT20 ? formatLoss(t20) : '' } };
+    return { speed, dec, acc, sg, tsg, t15, t20, text: { Dec: formatLoss(dec), Acc: formatLoss(acc), 'S/G': formatLoss(sg), 'TS/G': hasTS ? formatLoss(tsg) : '', 'T@15': formatLoss(t15), 'T@20': hasT20 ? formatLoss(t20) : '' } };
   });
-  return { speeds: [...SIMPLE_CHART_SPEEDS], columns: hasT20 ? ['Dec', 'Acc', 'S/G', 'T@15', 'T@20'] : ['Dec', 'Acc', 'S/G', 'T@15'], hasT20, rows, note: 'Dec: seconds lost braking to a stop. Acc: seconds lost accelerating from a stop. S/G: stop and go = Dec + Acc. T@15 / T@20: seconds lost in a turn made at 15 / 20 mph. "+" is a gain.' };
+  const columns: SimpleColumn[] = ['Dec', 'Acc', 'S/G', ...(hasTS ? ['TS/G' as const] : []), 'T@15', ...(hasT20 ? ['T@20' as const] : [])];
+  return { speeds: [...SIMPLE_CHART_SPEEDS], columns, hasT20, hasTS, rows, note: 'Dec: seconds lost braking to a stop. Acc: seconds lost accelerating from a stop. S/G: stop and go = Dec + Acc. TS/G: a stop and go that turns 90 degrees out of the stop (the car leaves at its turn speed, so it costs more than S/G). T@15 / T@20: seconds lost in a turn made at 15 / 20 mph. "+" is a gain.' };
 }

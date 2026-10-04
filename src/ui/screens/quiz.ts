@@ -7,7 +7,7 @@ import { cameoSvg, type CameoExit } from '../viewmodels/cameo.js';
 import { app, el } from '../state.js';
 import { allDrills } from '../../core/drills/index.js';
 import { LESSONS } from '../../../content/lessons.js';
-import { pathNext, startPathFromProgress, unlockBest } from '../viewmodels/curriculum.js';
+import { pathNext, startPathFromProgress, unlockBest, pathStars } from '../viewmodels/curriculum.js';
 
 export interface Card { prompt: string; svg?: string; options: string[]; answer: number; tip: string; category?: string }
 
@@ -86,7 +86,7 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
       const home = el('button', {}, 'Home'); home.onclick = () => { location.hash = '#/'; };
       const row = el('div', { class: 'actions', style: 'display:flex;gap:8px' }, again, home);
       // PLAY-023: the result page leads on along the Start-here path like every Debrief
-      try { const ds = allDrills(); const prog = app.progress.load(); const ld = (id: string): boolean => app.progress.lessonDone(id); const pn = pathNext(startPathFromProgress(ds, prog, ld), ds, unlockBest(ds, prog), ld, id => LESSONS.find(l => l.id === id)?.title ?? id); if (pn && pn.kind !== 'blocked' && !(pn.kind === 'step' && pn.step.id === drillId)) { const b = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${pn.label}`); b.onclick = () => { location.hash = pn.hash; }; row.append(b); } } catch { /* registry unavailable */ }
+      try { const ds = allDrills(); const prog = app.progress.load(); const ld = (id: string): boolean => app.progress.lessonDone(id); const pn = pathNext(startPathFromProgress(ds, prog, ld), ds, unlockBest(ds, prog), ld, id => LESSONS.find(l => l.id === id)?.title ?? id, pathStars(prog)); if (pn && pn.kind !== 'blocked' && !(pn.kind === 'step' && pn.step.id === drillId)) { const b = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${pn.label}`); b.onclick = () => { location.hash = pn.hash; }; row.append(b); } } catch { /* registry unavailable */ }
       box.append(row);
       sub.textContent = ''; return;
     }

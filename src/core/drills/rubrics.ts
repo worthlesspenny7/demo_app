@@ -156,6 +156,33 @@ export function headlineTip(r: StageResult, sc?: Scenario, opts: TipOptions = {}
   return `${tipFor(k, late, sc, r.events, r)}${inst}`;
 }
 
+/** The turn cap (mph) the car obeys at a stop that turns: the car's own 90 / 45 / acute turn speed (the same cap the Debrief and the card use). */
+function stopTurnCap(turn: string | null | undefined, car: Scenario['car']): number | undefined {
+  const ang = ({ L: 90, R: 90, BL: 45, BR: 45, AL: 150, AR: 150, JL: 90, JR: 90 } as Record<string, number>)[turn ?? ''];
+  if (ang === undefined) return undefined;
+  return ang > 120 ? car.turnSpeedMph.acute : ang >= 60 ? car.turnSpeedMph.turn : car.turnSpeedMph.bear;
+}
+/**
+ * PT-10 N-C5: the stops at a turn that ran long. A stop that turns out of the stop costs more than a straight one on the chart (the car leaves at the turn speed and
+ * accelerates from there): `extra` is that difference for the stop's own speeds, `cap` the turn speed. Empty for table cars (the Packard prints no turning stops).
+ */
+export function turningStopExtras(r: StageResult, sc: Scenario, over = 1): { line: number | null; extra: number; cap: number }[] {
+  const out: { line: number | null; extra: number; cap: number }[] = [];
+  if (sc.car.tables) return out;
+  for (const a of r.attribution ?? []) for (const st of a.stops ?? []) {
+    if (!(st.pause > 0) || st.actualCost - Math.max(0, st.trafficWait ?? 0) <= over) continue;
+    const cap = stopTurnCap(st.turn, sc.car); if (cap === undefined || !st.vIn || !st.vOut) continue;
+    try { const extra = Math.round((stopLoss(st.vIn, st.vOut, sc.car, cap) - stopLoss(st.vIn, st.vOut, sc.car)) * 10) / 10; if (extra >= 0.3) out.push({ line: st.line, extra, cap }); } catch { /* skip */ }
+  }
+  return out;
+}
+/** The sentence that says why a turning stop runs long (PT-10 N-C5). */
+export function turningStopNote(r: StageResult, sc: Scenario): string {
+  const ex = turningStopExtras(r, sc); if (!ex.length) return '';
+  const avg = Math.round(ex.reduce((x, e) => x + e.extra, 0) / ex.length * 10) / 10;
+  return ` ${ex.length === 1 ? `Line ${ex[0]!.line} is a stop that turns` : `${ex.length} of the stops turn`}: the turn adds ${avg.toFixed(1)} s to the stop and go (the car leaves at the ${ex[0]!.cap} mph turn speed and accelerates from there), so go ${avg.toFixed(1)} s earlier than the straight-stop chart pause time: the simple chart's turning-stop column has it.`;
+}
+
 function tipForStop(late: boolean): string {
   return late ? 'Your stops cost more than the printed pause, so go earlier: dwell = the chart pause time for your IN/OUT pair (the printed pause minus the stop/start loss), written next to every pause.' : 'You left stops too early and are not using the whole pause: dwell = the chart pause time, no less.';
 }
@@ -171,7 +198,7 @@ function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[], r?
           return `Your dwells were right (every printed pause within 1 s of the chart pause time); the ${Math.round(c.pause)} s in the stop bucket is small overruns added up: keep counting from "Stopped" on the stopwatch and say GO on the chart second.`;
         }
         if (c.noPause >= 1.5 && c.pause < 1.5) return `Your stops cost ${Math.round(c.noPause + Math.max(0, c.pause))} s, but your dwells were right: the loss is at STOP signs with no pause printed, where the stop and go costs the car time that no dwell can save. Go as soon as it is safe and make the seconds up with the 10 % rule (10 % faster for 10 x the seconds lost).`; }
-      return tipForStop(late);
+      return `${tipForStop(late)}${late && r && sc ? turningStopNote(r, sc) : ''}`;
     }
     case 'start': return late ? 'You left the start late: leave early by the standstill acceleration loss (the 0 > speed cell of your acceleration chart; about 4-5 s for the simulator\'s Ford, a simulator default: measure your car).' : 'You left the start too early: lead by the acceleration loss only (about 4-5 s for the simulator\'s Ford), not more.';
     case 'speedChange': return 'Landmark speed changes are mistimed: split at the sign, crossing it at the midpoint speed, which means beginning the change half a ramp early.';

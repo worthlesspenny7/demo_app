@@ -223,7 +223,7 @@ export interface StageResult {
 }
 /** 3.1.0 (PT-06 bug 4): cross-traffic holds come from a keyed stream per STOP node and the driver's noise / ramps from their own streams. */
 /** 3.2.0 (fix sprint PT-08 / PT-09): measuring runs leave on the second, launchInfo covers exact-transit OUT and promoted stops, a turn called in time is made, the off-course rejoin is booked once, the call.over event. */
-export const ENGINE_VERSION = '3.2.0';
+export const ENGINE_VERSION = '3.3.0';
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
@@ -1453,9 +1453,16 @@ export class Simulator {
         else if (c === 'call.stop' && this.holdRequested) this.nextCallNow = null; }
       if (ins && this.nextCallLine !== ins.n) {
         const d = instructionS(this.sc.course, ins) - this.car.s;
-        if (d <= 700 && d > -30) { this.nextCallLine = ins.n; const nc = this.expectedCall(ins); if (nc) { this.nextCallNow = nc; this.log('nextCall', { ...nc }); } }
+        if (d <= 700 && d > -30 && !(d > 350 && this.sideRoadBeforeTurn(ins))) { this.nextCallLine = ins.n; const nc = this.expectedCall(ins); if (nc) { this.nextCallNow = nc; this.log('nextCall', { ...nc }); } }
       }
     }
+  }
+  /** N-B14: the "call the left" prompt waits until the car has passed a side road on that side that sits before the turn's own intersection (no call is spent on it). */
+  private sideRoadBeforeTurn(ins: Instruction): boolean {
+    if (!ins.turn || ins.turn === 'S') return false;
+    const lo = bandFor(ins.turn)[0], hi = bandFor(ins.turn)[1]; const target = this.sc.course.nodes.find(x => x.id === ins.nodeId); if (!target) return false;
+    return this.sc.course.nodes.some(n => n.s > this.car.s && n.s < target.s && n.id !== target.id && !this.sc.book.some(i => i.nodeId === n.id && i.turn !== undefined)
+      && (n.exits ?? []).some(e => !e.isRoute && e.kind !== 'driveway' && e.kind !== 'lot' && e.kind !== 'private' && e.angle >= lo && e.angle <= hi));
   }
   private expectedCall(ins: Instruction): NextCall | null {
     const n = ins.n; const cur = Math.round(fpsToMph(this.ghostSpeedAt(this.routeS())));
@@ -1643,12 +1650,31 @@ export class Simulator {
     }
     // Driver check-off (aid, GRIID-006): fires when the instruction is COMPLETE (its last speed change made), not at the node; says what he actually did.
     if (ins && ins.section !== 'start' && !offRoute) {
-      const what = ins.turn && ins.turn !== 'S' ? (turnCalledHere ? 'the turn' : null) : ins.pause ? 'the stop' : 'that one';
+      // N-B14: at a T the check-off says which way he turned there
+      const atT = (ins.turn === 'L' || ins.turn === 'R') && !!n.exits && n.exits.length > 0 && !n.exits.some(e => Math.abs(e.angle) < 20 && e.kind === 'road');
+      const what = ins.turn && ins.turn !== 'S' ? (turnCalledHere ? (atT ? `the ${turnWord(ins.turn).toLowerCase()} at the T` : 'the turn') : null) : ins.pause ? 'the stop' : 'that one';
       const atS = ins.timed ? instructionS(this.sc.course, ins) + mphToFps(ins.timed.holdSpeed) * ins.timed.seconds : null;
       this.checkoffs.push({ n: ins.n, what, ins, crossTod: this.tod, afterS: atS });
     }
     if (n.control === 'YIELD' || n.control === 'BLINKER') { const cap = mphToFps(n.control === 'YIELD' ? 10 : 20); if (this.car.s >= this.turnZoneEndS || cap < this.turnCap) { this.turnCap = this.car.s < this.turnZoneEndS ? Math.min(cap, this.turnCap) : cap; this.turnZoneEndS = Math.max(this.turnZoneEndS, n.s + 40); if (this.car.v > this.turnCap) this.car.v = this.turnCap; } }
     if (n.kind === 'finish' && this.waitReason !== 'finish') { /* finish banner: course ends at lengthFt */ }
+  }
+
+  /**
+   * N-B14: a turn called in time is kept for its own intersection. The called turn belongs to the next book line that asks for a turn; a side road, a driveway or a
+   * gravel road in between (a node with no turn word of its own) is driven past, not turned into, and the driver brakes for the real intersection ahead.
+   */
+  private calledTurnNotHere(n: Node): boolean {
+    const dir = this.pendingTurn; if (!dir || dir === 'S') return false;
+    const here = this.sc.book.find(i => i.nodeId === n.id);
+    if (here && !here.omitted && here.turn !== undefined) return false;   // a line that names a turn (or says straight) is a decision point
+    const lo = bandFor(dir)[0]; const nodes = this.sc.course.nodes;
+    for (const ins of this.sc.book) {
+      if (ins.omitted || !ins.turn || ins.turn === 'S') continue;
+      const node = nodes.find(x => x.id === ins.nodeId); if (!node || node.s <= n.s + 1) continue;
+      return bandFor(ins.turn)[0] === lo;   // the next turn the book asks for is the called one: keep it for that intersection
+    }
+    return false;
   }
 
   /** Which exit the driver would take right now (no side effects). */
@@ -1658,7 +1684,7 @@ export class Simulator {
     if (this.pendingTurn) {
       const band = bandFor(this.pendingTurn);
       const cands = roads.filter(e => e.angle >= band[0] && e.angle <= band[1]).sort((a, b) => Math.abs(a.angle - band[2]) - Math.abs(b.angle - band[2]));
-      if (cands.length) return cands[0]!;
+      if (cands.length && !this.calledTurnNotHere(n)) return cands[0]!;   // N-B14: a road on that side that is not the called turn's own intersection is driven past
     }
     const pool = this.mainRoadRule === 'pavement-first' && roads.some(e => e.surface === 'paved') ? roads.filter(e => e.surface === 'paved') : roads;
     return (pool.length ? pool : exits).slice().sort((a, b) => Math.abs(a.angle) - Math.abs(b.angle))[0]!;
@@ -1671,8 +1697,9 @@ export class Simulator {
       const dir = this.pendingTurn;
       const band = bandFor(dir);
       const cands = roads.filter(e => e.angle >= band[0] && e.angle <= band[1]).sort((a, b) => Math.abs(a.angle - band[2]) - Math.abs(b.angle - band[2]));
-      if (cands.length) { this.pendingTurn = null; this.turnConsumed = true; this.log('turn', { dir, angle: cands[0]!.angle, route: cands[0]!.isRoute }); return cands[0]!; }
-      if (dir === 'S' || dir === 'JL' || dir === 'JR') this.pendingTurn = null;
+      if (cands.length && this.calledTurnNotHere(n)) { this.log('turnKept', { dir, nodeId: n.id }); }   // N-B14: the call is kept for its own intersection ahead; no "too late", no spent call
+      else if (cands.length) { this.pendingTurn = null; this.turnConsumed = true; this.log('turn', { dir, angle: cands[0]!.angle, route: cands[0]!.isRoute }); return cands[0]!; }
+      else if (dir === 'S' || dir === 'JL' || dir === 'JR') this.pendingTurn = null;
       else this.say(`No ${turnWord(dir).toLowerCase()} here, staying on`, 'question');
     }
     // straight as possible / main road

@@ -25,11 +25,11 @@ describe('FIX SPRINT PT-05 view-models and rubrics', () => {
     const sc = generateStage(1, PROFILES.fullStage); const first = sc.book[0]!; expect(first.speed).toBeUndefined();
     for (const rung of [0, 3] as const) { const c = perfCardFor(sc, 1, instrumentPolicy(aidsForRung(rung)))!; expect(c.transitPace, `rung ${rung}`).toBeDefined(); expect(c.transitPace!.mph).toBe(Math.round(first.transit!.miles! / (first.transit!.seconds / 3600))); expect(c.transitPace!.text).toMatch(/call about \d+ mph \([\d.]+ mi \/ \d+ min\)/); }
   });
-  it('PLAY-003 a hold (restart, exact transit, promoted stop) runs at the chosen scale until 60 s before its out time, then at 1x', () => {
+  it('PLAY-003 a hold (restart, exact transit, promoted stop) runs at the chosen scale until 45 s before its out time, then at 1x', () => {
     const base = { requested: 8, paused: false, phase: 'running', carStopped: true, waitingForGo: true, nearestFeatureFt: null, hazardActive: false, countdownSeconds: null, bezelRemaining: null };
-    expect(HOLD_FF_MARGIN_S).toBe(60);
-    expect(effectiveScale({ ...base, holdSecondsLeft: 1500 })).toBe(8); expect(effectiveScale({ ...base, holdSecondsLeft: 61 })).toBe(8);
-    expect(effectiveScale({ ...base, holdSecondsLeft: 59 })).toBe(1); expect(effectiveScale({ ...base, holdSecondsLeft: null })).toBe(1); expect(effectiveScale(base)).toBe(1);   // a STOP is still 1x
+    expect(HOLD_FF_MARGIN_S).toBe(45);
+    expect(effectiveScale({ ...base, holdSecondsLeft: 1500 })).toBe(8); expect(effectiveScale({ ...base, holdSecondsLeft: 46 })).toBe(8);
+    expect(effectiveScale({ ...base, holdSecondsLeft: 44 })).toBe(1); expect(effectiveScale({ ...base, holdSecondsLeft: null })).toBe(1); expect(effectiveScale(base)).toBe(1);   // a STOP is still 1x
   });
   it('PLAY-006 a cross-traffic hold after the go is a hazard (ledger), not a late go: the stop row and the What-if use the go call, the tip does not say "go earlier"', () => {
     const b = new ScenarioBuilder({ startTime: T0, driver: quiet, trafficWaitProbability: 1, seed: 3 }).start(35).advanceMiles(0.5).stop('S', 35, { pause: 15 }).advanceMiles(0.8).checkpoint().advanceFt(300).finish();

@@ -20,11 +20,22 @@ export interface InstrumentPolicy {
   digitalReadouts: boolean;
   /** Computed per-line answers (card dwell, ramp lead, loss). False in legal mode: the player's own annotations only. */
   computedCard: boolean;
+  /**
+   * PT-10 (N-C7): the card PRINTS the dwell and the call times only at Bronze (rung 3). At Silver (rung 2) the card shows the chart and the player does the
+   * arithmetic (dwell = pause - Dec(in) - Acc(out) from the simple chart; the call = the timed seconds minus the ramp lead).
+   */
+  printsTimes: boolean;
 }
 export function instrumentPolicy(aids: AidsConfig | null | undefined): InstrumentPolicy {
   const rung = aidsRung(aids);
-  return { rung, digitalReadouts: rung >= 2, computedCard: rung >= 2 };
+  return { rung, digitalReadouts: rung >= 2, computedCard: rung >= 2, printsTimes: rung >= 3 || (rung === 2 && aids?.printsTimes === true) };
 }
+
+/** The D06 tag at Silver and Gold: the car's own numbers are what the player measures, so no chart of this car is shown anywhere (PT-10 N-C1). Bronze copies the printed Packard charts. */
+export const CHARTS_HIDDEN_TAG = 'charts:hidden';
+export function chartsHidden(sc: { tags?: string[] } | null | undefined): boolean { return !!sc?.tags?.includes(CHARTS_HIDDEN_TAG); }
+/** What the chart overlay and the perf card's simple chart say instead of the car's numbers when they are hidden. */
+export const HIDDEN_CHARTS_TEXT = "Your car's chart is what you measure today: Silver and Gold hide the car's numbers. Read the pace aid at each MARK and build the chart from the net.";
 
 /** Ledger-box pace aid text (N11): while the car waits at a restart line (D16 hold) the early/late number is meaningless, so show no number. */
 export function paceAidText(earlyLate: number, waitReason: string | null | undefined): string {
@@ -113,9 +124,15 @@ export interface PerfCard {
   turnLoss?: TurnLossBlock;
   /** PLAY-027: a measuring run (D06): no launch lead and no early call on the card, only this line */
   measure?: string;
+  /** PT-10 N-C1: the scenario hides the car's numbers (D06 Silver / Gold): no stop, turn or ramp numbers of this car are on the card */
+  hiddenCar?: boolean;
+  /** PT-10 N-C7: Silver prints no dwell and no call times: the card names what to work out from the simple chart instead */
+  withheld?: boolean;
 }
 /** PLAY-027: what the card says on a measuring run instead of the leads. */
-export const MEASURE_TEXT = 'Measure, do not compensate: leave restarts ON the second and call each speed AT its sign; lap the stopwatch at every MARK and note the seconds lost against the ghost.';
+export const MEASURE_TEXT = 'Measure, do not compensate: leave restarts ON the second and call each speed AT its sign; lap the stopwatch at every MARK and note the net: the pace-aid reading at MARK out minus the reading at MARK in.';
+/** PT-10 (N-C3): Bronze copies the printed Packard charts; the same run (no launch lead, speeds called AT the sign) but no measuring wording. */
+export const MEASURE_COPY_TEXT = 'Copy mode: copy the Packard chart cell for each pair (press C, Reference HB p.7-9). Leave restarts ON the second and call each speed AT its sign.';
 export interface TurnLossBlock {
   /** Common speeds, 25..45 mph. */
   speeds: number[];
@@ -151,7 +168,7 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
   const card: PerfCard = { line, text: ins.text, mode: policy.computedCard ? 'answers' : 'own' };
   const rl = restartLabel(ins);
   const measuring = isMeasureRun(sc);
-  if (measuring) card.measure = MEASURE_TEXT;
+  if (measuring) card.measure = (sc.tags ?? []).includes('charts:packard') ? MEASURE_COPY_TEXT : MEASURE_TEXT;
   if (rl) {
     let accel: number | null = null;
     if (policy.computedCard && !measuring) { try { accel = r1(accelLoss(lineSpeeds(sc, line).vOut ?? ins.speed ?? 30, sc.car)); } catch { accel = null; } }
@@ -161,6 +178,8 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
   // PLAY-002: no speed printed on a transit or warm-up line: give the driver a pace (the box's miles over its minutes) so the day stage moves
   if (ins.speed === undefined && !ins.timed) { const mph = transitPaceMph(ins.transit); if (mph !== null) { const minutes = Math.round(ins.transit!.seconds / 60); card.transitPace = { mph, miles: ins.transit!.miles!, minutes, text: `No speed printed: call about ${mph} mph (${ins.transit!.miles} mi / ${minutes} min). Nothing is timed in a transit; arrive at the end on time.` }; } }
   if (!policy.computedCard) return card;
+  if (chartsHidden(sc)) { card.hiddenCar = true; return card; }   // PT-10 N-C1: nothing of the hidden car's numbers on the card
+  if (!policy.printsTimes) card.withheld = true;
   try {
     const sp = lineSpeeds(sc, line);
     const sc1 = stopCardFor(sc, line);

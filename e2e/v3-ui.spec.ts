@@ -182,6 +182,10 @@ test('UI-037 the debrief lists the one-minute mistake, the disturbed timed inter
 test('LESSON-008 the rally school lesson renders its headings and every claim with a video timestamp and the "(video, not in the documents)" label', async ({ page }) => {
   await page.goto('/#/school/rally-school');
   await expect(page.locator('.lesson h1')).toHaveText('What the rally school adds');
+  await page.locator('#lesson-next-page').click();   // PT-10: a long lesson is two pages; the first page is already in view, the second holds the rest and the check
+  await page.locator('#lesson-prev-page').click(); await expect(page.locator('#lesson-pageno')).toHaveText('Page 1 of 2');
+  await page.locator('#lesson-next-page').click(); await expect(page.locator('#lesson-pageno')).toHaveText('Page 2 of 2');
+  await page.evaluate(() => { for (const id of ['lesson-page-1', 'lesson-page-2']) (document.getElementById(id) as HTMLElement).style.display = ''; });   // read the whole lesson at once for the claim checks below
   for (const h of ['The director\'s clock method', 'The start procedure', 'The Time Allowance web form and arithmetic', 'Making up time', 'When you are lost', 'Checkpoints', 'The callout protocol']) await expect(page.locator('.lesson h3.lesson-h', { hasText: h })).toBeVisible();
   const items = await page.locator('.lesson ul.lesson-list li').allInnerTexts();
   expect(items.length).toBeGreaterThanOrEqual(35);

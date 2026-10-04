@@ -219,6 +219,11 @@ export interface AidsConfig {
   /** Immediate checkpoint card (rung >= 2). */
   cpCard: boolean;
   offCourseAlert: boolean;
+  /**
+   * PT-10 N-C7: the perf card prints the dwell and the call times (the answer sheet). Default: rung 3 only; Silver (rung 2 in the usual 3-2-1 ladder) shows the chart and
+   * the player does the arithmetic. A drill whose Bronze tier is itself at rung 2 (D16, D18, D11) sets this so Bronze keeps its numbers.
+   */
+  printsTimes?: boolean;
 }
 
 export interface Course { nodes: Node[]; lengthFt: number }
@@ -281,7 +286,7 @@ export const MODERN_CAR: CarSpec = { name: 'Modern sedan', year: 1974, a0: 11, v
 
 export const DRIVER_DAD_ROOKIE: DriverSpec = { skill: 'rookie', inconsistency: 0.12, patienceSeconds: 25, name: 'Dad' };
 export const DRIVER_DAD_SPORTSMAN: DriverSpec = { skill: 'sportsman', inconsistency: 0.06, patienceSeconds: 25, name: 'Dad' };
-export const DRIVER_EXPERT: DriverSpec = { skill: 'expert', inconsistency: 0.03, patienceSeconds: 25, name: 'Pro' };
+export const DRIVER_EXPERT: DriverSpec = { skill: 'expert', inconsistency: 0.03, patienceSeconds: 25, name: 'Dad' };
 export const DRIVER_PERFECT: DriverSpec = { skill: 'perfect', inconsistency: 0, patienceSeconds: 1e9, name: 'Ghost' };
 /** Instantaneous car used for SIM-014 ghost-equivalence tests. */
 export const INSTANT_CAR: CarSpec = { name: 'Instant (ghost) car', year: 1974, a0: 1e5, vMax: 1e9, aDec: 1e5, turnSpeedMph: { turn: 1e4, bear: 1e4, acute: 1e4 } };

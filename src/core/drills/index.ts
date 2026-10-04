@@ -104,6 +104,11 @@ const D09: Drill = {
 };
 
 // ---------- D10 course following in motion ----------
+/** PT-10 N-C8: D10 comes before the recovery lesson on the path, so an on-course run with a slow leg never advises the 10 % rule; the cause is named, the make-up comes later. */
+function d10TimingTip(mean: number, k: number): string {
+  const base = `On course all the way, which is what this drill grades first. The leg ran ${mean.toFixed(1)} s off (three stars need ${(10 * k).toFixed(0)} s or less): time is secondary here, so keep every call and every pause exact; making seconds up is taught in a later lesson on your path.`;
+  return base;
+}
 const D10: Drill = {
   id: 'D10', title: 'Course following with distractors', objective: 'Fifteen instructions with driveways, gravel roads and misleading signs: stay on course; time is secondary. If you do go wrong, run the lost doctrine: stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course.', skills: ['P7', 'P8'], minutes: 12, kind: 'drive',
   tiers: tiers(), unlock: [], readFirst: ['griid-cameo', 'lost'], lessonGate: ['lost'],
@@ -137,7 +142,7 @@ const D10: Drill = {
       feedback.push(LOST_GUIDANCE);
     }
     // EDU-003: an off-course run gets the lost doctrine as its tip; an on-course run the leg-error tip for its stars
-    const tip = r.offCourseCount ? `Off course ${r.offCourseCount} time(s): confirm the landmark (shape, side, text) before the leading edge of the intersection. Once lost: turn around where it is safe, start the stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course and write the leg off (lesson "When you are lost").` : headlineTip(r, sc, { stars });
+    const tip = r.offCourseCount ? `Off course ${r.offCourseCount} time(s): confirm the landmark (shape, side, text) before the leading edge of the intersection. Once lost: turn around where it is safe, start the stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course and write the leg off (lesson "When you are lost").` : timing === 3 ? headlineTip(r, sc, { stars }) : d10TimingTip(mean, k);   // PT-10 N-C8: the 10 % rule is taught later on the path: no make-up advice here
     return { score: r.offCourseCount, stars, tip, headline: `${r.offCourseCount} off-course excursions${lost.length ? `, lost time ${lost.map(x => (x.ok ? 'doubled within 2 s' : 'not doubled')).join(', ')}` : ''}${r.offCourseCount ? '' : `, leg error ${mean.toFixed(1)} s`}`, feedback: [tip, ...feedback] };
   },
 };

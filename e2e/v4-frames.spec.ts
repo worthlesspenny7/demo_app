@@ -34,12 +34,12 @@ test('INST-003 the dash clock is the Sawtooth-style rally clock by default and t
   await page.evaluate(() => localStorage.clear());
 });
 
-test('CHART-007 the performance card shows the simple chart by default (12 speeds, Dec / Acc / S/G / T@15 / T@20) and the three matrices stay behind the Charts overlay', async ({ page }) => {
+test('CHART-007 the performance card shows the simple chart by default (12 speeds, Dec / Acc / S/G / TS/G / T@15 / T@20) and the three matrices stay behind the Charts overlay', async ({ page }) => {
   await openStage(page, 1);
   const rows = page.locator('#simplechart-table tbody tr');
   await expect(rows).toHaveCount(12);
   expect(await page.locator('#simplechart-table tbody tr').evaluateAll(trs => trs.map(t => t.getAttribute('data-speed')))).toEqual(['55', '50', '48', '45', '40', '35', '30', '25', '20', '15', '12', '10']);
-  expect(await page.locator('#simplechart-table thead th').allInnerTexts()).toEqual(['SPEED', 'DEC', 'ACC', 'S/G', 'T@15', 'T@20']);
+  expect(await page.locator('#simplechart-table thead th').allInnerTexts()).toEqual(['SPEED', 'DEC', 'ACC', 'S/G', 'TS/G', 'T@15', 'T@20']);
   // S/G = Dec + Acc, as printed
   const first = await rows.first().locator('td').allInnerTexts(); expect(Math.round((Number(first[0]) + Number(first[1])) * 10) / 10).toBeCloseTo(Number(first[2]), 1);
   await page.goto('/#/cockpit/drill/D18/0/1'); await expect(page.locator('#cockpit')).toBeVisible();

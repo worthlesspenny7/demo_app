@@ -1,6 +1,11 @@
 /** Curriculum order, the "Start here" path and next-drill lookup (UI-016). Pure: no DOM. */
 import type { Drill } from '../../core/drills/types.js';
 import { drillMinutes, formatMinutes } from './estimate.js';
+import { LESSONS } from '../../../content/lessons.js';
+import { DEFAULT_SCALE_BY_DRILL } from './timescale.js';
+
+/** PT-10 N-C11: a lesson is named by its title wherever a lock says what to read (never its id). */
+export const lessonTitleOf = (id: string): string => LESSONS.find(l => l.id === id)?.title ?? id;
 
 /**
  * Order the drills are meant to be played in (the Home tracks, flattened). PLAY-023: the Four S's in the handbook's own order (HB p.13-14):
@@ -71,8 +76,8 @@ export type PathNext =
   | { kind: 'step'; step: StartStep; hash: string; label: string }
   | { kind: 'replay'; drillId: string; tier: number; hash: string; label: string; forStep: StartStep; needs: string }
   | { kind: 'blocked'; forStep: StartStep; label: string; needs: string };
-export function pathNext(steps: StartPathState[], drills: Pick<Drill, 'id' | 'unlock' | 'lessonGate' | 'readFirst' | 'tiers'>[], best: Record<string, number>, lessonDone: (id: string) => boolean, lessonTitle: (id: string) => string = id => id): PathNext | null {
-  const cur = steps.find(s => s.current); if (!cur) return null;
+export function pathNext(steps: StartPathState[], drills: Pick<Drill, 'id' | 'unlock' | 'lessonGate' | 'readFirst' | 'tiers'>[], best: Record<string, number>, lessonDone: (id: string) => boolean, lessonTitle: (id: string) => string = lessonTitleOf, played?: Record<string, number>): PathNext | null {
+  const cur = steps.find(s => s.current) ?? afterPathState(drills, best, lessonDone, played); if (!cur) return null;   // PT-10 N-C6: a finished path still leads on, to D11
   const step = cur.step;
   if (step.kind === 'drill') {
     const d = drills.find(x => x.id === step.id);
@@ -92,6 +97,18 @@ export function pathNext(steps: StartPathState[], drills: Pick<Drill, 'id' | 'un
     }
   }
   return { kind: 'step', step, hash: pathStepHash(step), label: step.label };
+}
+
+/**
+ * PT-10 N-C6: when every path step is ticked the path still leads on to the first whole-leg drill, D11: its missing prerequisites are replayed at Silver in the
+ * unlock list's order (D18, then D07), then D11 itself is offered once it is open. Null once D11 has a star at any tier (the path is then truly complete).
+ */
+export const AFTER_PATH_STEP: StartStep = { kind: 'drill', id: 'D11', label: 'D11 Full leg (the first whole leg)', s: 'time' };
+function afterPathState(drills: Pick<Drill, 'id' | 'unlock' | 'lessonGate'>[], best: Record<string, number>, lessonDone: (id: string) => boolean, played?: Record<string, number>): StartPathState | null {
+  const d = drills.find(x => x.id === AFTER_PATH_STEP.id); if (!d) return null;
+  if (((played ?? best)[d.id] ?? 0) >= 1) return null;
+  const miss = d.unlock.filter(u => (best[u.drill] ?? 0) < u.stars); const ls = (d.lessonGate ?? []).filter(l => !lessonDone(l));
+  return { step: AFTER_PATH_STEP, done: false, current: true, ...(miss.length || ls.length ? { locked: true, needs: lockText(miss, ls) } : {}) };
 }
 
 /** PLAY-024: the path's last line names what opens the whole-leg drills, from their own unlock lists ("D11 opens with D18 ★ and D07 ★★ at Silver or Gold"). */
@@ -117,8 +134,20 @@ export function nextDrill(id: string, drills: Drill[], best: Record<string, numb
   return null;
 }
 
+/**
+ * PT-10 N-C6: what a drill's Debrief offers as "Next": the path's next step while the path leads on (a due lesson, a replay at Silver, D11), the lock line when the path
+ * is blocked, else the next OPEN drill in curriculum order. Never a locked drill (the old "Next drill: D11 (needs ...)" button is gone).
+ */
+export function debriefNext(drillId: string, drills: Drill[], prog: { drills: Record<string, { stars: number; tierStars?: number[] }> }, lessonDone: (id: string) => boolean, lessonTitle: (id: string) => string = lessonTitleOf): { path: Exclude<PathNext, { kind: 'blocked' }> | null; blocked: string | null; drill: Drill | null } {
+  const best = unlockBest(drills, prog);
+  const pn = pathNext(startPathFromProgress(drills, prog, lessonDone), drills, best, lessonDone, lessonTitle, pathStars(prog));
+  const sameDrill = !!pn && pn.kind === 'step' && pn.step.kind === 'drill' && pn.step.id === drillId;
+  const nd = pn ? null : nextDrill(drillId, drills, best, lessonDone);
+  return { path: pn && pn.kind !== 'blocked' && !sameDrill ? pn : null, blocked: pn && pn.kind === 'blocked' ? pn.label : null, drill: nd && !nd.locked ? nd.drill : null };
+}
+
 /** EDU-005: what a locked drill or tier still needs, in words: "D03 ★★, D16 ★ at Silver or Gold; read the lesson lost". */
-export function lockText(missing: { drill: string; stars: number }[], lessons: string[] = [], lessonTitle: (id: string) => string = id => id): string {
+export function lockText(missing: { drill: string; stars: number }[], lessons: string[] = [], lessonTitle: (id: string) => string = lessonTitleOf): string {
   const parts: string[] = [];
   if (missing.length) parts.push(`${missing.map(u => `${u.drill} ${'★'.repeat(u.stars)}`).join(', ')} at Silver or Gold`);
   if (lessons.length) parts.push(`pass the lesson ${lessons.map(l => `"${lessonTitle(l)}"`).join(' and ')}`);
@@ -176,7 +205,8 @@ export function currentPathStep(steps: StartPathState[]): StartStep | null { ret
 export function cardMinutesText(d: Pick<Drill, 'id' | 'minutes' | 'kind' | 'scenario'>): string {
   const m = drillMinutes(d); const per = d.id === 'D13' ? ' per stage' : '';
   if (d.kind !== 'drive' || d.id === 'D01' || d.id === 'D03') return `${formatMinutes(m)}${per} at 1x`;
-  return `${formatMinutes(m)}${per} at 1x · ${formatMinutes(m / 4)}${per} at 4x`;
+  const fast = DEFAULT_SCALE_BY_DRILL[d.id] ?? 4;   // PT-10: D16 runs at 8x by default
+  return `${formatMinutes(m)}${per} at 1x · ${formatMinutes(m / fast)}${per} at ${fast}x`;
 }
 
 /** PLAY-026: "Fast-forward" on a full start stops this many seconds before the launch second, so the 30-s warning and the count still happen. */

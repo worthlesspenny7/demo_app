@@ -1,10 +1,14 @@
 /** School lessons: short readings, one check question each. Sources are the research docs under docs/research/. Numbers that come from the car are computed from FORD_1939 so lessons, Reference and cockpit never disagree. */
 import { FORD_1939 } from '../src/core/course.js';
-import { stopLoss, rampLead } from '../src/core/perf-table.js';
+import { stopLoss, rampLead, speedChangeLoss } from '../src/core/perf-table.js';
 
 const r1 = (x: number): number => Math.round(x * 10) / 10;
 const LOSS_35_35 = r1(stopLoss(35, 35, FORD_1939));
 const LOSS_40_30 = r1(stopLoss(40, 30, FORD_1939));
+/** The simple chart's columns at 35 mph (PT-10 N-C5): braking to a stop, accelerating from a stop, and a stop and go that turns 90 degrees out of the stop. */
+const DEC_35 = r1(speedChangeLoss(35, 0, FORD_1939)), ACC_35 = r1(speedChangeLoss(0, 35, FORD_1939));
+const TURN_STOP_35 = r1(stopLoss(35, 35, FORD_1939, FORD_1939.turnSpeedMph.turn));
+const TURN_ADDS_35 = r1(TURN_STOP_35 - LOSS_35_35);
 const LEAD_30_40 = r1(rampLead(30, 40, FORD_1939));
 const RAMP_30_40 = r1(LEAD_30_40 * 2);
 const fmt1 = (x: number): string => x.toFixed(1);
@@ -38,7 +42,9 @@ const V = {
 
 /** A lesson paragraph is plain text, or a richer block: a bulleted/numbered list, preformatted lines (call patterns, worked examples), a table or a printable card. */
 export type LessonBlock = string | { heading: string } | { list: string[]; ordered?: boolean } | { pre: string[]; caption?: string } | { table: { head: string[]; rows: string[][] }; caption?: string } | { card: { title: string; lines: string[] } };
-export interface Lesson { id: string; title: string; minutes: number; body: LessonBlock[]; check: { question: string; options: string[]; answer: number; explain: string }; source: string }
+export interface Lesson { id: string; title: string; minutes: number; body: LessonBlock[];
+  /** PT-10: a lesson over about 1,200 words is read as two pages: the body index where page 2 begins (the check follows page 2) */
+  splitAt?: number; check: { question: string; options: string[]; answer: number; explain: string }; source: string }
 
 /** Every word of a lesson (body, blocks, check and source) as one string: used by tests and search. */
 export function lessonText(l: Lesson): string {
@@ -68,7 +74,7 @@ const ALL_LESSONS: Lesson[] = [
     check: { question: 'The ghost car arrives at a STOP with "Pause 15". How long does the ghost spend there?', options: ['Nothing: the ghost never stops', 'Exactly 15 seconds, then it is instantly back at speed', '15 seconds plus the braking and acceleration time'], answer: 1, explain: 'The ghost spends the printed pause and nothing else. Your car also loses braking and acceleration time, which you must subtract from your dwell.' },
   },
   {
-    id: 'four-s', title: "The Four S's", minutes: 5, source: 'docs/research/08-rookie-handbook-body.md §6 (HB p.13-14); docs/research/09-event-regulations-2026.md §7.3, §13, §14 (REG V.C.1.b, V.E, V.H)',
+    id: 'four-s', title: "The Four S's", minutes: 4, source: 'docs/research/08-rookie-handbook-body.md §6 (HB p.13-14); docs/research/09-event-regulations-2026.md §7.3, §13, §14 (REG V.C.1.b, V.E, V.H)',
     body: [
       'The Rookie Handbook (HB p.13-14) boils the whole event down to four S\'s, and the order is the priority: Safety first, Start on time, Stay on course, Stay on time. When two of them pull against each other, the one earlier in the list wins.',
       '1. Safety first. Signal your intentions, do not pass blind, and never run a stop sign or a signal: reckless driving, running stop signs or signals, or a ticket means a penalty or disqualification for the day. Every STOP sign is a full stop, even when the book prints no pause for it: failure to stop at a STOP sign is a DNF (REG V.E.3.e), and dangerous or reckless driving, "which may include speeding", is a disqualification (V.F.1.c). If you lose a lot of time, hold the speed and take the loss or file a time allowance instead of chasing it.',
@@ -76,15 +82,7 @@ const ALL_LESSONS: Lesson[] = [
       '3. Stay on course. This is "much more important than trying to maintain perfect times". A wrong or missed turn usually costs several minutes. Always work the current instruction and the next one, especially with "comes quick" in Column D, and if you do not know the next instruction, stop and read it (REG VII.B.3.b). The navigator always tells the driver the next sign or intersection to look for, because the navigator\'s head is down.',
       '4. Stay on time. Execute every stop and turn the same way each time, per your charts, and make up the losses before the checkpoint. But "the errors associated with stops and turns are usually in seconds and not minutes. So for rookies, concentrate on the first 3 S\'s where the errors are usually in minutes."',
       'One more rule from the same page: "Do not continue to make up time after passing a checkpoint. You are automatically on time the instant you reach a checkpoint." At a checkpoint the previous leg is complete with whatever errors were incurred, and the next leg begins with no penalty. Stop chasing seconds the moment you cross.',
-      'Time allowances (TA), in plain words (REG V.H):',
-      { list: [
-        'What qualifies: a delay on the route that is beyond your control or unsafe, such as a train blocking the route or stopping to help at an accident (V.H.1; HB p.13). The regulations\' own worked example is a farm tractor (V.H.5): a slow vehicle that holds you with no safe place to pass. One you can pass, or whose seconds you can make up before the checkpoint, is yours to recover. Emergency reduced speeds in fog, bad weather or on a grade with two-wheel brakes are also requested this way (V.H.2).',
-        'What never does: mechanical failure (a flat tire), not being able to hold the assigned speed, personal failure, and, in the handbook\'s words, navigation errors and wrong turns.',
-        'The amount is in multiples of 10 s (0m10s, 0m20s, 4m50s), at most 29m30s. A request that is not a multiple of 10 s is rounded up or down, "to the possible detriment of the contestant" (V.H.3, V.H.6).',
-        'You submit it by the method printed in the day\'s instructions (a web page, a phone call, or at the Observation Checkpoint: in 2026 that is the web form on your phone, V.H.3 "by cellular telephone to the Great Race Scoring Crew" and Example #18 and #36; the paper form handed in at the Observation Checkpoint is the older method of the 2014 handbook and the 2024 school), at the TA point printed in the book, within 15 minutes when the instruction says so (the 2026 Example Rally #18 prints "Within 15m00s"; V.H.3 names the cellular telephone and the Great Race Scoring Crew). Give the Stage, your car number, the leg number, the instruction numbers where the delay happened, and a short description. A wrong car number is not allowed; a wrong leg number is usually not corrected.',
-        'You are expected to make up what you can. The committee "will deny time allowances where in their judgment the team could have made up the lost time" (V.H.5), so say what you made up and list witnesses, especially for delays over 1m00s.',
-        'The wording pattern: "Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s." Delay, minus what you made up, equals the request.',
-      ] },
+      'Time allowances (TA): only a train blocking the route or an accident scene qualifies (REG V.H.1), never a red light or a wrong turn; how to request one is in the lesson "Early, late and the 10 % rule" (V.H).',
       'The real penalties (REG V.E), so you know what each S is worth:',
       { table: { head: ['Event', 'Penalty'], rows: [
         ['Each second early or late at a timing checkpoint', '1 s per second'],
@@ -133,7 +131,8 @@ const ALL_LESSONS: Lesson[] = [
   {
     id: 'pause-arithmetic', title: 'Pause arithmetic: dwell = pause - loss', minutes: 4, source: 'docs/research/08-rookie-handbook-body.md §3b (HB p.8), §5; docs/research/07 §2.1; CHART-004',
     body: [
-      `Stopping from 35 mph and getting back to 35 costs the simulator\'s 1939 Ford about ${fmt1(LOSS_35_35)} seconds compared with the ghost, before you have waited at all (${FORD_NOTE}). That number is your car's stop/start loss, measured on the performance table and written on your card for each entry/exit speed pair. (A stop that is also a turn loses a little more, because the car must crawl through the turn: the cockpit card and the Debrief both include that.)`,
+      `Stopping from 35 mph and getting back to 35 costs the simulator\'s 1939 Ford about ${fmt1(LOSS_35_35)} seconds compared with the ghost, before you have waited at all (${FORD_NOTE}). That number is your car's stop/start loss, measured on the performance table and written on your card for each entry/exit speed pair. On the performance card's simple chart you build the same loss from two columns: Dec is the loss braking to a stop from your IN speed, Acc the loss accelerating from the stop to your OUT speed, and S/G is Dec + Acc (at 35 in and 35 out: ${fmt1(DEC_35)} + ${fmt1(ACC_35)} = ${fmt1(DEC_35 + ACC_35)} s), so dwell = pause - Dec(IN) - Acc(OUT).`,
+      `A stop that turns is not a straight stop: the car leaves the stop crawling through the turn, so it loses more, and the TS/G column of the simple chart is the stop and go through a 90 degree turn (at 35 it is ${fmt1(TURN_STOP_35)} s against ${fmt1(LOSS_35_35)} s straight, ${FORD_NOTE}). So at "Left at STOP, pause 15" read TS/G instead of S/G: the turn adds ${fmt1(TURN_ADDS_35)} s, and you go ${fmt1(TURN_ADDS_35)} s earlier than the straight-stop dwell.`,
       `The handbook calls this the Stop & Go chart (HB p.8): the instructions "usually say stop at the sign, pause for 15 seconds, and proceed at the assigned speed", and you replace the 15 s with the chart value for your IN/OUT speed pair. On the Packard example chart, 30 in and 40 out is 8.6 s. For the simulator\'s Ford (${FORD_NOTE}), the same arithmetic is dwell = pause - loss: at "STOP. Pause 15" you wait 15 - ${fmt1(LOSS_35_35)} = ${fmt1(15 - LOSS_35_35)} seconds after the wheels stop, then call "go". Wait the whole 15 and you arrive ${fmt1(LOSS_35_35)} seconds late; call go immediately and you are ${fmt1(LOSS_35_35)} seconds early.`,
       'Always check the course instructions carefully: "sometimes the instructed pause time may be different than 15 seconds." Then the chart value is not your answer. The chart loss is 15 minus the chart value (Packard 30 in, 40 out: 15 - 8.6 = 6.4 s); keep the printed pause and subtract that loss. Pause 20 at 30 in, 40 out: 20 - 6.4 = 13.6 s (our arithmetic from the Packard chart and its footnote, not a printed number). If traffic holds you past your planned pause, make up the difference.',
       'Start the stopwatch (or set the analog bezel so the sweep hand reaches the index) at the dwell, count down out loud ("3, 2, 1, GO", always ending on GO) and keep the rhythm identical at every stop. A constant bias calibrates out on the card; scatter does not.',
@@ -151,7 +150,7 @@ const ALL_LESSONS: Lesson[] = [
     check: { question: `A timed segment reads "30 for 0:36 then 40". The ramp lead for 30 to 40 is ${fmt1(LEAD_30_40)} s. When, counted from the ghost's departure, do you call 40?`, options: ['At 36 s', `At ${fmt1(36 - LEAD_30_40)} s`, `At ${fmt1(36 + LEAD_30_40)} s`, 'When the sign appears'], answer: 1, explain: `Split the change at the sign, i.e. call half a ramp early: 36 - ${fmt1(LEAD_30_40)} = ${fmt1(36 - LEAD_30_40)} s after the ghost leaves the landmark.` },
   },
   {
-    id: 'recovery', title: 'Early, late and the 10 % rule', minutes: 6, source: 'docs/research/08-rookie-handbook-body.md §4 (HB p.10), §7 tip 7; docs/research/03 §4.3, 07 §6; CHART-004; docs/research/09-event-regulations-2026.md §13.5, §14 (REG V.H.5); docs/research/10c-short-videos.md Making Up Time [01:03]-[05:11], Time Delay Form [01:38], [04:44]; docs/research/10b-rally-school-classen-croker.md P1 15:59, P2 04:08',
+    id: 'recovery', title: 'Early, late and the 10 % rule', minutes: 8, splitAt: 5, source: 'docs/research/08-rookie-handbook-body.md §4 (HB p.10), §7 tip 7; docs/research/03 §4.3, 07 §6; CHART-004; docs/research/09-event-regulations-2026.md §13.5, §14 (REG V.H.5); docs/research/10c-short-videos.md Making Up Time [01:03]-[05:11], Time Delay Form [01:38], [04:44]; docs/research/10b-rally-school-classen-croker.md P1 15:59, P2 04:08',
     body: [
       'A truck, a long stop or a train makes you late by a known number of seconds: you measured it on the stopwatch. Write it in the ledger (press E in the cockpit). Then recover it as soon as it can be done safely, because you do not know where the next checkpoint is (HB p.15 tip 7), and stop correcting once the ledger reads zero.',
       'The handbook\'s ten per cent rule (HB p.10): drive 10 % above the instructed speed for 10 x the seconds lost. 38.5 mph for 40 s makes up 4 s at 35; 44 mph for 44 s makes up 4.4 s at 40. The same works for losing time: drive 10 % below for 10 x the seconds.',
@@ -165,6 +164,15 @@ const ALL_LESSONS: Lesson[] = [
         'A stop is a place to recover: stop for 1 s of a 10 s pause and you gained 9 s (Making Up Time [04:41]; video, not in the documents). Stop shortening carries no penalty of its own: the regulations set none for a pause shorter than printed (the leg score is the only one), and V.H.5 even lets you lose time at 5 MPH or faster near a checkpoint to bring a delay request to a multiple of 10 s; veterans still avoid shortening a stop for fear of a checkpoint at the sign, while a rookie may find it more comfortable than speeding (Making Up Time [04:41]; video, not in the documents; REG V.H.5).',
         'Never make up time inside a stopwatch-timed interval ("30 for seven minutes ... do not make up time during that time, it will mess up what you are already doing", Making Up Time [05:11]; video, not in the documents). The debrief flags it as a disturbed timed interval.',
         'Do not carry a loss across a checkpoint: you are automatically on time the instant you cross it (Classen, Rally School Part 1 [15:59]; in the documents: HB p.13), and a safe speed always wins over the seconds (Croker, Rally School Part 2 [04:08]).',
+      ] },
+      'Time allowances (TA), in plain words (REG V.H); the Four S\'s lesson only points here:',
+      { list: [
+        'What qualifies: a delay on the route that is beyond your control or unsafe, such as a train blocking the route or stopping to help at an accident (V.H.1; HB p.13). The regulations\' own worked example is a farm tractor (V.H.5): a slow vehicle that holds you with no safe place to pass. One you can pass, or whose seconds you can make up before the checkpoint, is yours to recover. Emergency reduced speeds in fog, bad weather or on a grade with two-wheel brakes are also requested this way (V.H.2).',
+        'What never does: mechanical failure (a flat tire), not being able to hold the assigned speed, personal failure, and, in the handbook\'s words, navigation errors and wrong turns.',
+        'The amount is in multiples of 10 s (0m10s, 0m20s, 4m50s), at most 29m30s. A request that is not a multiple of 10 s is rounded up or down, "to the possible detriment of the contestant" (V.H.3, V.H.6).',
+        'You submit it by the method printed in the day\'s instructions (a web page, a phone call, or at the Observation Checkpoint: in 2026 that is the web form on your phone, V.H.3 "by cellular telephone to the Great Race Scoring Crew" and Example #18 and #36; the paper form handed in at the Observation Checkpoint is the older method of the 2014 handbook and the 2024 school), at the TA point printed in the book, within 15 minutes when the instruction says so (the 2026 Example Rally #18 prints "Within 15m00s"; V.H.3 names the cellular telephone and the Great Race Scoring Crew). Give the Stage, your car number, the leg number, the instruction numbers where the delay happened, and a short description. A wrong car number is not allowed; a wrong leg number is usually not corrected.',
+        'You are expected to make up what you can. The committee "will deny time allowances where in their judgment the team could have made up the lost time" (V.H.5), so say what you made up and list witnesses, especially for delays over 1m00s.',
+        'The wording pattern: "Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s." Delay, minus what you made up, equals the request.',
       ] },
       'The lost-time formula, for driving slower than assigned (HB p.10): (Assigned - Actual) / Assigned x seconds at the reduced speed = seconds lost. 40 assigned, 30 actual, 20 s = (40 - 30) / 40 x 20 = 5 s lost.',
       'In watch terms: holding +d mph recovers E seconds after t = E x v / d seconds. At +5 mph that is t = E x v / 5: 8 s late at 35 mph means 40 mph for 56 s (not 64: the (v/5 + 1) form counts ghost time, which your watch never shows). A delay of the kind V.H.1 names (a train blocking the route, or stopping to help at the scene of an accident) may instead be requested as a Time Allowance, but never both request and make up the same seconds. The measured delay is the time stopped (stopwatch from wheels-stop to go) plus the stop-and-go loss for your speeds from your chart (Time Delay Form [01:38], [04:44]; video, not in the documents: REG V.H says nothing about how to measure it), less what you could make up before the checkpoint (V.H.5); the simulator\'s committee counts it the same way. A traffic light is not named in V.H.1; the simulator can be set to credit one (rules.taForSignals), but the regulations do not promise it.',
@@ -217,7 +225,7 @@ const ALL_LESSONS: Lesson[] = [
     check: { question: 'Column C shows "(35m00s)" next to a transit. What does the parenthesis mean?', options: ['The time is official and you must take exactly 35 minutes', 'It is an advisory time, a guide to reach the next restart on time', 'It is a time of day', 'It is a speed of 35 mph'], answer: 1, explain: 'Interval times in parentheses are advisory, not official (REG VII.B.3.c(4)); without parentheses the interval is official. Column D\'s "take exactly" (2026 Example Rally #31) is what tells you to leave on IN + interval to the second.' },
   },
   {
-    id: 'protocol', title: 'Team protocol', minutes: 8, source: 'docs/research/08-rookie-handbook-body.md §7 (HB p.15, driver and navigator tips 1-8), §6 (HB p.13); docs/research/08b-rookie-handbook-appendices.md §1.3 (HB Appendix B step 2); docs/research/09-event-regulations-2026.md §5, §8.3, §10, §13 (REG II.H.1.d, II.H.1.h(6), II.H.1.i, II.H.2, V.A.1, V.E.2.d, V.E.3.a, V.E.3.e, V.F.1.c, VII.C.5, VII.D.3); docs/research/10b-rally-school-classen-croker.md P1 04:08, 27:58, 44:27, P2 04:08, 12:36, 14:10; docs/research/10a-training-sessions-2024-2026.md 2024 21:59, 22:34, 23:34, 88:22, 114:06, 119:45, 2026 64:10, 82:09, 122:52; docs/research/03 §1, 04 §4; docs/research/10a-training-sessions-2024-2026.md 2026 10:53, 80:03, 121:20; docs/research/10b-rally-school-classen-croker.md P2 15:45, 19:57',
+    id: 'protocol', title: 'Team protocol', minutes: 8, splitAt: 8, source: 'docs/research/08-rookie-handbook-body.md §7 (HB p.15, driver and navigator tips 1-8), §6 (HB p.13); docs/research/08b-rookie-handbook-appendices.md §1.3 (HB Appendix B step 2); docs/research/09-event-regulations-2026.md §5, §8.3, §10, §13 (REG II.H.1.d, II.H.1.h(6), II.H.1.i, II.H.2, V.A.1, V.E.2.d, V.E.3.a, V.E.3.e, V.F.1.c, VII.C.5, VII.D.3); docs/research/10b-rally-school-classen-croker.md P1 04:08, 27:58, 44:27, P2 04:08, 12:36, 14:10; docs/research/10a-training-sessions-2024-2026.md 2024 21:59, 22:34, 23:34, 88:22, 114:06, 119:45, 2026 64:10, 82:09, 122:52; docs/research/03 §1, 04 §4; docs/research/10a-training-sessions-2024-2026.md 2026 10:53, 80:03, 121:20; docs/research/10b-rally-school-classen-croker.md P2 15:45, 19:57',
     body: [
       'This is the page the navigator teaches the driver from. These are starting rules, not laws: we agree on them before we leave the driveway, run them for a week, and keep what works. Nearly all of them are the handbook\'s own (HB p.15). The point of all of them is the second S, Stay on course: the driver drives and looks for landmarks, the navigator reads the book and holds the stopwatch and clock, and between the two of us nothing gets dropped.',
       'Rule 1: one word for one thing, every time (HB p.15 tip 1). Here is our glossary; the sim\'s driver uses the same words.',
@@ -282,19 +290,19 @@ const ALL_LESSONS: Lesson[] = [
         'Never guess a speed ("I\'ll do 37"). Hold the number until the navigator calls a new one.',
         'ICE: the navigator names the sign. Whoever sees it first says "I see it"; the other answers "I see it too".',
         'Say "mark" as the sign goes by. At a stop, say "Stopped" when the car rocks back.',
-        'Do not move until GO: "9 ... 1, GO". Watching traffic? Say "keep counting": the count goes 0, 1, 2.',
+        'Do not move until the navigator says GO. If traffic blocks the car, say "keep counting" and the navigator counts on.',
         'Starts and restarts: wait back among the cars; pull up only after the car ahead has left. If it sits, go around it.',
         'Starts and restarts: about 30 seconds before, ask "how long?" if no warning came. The count ends on the launch second: go on GO.',
-        'Green sign = timing checkpoint: do nothing. Never stop, never 5 mph or slower in sight of it (30 s).',
+        'Green sign = timing checkpoint: just drive on. Never stop or slow to 5 mph or less in sight of it: 30 second penalty.',
         'Red GREAT RACE STOP board: stop, and always at the finish. A wave to the crew is fine; no talking.',
         'Calibration run: hold the indicated speed exactly, say nothing about early or late, keep right. The navigator works it out parked.',
         'In a timed section talk only about the instructions; never ask "are we early or late?". "Comes quick": eyes up for two signs.',
         'Not sure where we are: say so. Pull off only where safe, never in the lane, never in sight of a green sign.',
         'Lost: no U-turn in traffic and no speeding to catch up. The navigator runs the lost procedure.',
-        'A Day-Glo "GR" sign overrides the book. "I" = ignore that sign; "End Leg" = leg cancelled, carry on safely.',
+        'A Day-Glo "GR" sign overrides the book. A sign marked "I" means ignore it. "End Leg" means the leg is cancelled; drive on.',
         'Off the clock (an hourglass, or a camera with a slash): any safe speed, but be early at the restart.',
         'Instruments: the dash clock is analog with no digital readout; the stopwatch may be digital. No GPS. The odometer stays covered.',
-        'Phones off and out of reach from the start line to the finish: warning, then 10 s, then 1 min.',
+        'Phones off and out of reach from start to finish. The first use gets a warning, the next 10 seconds, then 1 minute.',
         'Any mistake is ours: fix it together and move on.',
       ] } },
     ],
@@ -334,7 +342,7 @@ const ALL_LESSONS: Lesson[] = [
     check: { question: 'The bottom of page 2 ends "STOP: 0 MPH / 0m15s / 40 MPH". The first row of page 3 prints no speed. What do you write at the top of page 3?', options: ['0 MPH', '15 MPH', '40 MPH', 'Nothing: the page starts fresh'], answer: 2, explain: 'The speed carries over from the bottom of the previous page: after the pause you leave at 40 MPH, so write 40 at the top of page 3 (HB p.15 tip 8).' },
   },
   {
-    id: 'transits', title: 'Transits and restarts', minutes: 5, source: 'docs/research/08-rookie-handbook-body.md §5, §6, §8 (HB p.7, p.11-14, Appendix D); docs/research/09-event-regulations-2026.md §7.1, §7.3, §7.4, §8.1, §13.3 (REG V.B.2, V.C.1.b, V.C.1.c, V.E.2.d, VII.B.2.a, VII.B.3.c(4), VII.C.5, VII.E.1.b, V.E.3.h, Example #18, #31, #35, #36); docs/research/10c-short-videos.md Starting on Time [01:07]-[04:12]; docs/research/10b-rally-school-classen-croker.md P1 42:26, 44:27, P2 12:36, 14:10; docs/research/10a-training-sessions-2024-2026.md 2026 53:47, 70:49',
+    id: 'transits', title: 'Transits and restarts', minutes: 5, splitAt: 9, source: 'docs/research/08-rookie-handbook-body.md §5, §6, §8 (HB p.7, p.11-14, Appendix D); docs/research/09-event-regulations-2026.md §7.1, §7.3, §7.4, §8.1, §13.3 (REG V.B.2, V.C.1.b, V.C.1.c, V.E.2.d, VII.B.2.a, VII.B.3.c(4), VII.C.5, VII.E.1.b, V.E.3.h, Example #18, #31, #35, #36); docs/research/10c-short-videos.md Starting on Time [01:07]-[04:12]; docs/research/10b-rally-school-classen-croker.md P1 42:26, 44:27, P2 12:36, 14:10; docs/research/10a-training-sessions-2024-2026.md 2026 53:47, 70:49',
     body: [
       'A transit is an untimed stretch with no timing checkpoints and no assigned speed; a time for the passage, or a restart time at the end, is given (glossary; REG VII.E.1.b). A full hourglass in Column B begins it and an empty one ends it. Lunch, fuel, pit stops and rest stops all happen inside a transit.',
       'Advisory transit: the time is in parentheses, like (3h25m00s) or (0m30s). It is a guide so you arrive at the next time-of-day restart on time. Nothing times you inside it, but you must still be at the restart at your minute.',
@@ -375,7 +383,7 @@ const ALL_LESSONS: Lesson[] = [
     check: { question: 'Lunch says "leave here 45 minutes prior to your end-of-transit time". The transit ends at a 2:55:00 restart plus your start position of 12 minutes. When do you leave lunch?', options: ['2:10:00', '2:22:00', '2:37:00', '3:07:00'], answer: 1, explain: 'End of transit = 2:55:00 + 12 min = 3:07:00. Leave 45 minutes prior: 3:07:00 - 0:45:00 = 2:22:00.' },
   },
   {
-    id: 'rally-school', title: 'What the rally school adds', minutes: 9,
+    id: 'rally-school', title: 'What the rally school adds', minutes: 9, splitAt: 9,
     source: 'docs/research/10-rally-school-videos.md; docs/research/10a-training-sessions-2024-2026.md; docs/research/10b-rally-school-classen-croker.md; docs/research/10c-short-videos.md (the 13 official Great Race rally school videos, auto-captions)',
     body: [
       'The Great Race published a set of rally school videos: Jeff Stumb\'s short how-to series (Clock and Stopwatch, Starting on Time, Filling Out a Time Delay Form, Making Up Time), John Classen\'s and Bill Croker\'s rally school (Part 1 and Part 2), and the 2024 and 2026 rookie training sessions. They settle things the handbook and the regulations leave open, and they show what veterans actually do. The rule of this page: the 2026 Event Regulations and the Rookie Handbook win wherever they speak. Every claim below names its video and the caption timestamp [mm:ss] (the captions were read, not watched, so a timestamp is good to about 30 seconds), and a claim that only a video makes is labelled (video, not in the documents).',

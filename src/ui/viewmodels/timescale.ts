@@ -22,8 +22,16 @@ export interface ScaleInputs {
 export const SCALE_STEPS = [1, 2, 4, 8];
 export const NEAR_FEATURE_FT = 800;
 export const NEAR_TARGET_S = 15;
-/** PLAY-003: a hold runs at the chosen scale until this many seconds before its out time, then at 1x. */
-export const HOLD_FF_MARGIN_S = 60;
+/** PLAY-003 / PT-10: a hold runs at the chosen scale until this many seconds before its out time (the launch second at a restart), then at 1x: the same 45 s the pre-read's fast-forward stops at, so the warning (W), Q and the count still happen. */
+export const HOLD_FF_MARGIN_S = 45;
+/** PT-10 (evening one): drills whose transits and holds are long waits run at 8x by default (D16: 82 minutes of sim time); the player can still pick another scale. */
+export const DEFAULT_SCALE_BY_DRILL: Record<string, number> = { D16: 8 };
+/** The scale a run starts at: the drill's own default, else the player's setting; 1x when the drill is locked to 1x (D01, D03). */
+export function defaultScaleFor(drillId: string | null | undefined, setting: number | undefined, lockedTo1x = false): number {
+  if (lockedTo1x) return 1;
+  const own = drillId ? DEFAULT_SCALE_BY_DRILL[drillId] : undefined;
+  return own ?? (Number.isFinite(setting) && (setting ?? 0) > 0 ? setting! : 1);
+}
 
 /** 0 while paused; 1 when anything needs reaction time; otherwise the requested scale clamped to maxScale. */
 export function effectiveScale(i: ScaleInputs): number {
