@@ -1,5 +1,25 @@
 # Project Status (read this first after any context reset)
 
+## HANDOFF (keep this block current; it is the resume point)
+- Branch: claude/rally-simulator-j3kqzq (remote demo_app, renamed TSD-simulator on GitHub; push works).
+- Verify: `npm install && npx tsc -p tsconfig.json && npm test && npm run build && npm run spec:check && npm run test:e2e`
+  (last known: tsc clean, 447 unit, 51 e2e, 262/262 specs, ENGINE_VERSION 3.0.0).
+- Standing rules from Josh: the organizers' documents and videos override his preferences and ours; digital
+  lap/split stopwatch with TOD mode is the default (HB p.5, REG II.H.1.d(3)); the dash clock has no digital
+  readout (REG II.H.1.d(1)); mark simulator conventions as such in lessons; keep STATUS/LOG current; commit and
+  push at every green step; use right-sized sub-agents (Sonnet for mechanical work, Opus for judgement) that may
+  spawn their own; never commit a tree that fails the five checks.
+- Sources of truth, in order: docs/research/09-event-regulations-2026.md, 08 + 08b (Rookie Handbook),
+  10 + 10a/b/c (video transcripts), 11a/b/c (video frames), then 00-07 (web research, partly unverified).
+- Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
+  the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
+- Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
+- In flight (2026-10-04): Phase VI = fold the 267 video frames (docs/research/frames) into the renderer, charts,
+  TA form, clock and sign library; then playtest cycles (playability, education, bug hunt) on the V3 build.
+- If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
+  it, fold it, commit.
+
+
 Project: Rally Trainer - Great Race style time-speed-distance navigator
 simulator for Josh (navigator) + dad (driver) in a 1939 Ford Deluxe.
 Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
