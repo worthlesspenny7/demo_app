@@ -23,11 +23,12 @@ export function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3,
   const names = ['Bronze', 'Silver', 'Gold'];
   return names.map((name, i) => ({ name, aids: aidsForRung(rungs[i]!), driver: drivers[i]!, description: `${name}: aids rung ${rungs[i]}, ${drivers[i]!.skill} driver` }));
 }
+/** B20: the legal day drills (D12, D13) name their tiers Bronze / Silver / Gold like every drill: Rookie / Sportsman / Expert are the campaign's DIVISIONS, a different choice. */
 export function legalTiers(): DrillTier[] {
   return [
-    { name: 'Rookie', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Great Race legal, sportsman driver' },
-    { name: 'Sportsman', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Great Race legal, stock speedometer' },
-    { name: 'Expert', aids: aidsForRung(0), driver: DRIVER_DAD_ROOKIE, description: 'Great Race legal, rookie driver on a rough road' },
+    { name: 'Bronze', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Bronze: Great Race legal (no aids), sportsman driver' },
+    { name: 'Silver', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Silver: Great Race legal, stock speedometer' },
+    { name: 'Gold', aids: aidsForRung(0), driver: DRIVER_DAD_ROOKIE, description: 'Gold: Great Race legal, rookie driver on a rough road' },
   ];
 }
 export function tierOf(d: Pick<Drill, 'tiers'>, t: number): DrillTier { return d.tiers[Math.max(0, Math.min(d.tiers.length - 1, t))]!; }

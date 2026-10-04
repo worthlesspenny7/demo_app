@@ -215,7 +215,7 @@ test('UI-037 PROTO-001 W warns the driver, the count beats are echoed in the dri
   for (let i = 0; i < 6; i++) await advance(page, 1);                             // the beats 10 ... 4 go to the driver as the navigator's count
   await advance(page, 0.1);
   const nums = (await page.locator('#driverlog .dl-count').allInnerTexts()).map(t => /(\d+)\s*$/.exec(t)![1]);
-  expect(nums).toEqual(['10', '9', '8', '7', '6', '5', '4']);                      // the driver echoes each number
+  expect(nums).toEqual(['4']);                                                       // PLAY-018: the echoed count is ONE updating line (the latest number), not ten lines
   await page.evaluate(() => { const r = window.__rally!; r.act({ type: 'skipPreread', secondsBefore: 3 } as never); r.act({ type: 'start' }); });
   await expect(page.locator('#next-call')).toHaveCount(1);                           // the rung >= 2 reminder of the next call (empty until a call is due, it follows the engine's nextCall)
   await page.keyboard.press('i');

@@ -59,6 +59,11 @@ export interface BookRow {
   perfectCumulative?: number;
   /** Compatibility aliases of d (the old name of the column). */
   colD: string;
+  /**
+   * The real sheet runs a long vertical arrow down Columns B and C for the length of a transit or the calibration run (11a): `vin` = a section arrow arrives from the row above
+   * (a mid or end row), `vout` = one leaves downward (a start or mid row); `vkind` names the section ('transit' or 'calibration').
+   */
+  vin: boolean; vout: boolean; vcont: boolean; vkind: 'transit' | 'calibration' | null;
 }
 
 export interface BookOptions { timeZone?: string; style?: Scenario['bookStyle'] }
@@ -91,20 +96,51 @@ export function griidRow(ins: Instruction, opts: BookOptions = {}): Omit<BookRow
   return {
     n: ins.n, printed: ins.printed ?? String(ins.n), nodeId: ins.nodeId ?? '', text: ins.text ?? '',
     b: columnBSymbols(ins), odometer: odometerBox(ins), bLabel: columnBLabel(ins), info: ins.infoBox ?? null, tod: todm ? { zone: todm[1]!, time: todm[2]! } : null, c, cIcons: columnCIcons(ins), colC: c.join(' / '), cBox: calibrationBoxRange(ins, c), asterisk: !!ins.calibrationStart,
-    d, colD: d, remark, omitted: !!ins.omitted, ta: !!ins.taPoint,
+    d, colD: d, remark, omitted: !!ins.omitted, ta: !!ins.taPoint, vin: false, vout: false, vcont: false, vkind: null,
     turn: ins.turn, speed: ins.speed, pause: ins.pause, timed: ins.timed, perfectCumulative: ins.perfectCumulative,
   };
+}
+
+/**
+ * The section arrows of Columns B and C: a transit runs from the row that opens it (its begin box) to the row that ends it, the speedometer calibration from its first row to its
+ * last calibration point. Returns, per row index, whether an arrow arrives from above (`vin`) and/or leaves downward (`vout`); `vcont` = the arrow runs straight through the row (a row inside the section). A row can end one section and open the next.
+ */
+export function sectionArrows(book: Instruction[]): { vin: boolean; vout: boolean; vcont: boolean; vkind: 'transit' | 'calibration' | null }[] {
+  const out = book.map(() => ({ vin: false, vout: false, vcont: false, vkind: null as 'transit' | 'calibration' | null }));
+  const span = (a: number, e: number, kind: 'transit' | 'calibration'): void => {
+    if (e <= a) return;
+    out[a]!.vout = true; if (!out[a]!.vkind) out[a]!.vkind = kind;
+    for (let i = a + 1; i < e; i++) { out[i]!.vin = true; out[i]!.vout = true; out[i]!.vcont = true; out[i]!.vkind = out[i]!.vkind ?? kind; }
+    out[e]!.vin = true; if (!out[e]!.vkind) out[e]!.vkind = kind;
+  };
+  for (let i = 0; i < book.length; i++) {
+    const ins = book[i]!;
+    if (ins.transit && !ins.transit.end) { const e = book.findIndex((x, k) => k > i && !!x.transit?.end); if (e > i) span(i, e, 'transit'); }
+  }
+  for (let i = 0; i < book.length; i++) {
+    if (book[i]!.section !== 'calibration') continue;
+    let e = i; while (e + 1 < book.length && book[e + 1]!.section === 'calibration') e++;
+    span(i, e, 'calibration'); i = e;
+  }
+  return out;
+}
+
+/** The stage's name as printed in the footer and the page bars: "fullStage #1" (the generator's profile name) reads "Day stage 1". */
+export function stageDisplayName(name: string): string {
+  const m = /^fullStage #(\d+)$/.exec(name ?? '');
+  return m ? `Day stage ${m[1]}` : name;
 }
 
 export function bookRows(book: Instruction[] | undefined | null, currentLine: number, opts: BookOptions = {}): BookRow[] {
   const b = Array.isArray(book) ? book : [];
   if (!b.length) return [];
   const cur = Math.min(b.length, Math.max(1, Math.round(Number.isFinite(currentLine) ? currentLine : 1)));
+  const arrows = sectionArrows(b);
   return b.map((ins, i) => {
     const n = typeof ins.n === 'number' ? ins.n : i + 1;
     const offset = n - cur;
     const state: RowState = offset === 0 ? 'current' : offset === -1 ? 'prev' : offset < 0 ? 'past' : offset <= 2 ? 'next' : 'far';
-    return { ...griidRow({ ...ins, n }, opts), isCurrent: offset === 0, state, offset };
+    return { ...griidRow({ ...ins, n }, opts), ...arrows[i]!, isCurrent: offset === 0, state, offset };
   });
 }
 

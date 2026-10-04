@@ -1162,7 +1162,7 @@ describe('UI-029 the book as the five-column GRIID row', () => {
     const html = bookSheetsHtml(stage, 'D18 Full day'); expect((html.match(/class="book-sheet"/g) ?? []).length).toBe(pages.length);
     expect(html).toContain(`Page 1 of ${pages.length}`); expect(html).toContain('D18 Full day'); expect(html).toContain('data-sym="transit-begin"'); expect(html).toContain('class="cbox"');
     expect(html).not.toContain('sheet-head'); expect(html).toContain('class="sheet-foot"'); expect(html).toContain('Hemmings Motor News Great Race');
-    expect(griidRowHtml(pages[0]!.rows[0]!, { svg: '' })).toMatch(/class="gn">1<.*class="gb".*class="gc".*class="gd"/);
+    expect(griidRowHtml(pages[0]!.rows[0]!, { svg: '' })).toMatch(/class="gn">1<.*class="gb[^"]*".*class="gc[^"]*".*class="gd"/);
     expect(bookPages(stage.book, 'x', { perPage: 8 }).length).toBe(Math.ceil(stage.book.length / 8)); expect(bookPages(stage.book, 'x', { perPage: 8 })[0]!.rows.length).toBe(8);   // a fixed count
   });
   it('GRIID-010 the watch faces are drawn in Column C: the restart watch over its time and speed, the crossed-out watch of End timed portion; neither is a Column B symbol', () => {
@@ -1173,7 +1173,7 @@ describe('UI-029 the book as the five-column GRIID row', () => {
     const et = bookRows(stage.book, 1, { timeZone: stage.timeZone, style: stage.bookStyle }).find(r => r.cIcons.includes('end-timed'))!;
     expect(columnCHtml(et)).toContain('data-sym="end-timed"'); expect(columnBHtml(et)).not.toContain('data-sym="end-timed"'); expect(columnBHtml(et)).toContain('data-sym="transit-begin"');
     expect(griidIcon('restart')).toContain(SYMBOL_LABEL['restart']); expect(griidIcon('restart')).not.toBe(griidIcon('end-timed')); expect(griidIcon('end-timed')).toContain('M23.6 9.6L60.4 46.4');   // the circle-slash
-    const sheet = bookSheetsHtml(stage, 'D18 Full day'); expect(sheet).toMatch(/class="gc"><div class="cicons"><b class="zone">.*data-sym="restart"/); expect(sheet).toMatch(/class="gc"><div class="cicons">.*data-sym="end-timed"/);
+    const sheet = bookSheetsHtml(stage, 'D18 Full day'); expect(sheet).toMatch(/class="gc[^"]*">(<span class="vseg[^>]*><\/span>)?<div class="cicons"><b class="zone">.*data-sym="restart"/); expect(sheet).toMatch(/class="gc[^"]*">(<span class="vseg[^>]*><\/span>)?<div class="cicons">.*data-sym="end-timed"/);
     expect(columnCHtml({ c: ['30 MPH'], cBox: null })).not.toContain('cicons');
   });
   it('GRIID-013 the Time Allowance row is one full-width yellow banner with the written sentence (REG Example #18), in both book styles, in the printable view and the cockpit builder', () => {

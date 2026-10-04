@@ -7,14 +7,15 @@ import { allDrills } from '../../core/drills/index.js';
 import { stopwatchViewModel } from '../viewmodels/stopwatch.js';
 import { clockViewModel, type EngineClock } from '../viewmodels/clock.js';
 import { speedoViewModel } from '../viewmodels/speedo.js';
-import { bookRows, bookLayout, rowCameo } from '../viewmodels/book.js';
-import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, infoBoxHtml, esc } from '../render/griid.js';
+import { bookRows, bookLayout, rowCameo, stageDisplayName } from '../viewmodels/book.js';
+import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, infoBoxHtml, arrowClass, esc } from '../render/griid.js';
+import { placeRowMarks } from '../render/handmarks.js';
 import { chartGrids, simpleChart, type ChartGrid, type SimpleChart } from '../viewmodels/charts.js';
-import { holdCardFor, openTransitCard, type HoldCard } from '../viewmodels/cockpitinfo.js';
+import { holdCardFor, openTransitCard, clockReadPrompt, type HoldCard } from '../viewmodels/cockpitinfo.js';
 import { digitalWatchViewModel, SplitTracker } from '../viewmodels/digitalwatch.js';
 import { taFormVm, taNoteText, taRounding, taHelper, buildTaRequest, allowanceSeconds, type TaFormMode } from '../viewmodels/ta.js';
 import { taWebHtml, taPaperHtml, type TaFormState } from '../render/taform.js';
-import { inTimedInterval, startQueueVm, startLaunchFor, launchPlanFromInfo, startCount, makeUpPlan, assignedAfter, scheduleCorrection, inCalibrationRun, nextCallPrompt, driverLineKind, paceCarsFrom, type LaunchPlan, type StartCountVm } from '../viewmodels/v3.js';
+import { inTimedInterval, startQueueVm, startLaunchFor, launchPlanFromInfo, startCount, makeUpPlan, assignedAfter, scheduleCorrection, inCalibrationRun, nextCallPrompt, driverLineKind, paceCarsFrom, inTransitRun, type LaunchPlan, type StartCountVm } from '../viewmodels/v3.js';
 import { formatInterval } from '../../core/griid.js';
 import { effectiveScale, simAdvance, nextScale, SCALE_STEPS } from '../viewmodels/timescale.js';
 import { KeyMapper, KEY_HELP, type KeyCommand } from '../viewmodels/keys.js';
@@ -64,6 +65,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const policy = instrumentPolicy(scenario.aids);
   const rung = policy.rung;
   const bookLen = scenario.book.length;
+  const legalAsp = rung <= 1 && (scenario.asp ?? 0) > 0;   // N15: at the legal rungs the clock caption does not do the base + ASP arithmetic
   const hint = drillHint(drill?.id ?? null);
   const objective = drill ? drill.objective : scenario.name;
   const ann = createAnnotations(resuming?.annotations ?? undefined);
@@ -82,7 +84,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const L = cockpitLayout(root.clientWidth || window.innerWidth, (window.innerHeight || 800) - 46);
     cockpit.style.setProperty('--book-w', `${L.book.w}px`);
     const short = (window.innerHeight || 800) < 820;
-    cockpit.style.setProperty('--road-h', `${short ? 42 : Math.round(L.roadFraction * 100)}%`);
+    cockpit.style.setProperty('--road-h', `${short ? 46 : Math.round(L.roadFraction * 100)}%`);
     cockpit.classList.toggle('compact', short);
   };
   sizeCockpit();
@@ -135,6 +137,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     chartsBody.innerHTML = `<p class="muted">${policy.computedCard ? `Line ${line}: ${sp.vIn ?? 0} in / ${sp.vOut ?? '?'} out is highlighted.` : 'Legal mode: find your own pair.'}</p>${grids.map(chartHtml).join('')}`;
   }
   // UI-031: the Time Allowance point form (TA-005)
+  let taFocusPending = false;   // N11: T focuses the form's first field once the panel is drawn
   let taCollapsed = false; let taBuiltFor: string | null = null; let taSig = ''; let taMode: TaFormMode = scenario.rules.taMode === 'paper' ? 'paper' : 'web'; const taDraft: Record<string, string> = {};
   const taPanel = el('div', { class: 'ta-panel', id: 'ta-panel' }); taPanel.style.display = 'none';
   const taField = (id: string): HTMLInputElement | null => taPanel.querySelector(`#${id}`) as HTMLInputElement | null;
@@ -186,8 +189,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     el('span', { class: 'hint-text' }, el('b', {}, drill ? `${drill.id}: ` : ''), hintBarText(objective, hint)),
     el('span', { class: 'hint-scale', id: 'hint-scalekeys', title: 'time scale keys; ? lists every key' }, el('kbd', {}, '?'), ' keys  ·  ', scaleHintText(lockedTo1x), ' ', hintScale));
   const printHref = `#/book/${src.kind === 'drill' ? `drill/${src.drillId}/${src.tier}/${src.seed}` : `builtin/${src.name}/${src.seed}`}`;
-  const bookHead = el('div', { class: 'book-head' }, el('b', {}, 'GRIID'), el('span', { class: 'muted' }, `${scenario.name} · ${scenario.book.length} lines · N / Shift+N move, click to set`),
+  const bookHead = el('div', { class: 'book-head' }, el('b', {}, 'GRIID'), el('span', { class: 'muted' }, `${stageDisplayName(scenario.name)} · ${scenario.book.length} lines · N / Shift+N move, click to set`),
     el('a', { id: 'book-print', href: printHref, target: '_blank', rel: 'noopener', title: 'the whole book, six rows a page, printable', style: 'margin-left:auto' }, 'Print book'));
+  (bookHead.querySelector('#book-print') as HTMLAnchorElement).addEventListener('click', () => { try { saveLive(); } catch { /* best effort: the printable page reads the saved run's hand marks */ } });
   const rows = el('div', { class: 'rows', id: 'book' });
   const book = el('div', { class: 'book' }, bookHead, roadStart, rows);
   // drawer
@@ -344,7 +348,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       case 'scale': if (!lockedTo1x) requested = nextScale(requested, cmd.delta); break;
       case 'pause': paused = !paused; break;
       case 'ta': {
-        if (obs.ta.hasTaPoints) { if (obs.ta.windowOpen) { taCollapsed = false; taField('ta-request')?.focus(); } else flash('No Time Allowance window: requests are taken for 15 minutes after a TA point (the yellow box)'); }
+        if (obs.ta.hasTaPoints) { if (obs.ta.windowOpen) { taCollapsed = false; taFocusPending = true; } else flash('No Time Allowance window: requests are taken for 15 minutes after a TA point (the yellow box)'); }
         else promptFor('Time allowance (seconds)', v => act({ type: 'ta.declare', seconds: v }));
         break;
       }
@@ -362,14 +366,18 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     }
     renderNow();
   }
-  function promptText(labelText: string, dflt: string, cb: (t: string) => void): void {
-    const inp = el('input', { type: 'text', placeholder: labelText, value: dflt, style: 'width:300px' }) as HTMLInputElement;
+  /** N13: a mark's prompt opens beside the row it writes on (in the row's strip), not in the drawer bar; the book is not rebuilt while it is open. */
+  let markPromptOpen = false;
+  function promptText(labelText: string, dflt: string, cb: (t: string) => void, opts: { host?: HTMLElement | null; empty?: string } = {}): void {
+    const inp = el('input', { type: 'text', placeholder: labelText, value: dflt, class: opts.host ? 'mark-input' : '', id: opts.host ? 'mark-input' : '', style: opts.host ? 'width:210px' : 'width:300px' }) as HTMLInputElement;
+    const close = (): void => { if (opts.host) { markPromptOpen = false; lastBookKey = ''; } else promptWrap.replaceChildren(); root.focus(); };
     inp.onkeydown = e => {
       e.stopPropagation();
-      if (e.key === 'Enter') { const v = inp.value.trim(); if (v) cb(v); else flash('Nothing to identify: type what to look for'); promptWrap.replaceChildren(); root.focus(); renderNow(); }
-      if (e.key === 'Escape') { promptWrap.replaceChildren(); root.focus(); }
+      if (e.key === 'Enter') { const v = inp.value.trim(); if (v) cb(v); else flash(opts.empty ?? 'Nothing to identify: type what to look for'); close(); renderNow(); }
+      if (e.key === 'Escape') { close(); if (opts.host) renderNow(); }
     };
-    promptWrap.replaceChildren(inp); inp.focus(); inp.select();
+    if (opts.host) { markPromptOpen = true; opts.host.append(inp); } else promptWrap.replaceChildren(inp);
+    inp.focus(); inp.select();
   }
   function promptFor(labelText: string, cb: (v: number) => void): void {
     const inp = el('input', { type: 'text', inputmode: 'decimal', placeholder: labelText, style: 'width:260px' }) as HTMLInputElement;
@@ -402,6 +410,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const dwell = show ? cardDwell(scenario, n) : null;
     const dflt: Record<MarkKind, string> = { pause: dwell !== null ? String(Math.round(dwell * 10) / 10) : '', loss: known !== null ? String(known) : '', carry: show && sp.vIn ? String(sp.vIn) : '', quick: String(n), tod: show && ins.restartTime !== undefined ? formatTodMark(ins.restartTime) : '', cp: '', train: '' };
     const label: Record<MarkKind, string> = { pause: 'chart pause time in seconds (P10.2)', loss: 'seconds lost (circled, written negative: -2.9)', carry: 'speed carried (mph)', quick: 'the row that comes quick (number)', tod: 'time of day (9:34:00)', cp: 'checkpoint number and time: CP3 9:14:22', train: 'delay m:ss (TRAIN Delay 3:47)' };
+    const host = rows.querySelector(`.row[data-n="${n}"] .ann`) as HTMLElement | null;
     promptText(label[kind], dflt[kind], raw => {
       const num = Number(raw.replace(/^[Pp]/, '').replace(/^-/, '').replace(',', '.'));
       let text = raw.trim(); let star = false;
@@ -416,11 +425,11 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       ann.addMark(row, mark);
       try { sim.act({ type: 'line.annotate', n: row, text: markAnnotation(mark) } as Action); } catch { /* older engine */ }
       lastBookKey = ''; flash(`Marked line ${row}: ${text}`); renderNow();
-    });
+    }, { host, empty: `Nothing written on line ${n}: type ${label[kind]}, or Esc to cancel` });
   }
   function renderBook(o: Observation): void {
     const key = `${o.currentLine}|${o.stoppedAtLine ?? ''}|${o.driver.lastExecutedLine ?? ''}|${o.phase}|${ann.serialize().length}|${Object.keys(o.annotations ?? {}).length}`;
-    if (key === lastBookKey) return; lastBookKey = key; lastExecuted = o.driver.lastExecutedLine ?? lastExecuted;
+    if (key === lastBookKey || markPromptOpen) return; lastBookKey = key; lastExecuted = o.driver.lastExecutedLine ?? lastExecuted;
     const frag = document.createDocumentFragment();
     const layout = bookLayout(scenario);   // GRIID-014: page breaks from the row heights (the hand-laid-out drill book keeps its own count)
     for (const r of bookRows(scenario.book, o.currentLine, { timeZone: scenario.timeZone, style: scenario.bookStyle })) {
@@ -429,7 +438,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       if (pageTop) {
         // PREREAD-001: the hand marks that live on the page edges: "COMES QUICK" with the circled row number at the bottom of the previous page, the carried speed at the top centre
         const quick = ann.marks(r.n - 1).find(m => m.kind === 'quick'), carry = ann.marks(r.n).find(m => m.kind === 'carry');
-        const bar = el('div', { class: 'page-break' }, el('span', { class: 'pb-left' }, quick ? el('span', { class: 'hand quick-note', title: 'written at the bottom of the previous page' }, quick.text) : scenario.name), el('span', { class: 'pb-mid' }, carry ? el('span', { class: 'hand carry-top', title: 'speed carried from the previous page' }, carry.text) : ''), el('span', {}, `Page ${pageNo} of ${layout.pages}`));
+        const bar = el('div', { class: 'page-break' }, el('span', { class: 'pb-left' }, quick ? el('span', { class: 'hand quick-note', title: 'written at the bottom of the previous page' }, quick.text) : stageDisplayName(scenario.name)), el('span', { class: 'pb-mid' }, carry ? el('span', { class: 'hand carry-top', title: 'speed carried from the previous page' }, carry.text) : ''), el('span', {}, `Page ${pageNo} of ${layout.pages}`));
         frag.append(bar);
       }
       const ins = scenario.book[r.n - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined;
@@ -442,17 +451,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       if (r.ta) { row.classList.add('ta-row'); row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'tabanner-cell', html: taBannerHtml(r) })); }   // REG Example #18: a full-width yellow row
       else if (r.info !== null) { row.classList.add('info-row'); row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg }) }), el('div', { class: 'gbc', html: infoBoxHtml(r) }), dCell); }   // GRIID-016: the Information Box over B and C
       else row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg }) }),
-        el('div', { class: 'gb', html: columnBHtml(r) }), el('div', { class: 'gc', html: columnCHtml(r), title: r.colC }), dCell);
-      // PREREAD-001: the hand marks written on this row (the page-edge ones are drawn in the page-break bars)
-      { const gcEl = row.querySelector('.gc') as HTMLElement | null;
-        for (const m of ann.marks(r.n)) {
-          const hand = (cls: string, text: string, star = false): string => `<span class="hand ${cls}" data-mark="${m.kind}">${esc(text)}${star ? ' <b class="star">\u2605</b>' : ''}</span>`;
-          if (m.kind === 'pause' && gcEl) { const t = [...gcEl.querySelectorAll('.cl.time')].find(x => r.pause && x.textContent === formatInterval(r.pause)); if (t) { t.classList.add('struck'); t.innerHTML = `<span class="struck-text">${esc(t.textContent ?? '')}</span> ${hand('pnote', m.text)}`; } }
-          else if (m.kind === 'loss' && gcEl) { const sp = [...gcEl.querySelectorAll('.cl.speed')]; const last = sp[sp.length - 1]; const html = `<div>${hand('circled', m.text)}</div>`; if (last) last.insertAdjacentHTML('afterend', html); else gcEl.insertAdjacentHTML('beforeend', html); }
-          else if (m.kind === 'carry' && !(r.n > 1 && pageNo !== (layout.pageOfIndex[r.n - 2] ?? 1)) && gcEl) gcEl.insertAdjacentHTML('beforeend', `<div>${hand('big', m.text)}</div>`);   // an empty Column C box
-          else if (m.kind === 'quick' && !(layout.pageOfIndex[r.n] !== undefined && layout.pageOfIndex[r.n] !== pageNo)) dCell.insertAdjacentHTML('beforeend', `<div>${hand('quick-note', m.text)}</div>`);
-          else if (m.kind === 'tod' || m.kind === 'cp' || m.kind === 'train') dCell.insertAdjacentHTML('beforeend', `<div>${hand('dnote', m.text, m.star)}</div>`);
-        } }
+        el('div', { class: arrowClass('gb', r), html: columnBHtml(r) }), el('div', { class: arrowClass('gc', r), html: columnCHtml(r), title: r.colC }), dCell);
+      // PREREAD-001: the hand marks written on this row (the page-edge ones are drawn in the page-break bars); the same drawing the printable page uses
+      placeRowMarks(row, ann.marks(r.n), { pause: r.pause, pageTop: r.n > 1 && pageNo !== (layout.pageOfIndex[r.n - 2] ?? 1), lastOnPage: layout.pageOfIndex[r.n] !== undefined && layout.pageOfIndex[r.n] !== pageNo });
       // annotation strip: highlighters + GO-time for pause lines (UI-013)
       const strip = el('div', { class: 'ann' });
       for (const h of HIGHLIGHTS) { const b = el('button', { class: `hl-btn ${h}`, title: `highlight ${h}` }); b.onclick = ev => { ev.stopPropagation(); ann.toggleHighlight(r.n, h as Highlight); lastBookKey = ''; renderBook(sim.observe({ peek: true })); }; strip.append(b); }
@@ -547,6 +548,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const see = taPanel.querySelector('#ta-see') as HTMLButtonElement | null;
     if (see) see.onclick = () => { taShowFiled = !taShowFiled; taSig = ''; renderNow(); };
     const doAck = (): void => {
+      // N12: a measured delay with no request filed: ask before the Done button closes the day
+      { const fv = taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)); const open = fv.endOfStage ? fv.legs.filter(l => l.measured >= 10 && !l.filed && l.suggested >= 10) : [];
+        if (open.length && !confirm(`Leg ${open.map(l => l.legIndex).join(', ')} has a measured delay (${open.map(l => formatInterval(l.measured)).join(', ')}) and no Time Allowance request filed. Cancel to file it first (Use, then Submit); OK to close the day without it.`)) return; }
       if (!taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).endOfStage) { flash('Press the red Done button once, after the last Time Allowances of the ENTIRE stage (the end-of-stage TA point)'); return; }
       act({ type: 'scorecard.ack' }); renderNow();
     };
@@ -575,6 +579,12 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const built = `${o.ta.windowEndsTod}|${vm.legs.map(l => l.legIndex).join(',')}|${taMode}`;
     if (taBuiltFor !== built) { taBuiltFor = built; taSig = ''; buildTaPanel(vm); }
     const count = taPanel.querySelector('#ta-count'); if (count) count.textContent = `window ${vm.countdown} left`;
+    if (taFocusPending) {
+      taFocusPending = false;
+      const order = taMode === 'paper' ? ['ta-car', 'ta-stage', 'ta-from', 'ta-to', 'ta-min', 'ta-sec'] : taLoggedIn ? ['ta-stage', 'ta-from', 'ta-to', 'ta-min', 'ta-cause'] : ['ta-car', 'ta-password', 'ta-phone'];
+      const fields = order.map(id => taField(id)).filter((f): f is HTMLInputElement => !!f);
+      (fields.find(f => f.value === '') ?? fields[0])?.focus();
+    }
     const sig = JSON.stringify([vm.legs.map(l => [l.measured, l.recoverable, l.suggested, l.fromLine, l.toLine, l.filed?.adjusted ?? null]), vm.requests.length, vm.ackAvailable, vm.acked]);
     if (sig === taSig) return; taSig = sig;
     const legsEl = taPanel.querySelector('#ta-legs'); if (legsEl) legsEl.innerHTML = `<thead><tr><th>Leg</th><th title="measured delay">Delay</th><th title="time you could have made up">Made up</th><th title="suggested request">Suggest</th><th>Lines</th><th></th></tr></thead><tbody>${vm.legs.map(l => `<tr data-leg="${l.legIndex}"><td>${l.legIndex}</td><td class="mono">${formatInterval(l.measured)}</td><td class="mono">${formatInterval(l.recoverable)}</td><td class="mono"><b>${formatInterval(l.suggested)}</b></td><td>${l.fromLine !== null ? `${l.fromLine}-${l.toLine}` : '-'}</td><td><button class="mini" data-leg="${l.legIndex}">Use</button></td></tr>`).join('')}</tbody>`;
@@ -607,10 +617,12 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   // ---------- UI-037 / MAKEUP-001 / CAL-006: the ledger ----------
   function ledgerHtml(o: Observation): string {
     const calRun = inCalibrationRun(scenario, o.driver.lastExecutedLine);
+    const untimedNow = !calRun && (inTransitRun(scenario, o.driver.lastExecutedLine) || (!!o.stoppedAtLine && sim.waitReason === 'hold'));   // N14: untimed states show no pace aid
     const ledgerLine = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div>`;
     const taLine = `<div class="muted">${o.ta.hasTaPoints ? (o.ta.windowOpen ? 'TA window open: file the request in the form on the road view (T).' : 'Held by a train, an accident scene or emergency speed? At the yellow TA box press T for the form (15 minutes).') : 'Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.'}</div>`;
     // CAL-006: no early/late cue at any rung during the calibration run: the navigator does the math afterwards
     const paceLine = calRun ? '<div class="muted" id="cal-nofeedback">Calibration run: no early/late feedback. Hold the speed, lap each point, do the math after.</div>'
+      : untimedNow ? '<div class="muted" id="untimed-note">Nothing is timed here (transit, warm-up or hold): no early / late number.</div>'
       : o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${escapeHtml(paceAidText(o.aids.earlyLate, sim.waitReason))}</b></div>` : '';
     // MAKEUP-001: the running total with the 10 % and 20 % options in mph and seconds, and the reminder to drop the extra at the next sign
     const entries = o.ledgerEntries ?? [];
@@ -674,7 +686,12 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       if (total !== null) { const el = Math.floor(Math.max(0, dwellSoFar)); const n = el <= total ? total - el : el - total; if (n !== lastCountSent) { lastCountSent = n; act({ type: 'count', n }); } }
     } else if (!o.stoppedAtLine) lastCountSent = null;
   }
-  function renderNow(): void { autoFollow(); obs = sim.observe(); for (const m of obs.driver.messages) driverLog.push(m); if (obs.stoppedAtLine && stopWaitTod === null) stopWaitTod = obs.tod; else if (!obs.stoppedAtLine) stopWaitTod = null; draw(obs); }
+  /** N16: the driver's echoed count (a bare digit per beat) is one updating line, not ten lines that push his questions out of the log. */
+  function pushDriver(m: DriverMessage): void {
+    const last = driverLog[driverLog.length - 1];
+    if (last && driverLineKind(m) === 'count' && driverLineKind(last) === 'count') driverLog[driverLog.length - 1] = m; else driverLog.push(m);
+  }
+  function renderNow(): void { autoFollow(); obs = sim.observe(); for (const m of obs.driver.messages) pushDriver(m); if (obs.stoppedAtLine && stopWaitTod === null) stopWaitTod = obs.tod; else if (!obs.stoppedAtLine) stopWaitTod = null; draw(obs); }
   function draw(o: Observation): void {
     const w = roadWrap.clientWidth || 600, h = roadWrap.clientHeight || 240;
     const rctx = prepare(roadCanvas, w, h);
@@ -685,7 +702,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     // pace aid: at a STOP show how long to wait (rung 3) or only early / late (rung 2), not the raw count to zero (PT-02 BUG-10)
     const dwellSoFar = stopWaitTod !== null ? o.tod - stopWaitTod : 0;
     const calRun = inCalibrationRun(scenario, o.driver.lastExecutedLine);   // CAL-006: no pace bar, no early/late cue and no countdown cue during the calibration run
-    let pace: number | null = calRun ? null : (o.aids.earlyLate ?? null); let paceMode: 'seconds' | 'arrow' | 'wait' = 'seconds'; let waitMoreS: number | null = null;
+    // N14: nothing is timed against the ghost in a transit or warm-up, in a calibration run or while the car waits at a hold: no "+N s late", no EARLY arrow (a rung 3 hold keeps its "wait N s more")
+    const holdWaiting = !!o.stoppedAtLine && sim.waitReason === 'hold';
+    const untimed = calRun || inTransitRun(scenario, o.driver.lastExecutedLine) || holdWaiting || o.phase === 'preread';
+    let pace: number | null = calRun || (untimed && !(holdWaiting && rung >= 3)) ? null : (o.aids.earlyLate ?? null); let paceMode: 'seconds' | 'arrow' | 'wait' = 'seconds'; let waitMoreS: number | null = null;
     if (o.stoppedAtLine && pace !== null) {
       if (rung >= 3) {
         const pc = cachedCard(o.stoppedAtLine);
@@ -721,7 +741,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme, app.settings.clockFace); }
     clockCanvas.dataset.minuteAmbiguous = String(cvm.minuteAmbiguous); clockCanvas.dataset.face = app.settings.clockFace;
     if (digitalSw) dwMode.classList.toggle('attn', cvm.minuteAmbiguous && sw.mode !== 'tod');
-    clockCap.innerHTML = `official start ${escapeHtml(formatClock(o.startTime))}${cvm.minuteAmbiguous ? '<div class="clock-warn" id="clock-warn">minute hand is between marks: read the minute on the watch (TOD, M)</div>' : ''}`;   // no numeric time of day at any aids rung (REG II.H.1.d(1))
+    clockCap.innerHTML = `${legalAsp ? `official start = printed base ${escapeHtml(formatClock(scenario.baseStartTime ?? o.startTime))} + your ASP` : `official start ${escapeHtml(formatClock(o.startTime))}`}${cvm.minuteAmbiguous ? '<div class="clock-warn" id="clock-warn">minute hand is between marks: read the minute on the watch (TOD, M)</div>' : ''}`;   // no numeric time of day at any aids rung (REG II.H.1.d(1))
     const svm = speedoViewModel(o.speedo.reading, 100);
     const pctx = prepare(spCanvas, spSize, spSize); if (pctx) drawSpeedo(pctx, svm, spSize, theme, o.driver.targetIndicated);
     spCap.innerHTML = `${policy.digitalReadouts ? `<b>${escapeHtml(svm.text)}</b> mph · ` : ''}${o.driver.targetIndicated !== null ? `holding ${escapeHtml(String(o.driver.targetIndicated))}` : 'no speed called'}`;
@@ -783,7 +803,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     skip.onclick = () => { if (blockedBySave()) return; act(drillStart ? { type: 'skipPreread', secondsBefore: minus + 5 } : { type: 'skipPreread' }); renderNow(); };
     const toggle = el('button', { id: 'preread-toggle', class: 'mini', title: 'collapse the pre-read to a strip over the road' }, 'Hide the pre-read (show clock and watch)'); toggle.onclick = () => setPrereadCollapsed(!prereadCollapsed, true);
     const v0 = li0?.speed; let accel = '';
-    if (v0 && li0) accel = drillStart ? ` Drill start: no queue and no count. The car launches itself at ${formatClock(li0.launchTime)}, your time minus ${minus} s for its ${li0.netLoss.toFixed(1)} s standing-start loss to ${v0} mph.` : ` Your car loses about ${li0.netLoss.toFixed(1)} s getting up to ${v0} mph, so launch ${minus} s before your time (${formatClock(li0.launchTime)}).`;
+    // N15: the legal rungs get no launch arithmetic (the numbers are the answer sheet): the standing-start loss is looked up on your own chart
+    if (v0 && li0) accel = !policy.computedCard
+      ? (drillStart ? ' Drill start: no queue and no count. The car launches itself on your launch second: your time minus the standing-start loss of your chart.' : ' Your car loses time getting up to speed (the 0 to speed cell of your chart), so launch that many seconds before your time.')
+      : drillStart ? ` Drill start: no queue and no count. The car launches itself at ${formatClock(li0.launchTime)}, your time minus ${minus} s for its ${li0.netLoss.toFixed(1)} s standing-start loss to ${v0} mph.` : ` Your car loses about ${li0.netLoss.toFixed(1)} s getting up to ${v0} mph, so launch ${minus} s before your time (${formatClock(li0.launchTime)}).`;
     const generic = drillStart
       ? `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one.${accel} Wait for it or fast-forward; leaving earlier is an early departure.`
       : `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one. The ghost leaves exactly on the second.${accel} Nobody releases you: wait for your time, launch your standing-start loss early, and expect the driver's warning about 30 seconds before.`;
@@ -794,12 +817,12 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       resumeBanner(),
       el('div', { class: 'keep preread-top' }, el('h2', {}, drill ? `${drill.id}: ${drill.title}` : scenario.name), toggle),
       preStart,
+      el('div', { class: 'keep prebtns', style: 'display:flex;gap:8px;justify-content:center;margin:6px 0;flex-wrap:wrap' }, ...(drillStart ? [skip, dep] : [pullBtn, warnBtn, dep, skip])),   // N10: the buttons sit above the fold of the box
       el('p', { class: 'objective' }, el('b', {}, 'Objective: '), objective),
       el('div', { class: 'keys-title muted' }, 'The keys that matter'), keysRow,
       el('p', {}, drillStart && hint.preread ? `${hint.preread}${accel}` : hint.preread ?? generic),
       rs.length ? el('p', { class: 'accent' }, rs.map(r => `Line ${r.line}: ${r.label}`).join(' · ')) : null,
       el('div', { class: 'big keep', id: 'countdown' }),
-      el('div', { class: 'keep prebtns', style: 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap' }, ...(drillStart ? [skip, dep] : [pullBtn, warnBtn, dep, skip])),
       el('p', { class: 'muted', style: 'margin-top:8px' }, 'Space starts the stopwatch; most navigators start it on the official second and run it as time-of-day all day.')));
   }
   /** N4: the cockpit pre-read offers the saved run of this drill: Resume restores it exactly as Home does, Start fresh discards it. */
@@ -834,10 +857,17 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     renderSimpleChart(line);
     if (!card) { cardBody.innerHTML = ''; return; }
     const parts: string[] = [`<div><b>Line ${line}</b>: ${escapeHtml(card.text)}</div>`];
-    const hold: HoldCard | null = policy.computedCard ? (holdCardFor(scenario, sim, line, o.asp) ?? openTransitCard(scenario, sim, o.driver.lastExecutedLine)) : null;   // UI-032: an open exact transit keeps its recorded IN time on the card
+    const drillStart = scenario.startProcedure === 'drill';
+    let hold: HoldCard | null = policy.computedCard ? (holdCardFor(scenario, sim, line, o.asp) ?? openTransitCard(scenario, sim, o.driver.lastExecutedLine)) : null;   // UI-032: an open exact transit keeps its recorded IN time on the card
+    if (hold && hold.start && drillStart) hold = null;   // N8/N9: a drill start launches itself: no "Restart, line 1" block, no count
     const lp = policy.computedCard ? startLaunchFor(scenario, line) : null;   // START-001: your time, launch at your time minus the standing-start loss
-    if (lp) parts.push(`<div class="launchcard" id="launchcard"><b>Launch</b> <span class="mono">${esc(lp.text)}</span><div class="muted">Warn the driver about 30 s before; count so the last count lands on the launch second.</div></div>`);
-    if (hold) parts.push(`<div class="holdcard ${hold.kind}" id="holdcard"><b>${escapeHtml(hold.title)}</b><div class="mono">${escapeHtml(hold.text)}</div></div>`);
+    if (lp) parts.push(`<div class="launchcard" id="launchcard"><b>Launch</b> <span class="mono">${esc(lp.text)}</span><div class="muted">${drillStart ? 'A drill start: the car launches itself on that second (fast-forward to it if you like).' : 'Warn the driver about 30 s before; count so the last count lands on the launch second.'}</div></div>`);
+    if (hold) {
+      const atHold = o.stoppedAtLine === hold.line && hold.goTod !== null;
+      const toOut = atHold ? hold.goTod! - o.tod : null;
+      const readK = policy.computedCard ? clockReadPrompt(hold, toOut) : null;   // N7: Bronze asks for the clock read the Debrief grades
+      parts.push(`<div class="holdcard ${hold.kind}" id="holdcard"><b>${escapeHtml(hold.title)}</b><div class="mono">${escapeHtml(hold.text)}</div>${!hold.start && hold.lead !== null && hold.goTod !== null && hold.lead > 0 ? `<div class="holdlead" id="holdlead">Say go at <b class="mono">${escapeHtml(formatClock(hold.goTod - hold.lead))}</b>: the out-time minus the ${hold.lead} s standing-start loss, the same lead at every hold.</div>` : ''}${readK ? `<div class="readclock accent" id="readclock"><b>${escapeHtml(readK)}</b></div>` : ''}</div>`);
+    }
     // PLAY-002: the transit in force prints no speed and none is called yet: its pace stays on the card whatever line the pointer is on
     { let tp = card.transitPace ?? null;
       if (!tp && o.phase === 'running' && o.driver.targetIndicated === null) for (let n = line; n >= 1; n--) { const ins = scenario.book[n - 1]; if (ins?.transit?.end) break; if (ins?.transit && !ins.transit.end) { tp = cachedCard(n)?.transitPace ?? null; break; } }
@@ -851,7 +881,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
         parts.push(`<div>Stop ${s.vIn} in / ${s.vOut} out${s.cap !== undefined ? ` (turn capped at ${s.cap} mph)` : ''}: loss <b class="mono">${s.loss.toFixed(1)}</b> s → dwell <b class="mono">${s.dwell.toFixed(1)}</b> s after "Stopped" <span class="muted">(set the bezel with ] )</span></div>`);
         if (o.stoppedAtLine === line && more !== null) parts.push(`<div class="stopcount muted" id="stopcount">Count it out loud for the driver: <kbd>X</kbd> (${countingStop ? '<b>counting</b>' : 'off'}); say "coming in at ${s.vIn}, out ${s.vOut}, holding for ${Math.round(s.dwell)}" first.</div><div class="stopnow">dwell so far <b class="mono">${Math.max(0, dwellSoFar).toFixed(1)}</b> s · ${more > 0.05 ? `wait <b class="mono">${more.toFixed(1)}</b> more s` : '<b class="ok">go now (G)</b>'}</div>`);
       } else if (card.stopNoPause) parts.push(`<div>STOP without pause: loss ${card.stopNoPause.loss.toFixed(1)} s is yours to recover.</div>`);
-      if (card.timed) parts.push(`<div>Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, call ${card.timed.then} at <b class="mono">${card.timed.call.toFixed(1)}</b> s (lead ${card.timed.lead.toFixed(1)})</div>`);
+      if (card.timed) parts.push(`<div>Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, call ${card.timed.then} at <b class="mono">${card.timed.call.toFixed(1)}</b> s (lead ${card.timed.lead.toFixed(1)})</div>${card.timed.fromGhost ? `<div class="timed-anchor accent" id="timed-anchor">Count from the ghost's departure = arrival + the ${card.timed.fromGhost.pause} s pause (${card.timed.fromGhost.afterStopped.toFixed(1)} s after "Stopped"), not from your go: call ${card.timed.then} ${card.timed.call.toFixed(1)} s after that = <b class="mono">${card.timed.fromGhost.callAfterStopped.toFixed(1)}</b> s after "Stopped".</div>` : ''}`);
       else if (card.speedChange) parts.push(`<div>Speed ${card.speedChange.from} → ${card.speedChange.to}: call it <b class="mono">${card.speedChange.lead.toFixed(1)}</b> s before the landmark (${card.speedChange.ft} ft)</div>`);
       if (card.turnLoss) {
         const t = card.turnLoss;
@@ -864,7 +894,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       if (scenario.book[line - 1]?.pause) parts.push(`<div>Your GO at: <b class="mono">${go ? escapeHtml(go) : 'not written'}</b></div>`);
       const hl = ann.highlights(line); if (hl.length) parts.push(`<div class="muted">highlighted: ${hl.join(', ')}</div>`);
     }
-    if (o.stoppedAtLine && o.currentLine !== o.stoppedAtLine) parts.push(`<div class="hintline">Book is on line ${o.currentLine}: press <kbd>N</kbd> to jump to line ${o.stoppedAtLine}.</div>`);
+    if (o.stoppedAtLine && o.currentLine !== o.stoppedAtLine) parts.unshift(`<div class="hintline">Book is on line ${o.currentLine}: press <kbd>N</kbd> to jump to line ${o.stoppedAtLine}.</div>`);   // first: the card scrolls inside the capped drawer (N1)
     cardBody.innerHTML = parts.join('');
   }
   function currentScale(o: Observation): number {

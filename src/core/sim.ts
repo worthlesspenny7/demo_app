@@ -1067,10 +1067,12 @@ export class Simulator {
       this.waitReason = 'hold';
       const k = this.holdKind(node); const go = this.holdGoTod(node);
       // PLAY-007: the line names the kind of hold (restart, exact-transit OUT, lunch / pit / fuel / rest stop)
-      if (k === 'restart') this.say(go !== null ? `Restart line. Our time is ${formatClock(go)}: give me 30 seconds and count me down to the launch second` : 'Restart line. Count me down to our launch second', 'info');
-      else if (k === 'transitEnd') this.say(go !== null ? `End of the exact transit. Say go at our out time ${formatClock(go)}` : 'End of the exact transit. Say go at our out time', 'info');
+      // N15: at the legal rungs (aids rung <= 1) the driver never states the computed time: the navigator works it out from the book (base + ASP, IN + interval, restart - 45m)
+      const legal = this.sc.aids.rung <= 1;
+      if (k === 'restart') this.say(go !== null && !legal ? `Restart line. Our time is ${formatClock(go)}: give me 30 seconds and count me down to the launch second` : legal ? 'Restart line. What is our time? Give me 30 seconds and count me down to the launch second' : 'Restart line. Count me down to our launch second', 'info');
+      else if (k === 'transitEnd') this.say(go !== null && !legal ? `End of the exact transit. Say go at our out time ${formatClock(go)}` : legal ? 'End of the exact transit. What is our out time? Say go on it' : 'End of the exact transit. Say go at our out time', 'info');
       else { const pk = this.sc.book.find(i => i.nodeId === node.id)?.promotedStop?.kind; const word = pk === 'meal' ? 'Lunch' : pk === 'refuel' ? 'Fuel' : pk === 'pit' ? 'Pit' : pk === 'rest' ? 'Rest' : 'Promoted';
-        this.say(go !== null ? `${word} stop. We leave AT ${formatClock(go)}, not before ${formatClock(go - this.sc.rules.earlyDepartureMinutes * 60)} (${this.sc.rules.earlyDepartureMinutes}-minute penalty window)` : `${word} stop`, 'info'); }
+        this.say(go !== null && !legal ? `${word} stop. We leave AT ${formatClock(go)}, not before ${formatClock(go - this.sc.rules.earlyDepartureMinutes * 60)} (${this.sc.rules.earlyDepartureMinutes}-minute penalty window)` : legal ? `${word} stop. When do we leave? Not more than ${this.sc.rules.earlyDepartureMinutes} minutes early (the penalty window)` : `${word} stop`, 'info'); }
     }
     else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0) { const tr = rng(`${this.sc.seed}:traffic:${node.id}`); if (tr.chance(p)) this.trafficClearTod = this.tod + tr.next() * 20; } }
     else if (this.holdRequested) { this.waitReason = node.kind === 'finish' ? 'finish' : 'hold'; this.say('Stopped here', 'info'); }
@@ -1278,7 +1280,7 @@ export class Simulator {
     const fromPreread = li.kind === 'start' && !st.warned;
     if (!(fromPreread && delta < 0) && this.checkOneMinute(ins.n, li.ownTime, actual, what, arrival)) return;
     if (delta > 2 && !arrivedLate) this.debriefFindings.push({ kind: 'lateLaunch', line: ins.n, seconds: delta, text: `${what} (line ${ins.n}) left ${delta.toFixed(1)} s after the launch time: launch = own time minus the standing-start net loss (${li.netLoss.toFixed(1)} s).` });
-    else if (delta < -3) this.debriefFindings.push({ kind: 'earlyLaunch', line: ins.n, seconds: delta, text: fromPreread ? `${what} (line ${ins.n}): you departed from the pre-read ${(-delta).toFixed(1)} s before your launch time. Wait for your minute: give the driver "about 30 seconds" and count down so GO lands on the launch second.` : `${what} (line ${ins.n}) left ${(-delta).toFixed(1)} s before the launch time: lead the car by its net loss (${li.netLoss.toFixed(1)} s) only.` });
+    else if (delta < -3) this.debriefFindings.push({ kind: 'earlyLaunch', line: ins.n, seconds: delta, text: fromPreread ? (this.sc.startProcedure === 'drill' ? `${what} (line ${ins.n}): you departed from the pre-read ${(-delta).toFixed(1)} s before your launch time. In a drill the car launches itself on the printed second: wait for it, or fast-forward to the launch.` : `${what} (line ${ins.n}): you departed from the pre-read ${(-delta).toFixed(1)} s before your launch time. Wait for your minute: give the driver "about 30 seconds" and count down so GO lands on the launch second.`) : `${what} (line ${ins.n}) left ${(-delta).toFixed(1)} s before the launch time: lead the car by its net loss (${li.netLoss.toFixed(1)} s) only.` });
   }
   private allStartDeltas(): StartDelta[] {
     const out = [...this.startDeltas];

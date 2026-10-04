@@ -397,7 +397,7 @@ describe('DRILL-002 headline tips and rubrics carry the handbook rule names and 
     const f = { ...mk('stop', 12), instrumentDiscipline: [{ kind: 'lapWhileFrozen' as const, line: 4, text: 'x' }, { kind: 'clockForInterval' as const, line: 5, text: 'y' }, { kind: 'clockForInterval' as const, line: 6, text: 'z' }] };
     const tip = headlineTip(f, sc); expect(tip).toMatch(/WATCH-009/); expect(tip).toMatch(/2 x no stopwatch start or lap at the landmark of a timed interval/); expect(tip.split(/(?<=\.)\s+(?=[A-Z])/).length).toBeLessThanOrEqual(2);
     const rb = drillById('D03')!.rubric(f, sc); expect(rb.feedback.join(' ')).toMatch(/lap taken while the split was still frozen/); expect(instrumentFindingLines(f.instrumentDiscipline).length).toBe(2);
-    expect(headlineTip({ ...mk('stop', 12), score: { ...r.score, legs: r.score.legs.map(l => ({ ...l, error: 0, penalty: 0 })) }, instrumentDiscipline: f.instrumentDiscipline }, sc)).toMatch(/^Clean run.*WATCH-009/);
+    expect(headlineTip({ ...mk('stop', 12), score: { ...r.score, legs: r.score.legs.map(l => ({ ...l, error: 0, penalty: 0 })) }, instrumentDiscipline: f.instrumentDiscipline }, sc)).toMatch(/^Leg times are clean, but.*WATCH-009/);   // PT-07 B7: an instrument finding is a finding: never "Clean run" next to one
   });
 });
 

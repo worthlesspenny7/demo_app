@@ -74,6 +74,16 @@ export interface TipOptions { stars?: number }
 /** Total Time Allowance credit the committee granted over all legs. */
 export function taCreditTotal(r: StageResult): number { return (r.score?.legs ?? []).reduce((a, l) => a + (l.taCredit ?? 0), 0); }
 
+/**
+ * N3: where the stop bucket came from. `pause` = seconds over the ghost at stops with a printed pause (the navigator's dwell), `noPause` = seconds
+ * at STOP signs with no pause printed (the stop and go loss that no dwell can save: it is made up, never "go earlier").
+ */
+export function stopCauses(r: StageResult): { pause: number; noPause: number } {
+  let pause = 0, noPause = 0;
+  for (const a of r.attribution ?? []) for (const st of a.stops ?? []) { if (st.pause > 0) pause += st.actualCost; else noPause += st.actualCost; }
+  return { pause, noPause };
+}
+
 /** Largest-bucket headline tip (DEBRIEF-001 at engine level). */
 export function headlineTip(r: StageResult, sc?: Scenario, opts: TipOptions = {}): string {
   const totals: Record<string, number> = {};
@@ -85,6 +95,9 @@ export function headlineTip(r: StageResult, sc?: Scenario, opts: TipOptions = {}
   if (minute) return `Start on time (the second S): ${minute.text}${inst}`;
   // PLAY-006: "Clean run" only with no penalty item (observation miss, early departure, DNF) and no start / minute / timed-interval finding
   const penalties = !!r.observationMissed || (r.score.earlyDeparturePenalty ?? 0) > 0 || !!r.score.dnf || (r.findings ?? []).length > 0;
+  // B7: an instrument finding is a finding too: the verdict is never "Clean run" next to one
+  const instrumentFindings = (r.instrumentDiscipline ?? []).length > 0;
+  if (!penalties && instrumentFindings && mean <= 3 && r.offCourseCount === 0) return `Leg times are clean, but the instruments were not used as taught:${inst}`;
   if (penalties && mean <= 3 && r.offCourseCount === 0) {
     const f = (r.findings ?? [])[0];
     if ((r.score.earlyDeparturePenalty ?? 0) > 0) return `Leg times are clean, but you left a promoted stop more than ${5} minutes before its departure time (+${r.score.earlyDeparturePenalty} s): leave AT the printed time, never earlier.${inst}`;
@@ -115,12 +128,20 @@ export function headlineTip(r: StageResult, sc?: Scenario, opts: TipOptions = {}
     return `You lost ${Math.round(v)} s in ${name} and recovered ${Math.round(recovered)} s in cruise; recover a little more, or earlier, next time (10 % rule: 10 % faster for 10 x the seconds lost).${inst}`;
   }
   const late = v > 0;
-  return `${tipFor(k, late, sc, r.events)}${inst}`;
+  return `${tipFor(k, late, sc, r.events, r)}${inst}`;
 }
 
-function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[]): string {
+function tipForStop(late: boolean): string {
+  return late ? 'Your stops cost more than the printed pause, so go earlier: dwell = the chart pause time for your IN/OUT pair (the printed pause minus the stop/start loss), written next to every pause.' : 'You left stops too early and are not using the whole pause: dwell = the chart pause time, no less.';
+}
+
+function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[], r?: StageResult): string {
   switch (k) {
-    case 'stop': return late ? 'Your stops cost more than the printed pause, so go earlier: dwell = the chart pause time for your IN/OUT pair (the printed pause minus the stop/start loss), written next to every pause.' : 'You left stops too early and are not using the whole pause: dwell = the chart pause time, no less.';
+    case 'stop': {
+      // N3: stops with no printed pause lose the stop and go time whatever the dwell is: the tip is to make it up, not to "go earlier"
+      if (late && r) { const c = stopCauses(r); if (c.noPause >= 1.5 && c.pause < 1.5) return `Your stops cost ${Math.round(c.noPause + Math.max(0, c.pause))} s, but your dwells were right: the loss is at STOP signs with no pause printed, where the stop and go costs the car time that no dwell can save. Go as soon as it is safe and make the seconds up with the 10 % rule (10 % faster for 10 x the seconds lost).`; }
+      return tipForStop(late);
+    }
     case 'start': return late ? 'You left the start late: leave early by the standstill acceleration loss (the 0 > speed cell of your acceleration chart; about 4-5 s for the simulator\'s Ford, a simulator default: measure your car).' : 'You left the start too early: lead by the acceleration loss only (about 4-5 s for the simulator\'s Ford), not more.';
     case 'speedChange': return 'Landmark speed changes are mistimed: split at the sign, crossing it at the midpoint speed, which means beginning the change half a ramp early.';
     case 'timedChange': return "Timed changes are off: count from the ghost's departure (arrival + pause) and split the change at the sign by calling it half a ramp early.";
@@ -128,7 +149,7 @@ function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[]): s
     case 'offCourse': return "A wrong turn cost the leg: stay on course first (the third of the Four S's) and confirm the landmark before the leading edge of the intersection. Once you know you are lost: turn around where it is safe, start the stopwatch at the turn-around and double it for the lost time, rejoin 30 s behind a car known to be on course, and never ask for a Time Allowance for a wrong turn.";
     case 'turn': return 'Turns cost time the ghost does not spend: write the turn chart loss on your card (the handbook\'s Packard: approach 40, exit 35 = 4.0 s) and recover it with the 10 % rule right after the turn.';
     case 'cruise': {
-      if (sc && events && uncalledSpeeds(events, sc).length) { const m = uncalledSpeeds(events, sc); return `Cruise ran ${late ? 'slow' : 'fast'} because ${m.length === 1 ? `${m[0]!.mph} at line ${m[0]!.line} was` : `${m.length} new speeds (first ${m[0]!.mph} at line ${m[0]!.line}) were`} never called: the driver keeps the old speed until you call the new one, and after every stop he needs the out speed again.`; }
+      if (sc && events && uncalledSpeeds(events, sc).length) { const m = uncalledSpeeds(events, sc); return `Cruise ran ${late ? 'slow' : 'fast'} because ${m.length === 1 ? `${m[0]!.mph} at line ${m[0]!.line} was` : `${m.length} new speeds (first ${m[0]!.mph} at line ${m[0]!.line}) were`} never called: the driver keeps the old speed until you call the new one (a stop that leaves at the speed it came in at needs no call).`; }
       const speedoTrue = sc ? sc.speedo.kind === 'timewise' && Math.abs(sc.speedo.gain - 1) < 0.003 && Math.abs(sc.speedo.offset) < 0.1 : false;
       if (speedoTrue) return late ? 'Cruise segments ran slow because the driver wandered under the assigned speed: watch the needle and call small corrections (+1) sooner, and make up the rest with the 10 % rule.' : 'Cruise segments ran fast because the driver wandered over the assigned speed: call small corrections (-1) sooner.';
       return late ? 'You ran slow on the cruise segments because the speedometer reads high: calibrate and hold a corrected indicated speed.' : 'You ran fast on the cruise segments because the speedometer reads low: calibrate and hold a corrected indicated speed.';
@@ -215,7 +236,7 @@ export function uncalledSpeeds(events: SimEvent[] | null | undefined, scenario: 
       || events.some(e => e?.type === 'makeUp.dropped' && e.detail?.line === ins.n);
     // the speed before was the same: nothing to call
     const before = k > 0 ? (() => { for (let j = k - 1; j >= 0; j--) { const b = scenario.book[j]!; const bv = b.timed ? b.timed.thenSpeed : b.speed; if (bv !== undefined) return bv; } return undefined; })() : undefined;
-    if (!called && (before !== v || ins.pause)) out.push({ legIndex: legs[ci] ?? 1, line: ins.n, mph: v }); // after a STOP the out speed is called again
+    if (!called && before !== v) out.push({ legIndex: legs[ci] ?? 1, line: ins.n, mph: v }); // N4: after a STOP the driver resumes the speed he carried in by himself: only a different out speed has to be called
   }
   return out;
 }

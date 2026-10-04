@@ -25,7 +25,7 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
   const page = el('div', { class: 'page' });
   const lesson = LESSONS.find(l => l.id === lessonId);
   if (!lesson) {
-    page.append(el('h1', {}, 'School'), el('p', { class: 'muted' }, `${LESSONS.length} readings, three to six minutes each, one check question at the end. Then go drive.`));
+    page.append(el('h1', {}, 'School'), el('p', { class: 'muted' }, `${LESSONS.length} readings, ${Math.min(...LESSONS.map(l => l.minutes))} to ${Math.max(...LESSONS.map(l => l.minutes))} minutes each (${LESSONS.reduce((a, l) => a + l.minutes, 0)} minutes in all; every card shows its own), one check question at the end. Then go drive.`));
     const cards = el('div', { class: 'cards' });
     for (const l of LESSONS) {
       const done = app.progress.lessonDone(l.id);

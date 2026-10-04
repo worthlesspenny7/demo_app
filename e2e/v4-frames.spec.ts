@@ -58,14 +58,15 @@ test('PREREAD-002 a preset mark is written on the book row as the real hand mark
   const n = await page.evaluate(() => window.__rally!.observe().book.find(i => i.pause && (!i.turn || i.turn === 'S'))!.n);
   const row = page.locator(`#book .row[data-n="${n}"]`);
   await row.locator('select.mark-sel').selectOption('pause');
-  await page.locator('#prompt input').fill('10.2'); await page.locator('#prompt input').press('Enter');
+  await expect(row.locator('input.mark-input')).toBeFocused();   // PT-07 N13: the prompt opens beside the row
+  await row.locator('input.mark-input').fill('10.2'); await row.locator('input.mark-input').press('Enter');
   await expect(row.locator('.struck-text')).toHaveText('0m15s');                                              // the printed pause is struck
   await expect(row.locator('.hand.pnote')).toHaveText('P10.2');                                               // and "P10.2" is written beside it
   await row.locator('select.mark-sel').selectOption('loss');
-  await page.locator('#prompt input').fill('2.9'); await page.locator('#prompt input').press('Enter');
+  await row.locator('input.mark-input').fill('2.9'); await row.locator('input.mark-input').press('Enter');
   await expect(row.locator('.hand.circled')).toHaveText('-2.9');
   await row.locator('select.mark-sel').selectOption('train');
-  await page.locator('#prompt input').fill('3:47'); await page.locator('#prompt input').press('Enter');
+  await row.locator('input.mark-input').fill('3:47'); await row.locator('input.mark-input').press('Enter');
   await expect(row.locator('.hand.dnote')).toContainText('TRAIN Delay 3:47'); await expect(row.locator('.hand.dnote .star')).toHaveCount(1);
   const sent = await page.evaluate(m => window.__rally!.sim.actions.filter(a => a.action.type === 'line.annotate' && (a.action as { n: number }).n === m).map(a => (a.action as { text: string }).text), n);
   expect(sent).toEqual(expect.arrayContaining(['P10.2', '-2.9', 'TRAIN Delay 3:47 *']));

@@ -69,7 +69,7 @@ test('UI-029 GRIID-014 GRIID-018 the printable book route lays pages out by cont
   expect(await page.locator('.book-sheet').count()).toBe(Math.ceil(total / 8)); expect(await page.locator('.book-sheet').first().locator('.grow').count()).toBe(8);
   await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText(`Page 1 of ${Math.ceil(total / 8)}`);
   await expect(page.locator('.book-sheet .grow.ta-row .tabanner').first()).toBeVisible();   // GRIID-013: one rounded yellow box
-  await expect(page.locator('.book-sheet').nth(1).locator('.sheet-foot')).toContainText('fullStage #1');
+  await expect(page.locator('.book-sheet').nth(1).locator('.sheet-foot')).toContainText('Day stage 1');
   await expect(page.locator('.book-sheet .grow .gc').first()).toContainText('CDT');         // the zone label over the watch (GRIID-010)
   expect(await page.locator('.book-sheet .grow .gc svg[data-sym="restart"] text').first().textContent()).toBe('8:00:00');   // the time inside the watch
 });

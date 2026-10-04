@@ -38,13 +38,13 @@ export function drawSawtoothClock(ctx: CanvasRenderingContext2D, vm: ClockVm, si
   }
   // black hour numerals 1-12
   for (let i = 1; i <= 12; i++) { const [x, y] = polar(cx, cy, rd * 0.62, i * 30); label(ctx, String(i), x, y, Math.max(11, rd * 0.2), '#111', '700'); }
-  label(ctx, 'WWV', cx, cy + rd * 0.22, Math.max(6, rd * 0.06), '#222', '700');
-  label(ctx, '(303) 499-7111', cx, cy + rd * 0.3, Math.max(6, rd * 0.055), '#222', '600');
+  label(ctx, 'WWV', cx, cy + rd * 0.36, Math.max(6, rd * 0.06), '#222', '700');
+  label(ctx, '(303) 499-7111', cx, cy + rd * 0.43, Math.max(6, rd * 0.055), '#222', '600');
   // hands: black spades for hour and minute (no tint: a loose minute hand is merely displaced, INST-001), thin red second hand with a paddle tail
-  spade(ctx, cx, cy, vm.hourDeg, rd * 0.5, Math.max(4, rd * 0.085), '#111');
-  spade(ctx, cx, cy, vm.minuteDeg, rd * 0.82, Math.max(3.4, rd * 0.07), '#111');
+  spade(ctx, cx, cy, vm.hourDeg, rd * 0.42, Math.max(4, rd * 0.095), '#111');   // PT-07 N17: the hour hand stops inside the numerals, the minute hand reaches the minute track
+  spade(ctx, cx, cy, vm.minuteDeg, rd * 0.93, Math.max(3.2, rd * 0.06), '#111');
   const red = '#d11d1d';
-  hand(ctx, cx, cy, vm.secondDeg, rd * 0.9, Math.max(1, rd * 0.013), red, rd * 0.12);
+  hand(ctx, cx, cy, vm.secondDeg, rd * 0.96, Math.max(1, rd * 0.013), red, rd * 0.12);
   ctx.save(); ctx.translate(cx, cy); ctx.rotate(vm.secondDeg * Math.PI / 180); ctx.fillStyle = red; ctx.beginPath(); ctx.ellipse(0, rd * 0.2, Math.max(2.5, rd * 0.04), rd * 0.085, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   // hub nut
   ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, rd * 0.045), 0, Math.PI * 2); ctx.fillStyle = '#2b2b2b'; ctx.fill(); ctx.beginPath(); ctx.arc(cx - rd * 0.01, cy - rd * 0.012, Math.max(1.2, rd * 0.018), 0, Math.PI * 2); ctx.fillStyle = '#9a9a9a'; ctx.fill();

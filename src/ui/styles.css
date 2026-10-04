@@ -102,12 +102,22 @@ tr.ace td { color: var(--ok); }
 .row .gd { line-height: 1.2; min-width: 0; overflow-wrap: anywhere; text-align: left; font-family: Arial, Helvetica, sans-serif; }
 .row .gd .cold { color: #555; font-style: italic; font-size: 11px; display: block; }
 .row .gd .remark { color: #333; font-style: italic; display: block; }
-.row .ann { grid-column: 2 / 6; display: flex; gap: 4px; align-items: center; font-size: 12px; background: #eee9d8; border-right: 0; }
+.row .ann { grid-column: 2 / 6; display: flex; gap: 4px; align-items: center; font-size: 11px; background: transparent; border-top: 1px dotted #c9c3ae; border-right: 0; padding-top: 1px; padding-bottom: 1px; opacity: 0.55; }
+/* PT-07: a light tool strip (about 20 px) under each row, full strength on the current, stopped and hovered row, so five or more rows fit the book column */
+.row:hover .ann, .row.current .ann, .row.stopped .ann, .row .ann:focus-within { opacity: 1; }
+.row .ann .muted { font-size: 10px; }
 .row.prev { opacity: 0.85; } .row.next { opacity: 1; }
 .row.current { opacity: 1; background: var(--paper-hi); border-left-color: var(--accent); font-size: 14px; }
 .row.current .gd { font-size: 13px; }
 .page-break { padding: 2px 10px; font-size: 11px; color: var(--muted); background: var(--bg-2); border-top: 2px solid var(--line); border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; letter-spacing: 0.04em; }
 /* GRIID columns B and C (UI-029) */
+/* PT-07 section arrows: the real sheet draws a long vertical arrow down Columns B and C from the row that opens a transit (or the calibration run) to the row that ends it.
+   Each segment is a flexible element above (arrival), below (departure) or instead of (a row inside the section) the cell's own content. */
+.vseg { flex: 1 1 auto; align-self: stretch; min-height: 14px; width: 100%; margin-left: 0; position: relative; -webkit-print-color-adjust: exact; print-color-adjust: exact; background: linear-gradient(#111, #111) center / 1.5px 100% no-repeat; }
+.vseg.head { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='9'><path d='M0 0L5 9L10 0z' fill='%23111'/></svg>") bottom center / 10px 9px no-repeat, linear-gradient(#111, #111) center top / 1.5px calc(100% - 4px) no-repeat; }
+.vseg.tail { background: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='9'><path d='M0 9L5 0L10 9z' fill='%23111'/></svg>") top center / 10px 9px no-repeat, linear-gradient(#111, #111) center bottom / 1.5px calc(100% - 4px) no-repeat; }
+.gb:has(.vseg), .gc:has(.vseg) { justify-content: flex-start; gap: 0; }
+.vseg.cont { margin: -4px 0; } .vseg.head { margin-top: -4px; } .vseg.tail { margin-bottom: -4px; }   /* the line runs through the cell padding: one unbroken arrow down the rows */
 .gb { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
 .bsym { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; }
 .blabel { font: 700 10px Arial, Helvetica, sans-serif; line-height: 1; }
@@ -132,7 +142,9 @@ tr.ace td { color: var(--ok); }
 .hand.dnote, .hand.quick-note { display: block; text-align: left; line-height: 1.25; }
 .struck-text { position: relative; display: inline-block; } .struck-text::after { content: ''; position: absolute; left: -2px; right: -2px; top: 50%; border-top: 2px solid #111; transform: rotate(-22deg); }
 .page-break .pb-left, .page-break .pb-mid { flex: 1; } .page-break .pb-mid { text-align: center; } .page-break .hand { color: #8fb4ff; } .page-break .hand.carry-top { font-size: 1.6em; line-height: 1; }
-.mark-sel { font-size: 11px; max-width: 92px; }
+.mark-sel { font-size: 10px; max-width: 84px; height: 18px; padding: 0 2px; line-height: 1; }
+.mark-input { font-size: 12px; padding: 1px 4px; height: 20px; }
+.row .ann .go-time { height: 18px; }
 /* the Time Allowance row: one rounded black-outlined box over A to D on yellow (REG Example #18); no Column B symbol */
 .row.ta-row { background: var(--paper); opacity: 1; }
 .row.ta-row .tabanner-cell { grid-column: 2 / -1; padding: 4px; border-right: 0; }
@@ -152,18 +164,17 @@ tr.ace td { color: var(--ok); }
 .row.stopped { background: var(--panel-2); border-left-color: var(--danger); opacity: 1; }
 .row .stoptag { color: var(--danger); font-weight: 800; font-size: 11px; letter-spacing: 0.06em; }
 .row.hl-pause { box-shadow: inset 0 0 0 100vmax var(--hl-pause); } .row.hl-speed { box-shadow: inset 0 0 0 100vmax var(--hl-speed); } .row.hl-turn { box-shadow: inset 0 0 0 100vmax var(--hl-turn); } .row.hl-sign { box-shadow: inset 0 0 0 100vmax var(--hl-sign); }
-.hl-btn { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--line); padding: 0; }
+.hl-btn { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--line); padding: 0; }
 .hl-btn.pause { background: var(--hl-pause); } .hl-btn.speed { background: var(--hl-speed); } .hl-btn.turn { background: var(--hl-turn); } .hl-btn.sign { background: var(--hl-sign); }
-.go-time { width: 56px; font-family: var(--mono); font-size: 12px; padding: 2px 4px; }
-.cockpit .drawer { grid-column: 1 / 3; border-top: 1px solid var(--line); background: var(--bg-2); padding: 5px 10px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.go-time { width: 56px; font-family: var(--mono); font-size: 11px; padding: 1px 4px; }
+.cockpit .drawer { grid-column: 1 / 3; border-top: 1px solid var(--line); background: var(--bg-2); padding: 5px 10px; display: flex; flex-direction: column; gap: 5px; min-width: 0; min-height: 0; max-height: 33vh; overflow: hidden; }   /* N1: the drawer never takes more than 33 % of the window; its boxes scroll */
 .drawer .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .drawer .bar .callout { font-family: var(--mono); font-size: 15px; color: var(--accent); min-width: 180px; }
-.drawer .lapboard { display: grid; grid-template-columns: 0.9fr 2.5fr 0.8fr 0.9fr; gap: 10px; font-size: 13px; min-width: 0; }
+.drawer .lapboard { display: grid; grid-template-columns: 0.9fr 2.5fr 0.8fr 0.9fr; grid-template-rows: minmax(0, 1fr); gap: 10px; font-size: 13px; min-width: 0; min-height: 0; flex: 1 1 auto; overflow: hidden; }
 .drawer .lapboard.with-cal { grid-template-columns: 0.9fr 1.8fr 0.8fr 0.9fr 1.4fr; }
-.drawer .lapboard .box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 80px; max-height: 150px; overflow: auto; min-width: 0; }
-.cockpit.compact .drawer .lapboard .box { max-height: 124px; min-height: 70px; font-size: 12px; }
-/* N5: the perf card (and the ledger box, whose Pace aid row was half hidden too) grow to fit their content (the "Book is on line N: press N" hint must never be clipped) */
-.drawer .lapboard .box#perfcard, .cockpit.compact .drawer .lapboard .box#perfcard, .drawer .lapboard .box#ledgerbox, .cockpit.compact .drawer .lapboard .box#ledgerbox { max-height: none; overflow: visible; }
+.drawer .lapboard .box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 0; max-height: 100%; overflow: auto; min-width: 0; }
+.cockpit.compact .drawer .lapboard .box { font-size: 12px; }
+/* N1 (supersedes N5): the perf card and the ledger scroll inside the capped drawer, so the road view keeps its height (UI-009) */
 .drawer .lapboard .stopnow { margin-top: 4px; padding: 3px 6px; border-left: 3px solid var(--danger); background: var(--panel-2); }
 .drawer .lapboard .hintline { margin-top: 4px; color: var(--accent); }
 .drawer .lapboard .cal input { font-size: 12px; padding: 2px 4px; }
@@ -373,6 +384,8 @@ html.print-card-only .printcard .noprint { display: none; }
 .book-sheet .grow > div:last-child { border-right: 0; }
 .book-sheet .grow.ta-row > div:nth-child(2) { border-right: 0; padding: 0; }
 .book-sheet .grow.omitted { opacity: 0.55; }
+.book-sheet .page-mark { min-height: 22px; padding: 0 8px; } .book-sheet .page-mark.top { text-align: center; } .book-sheet .page-mark.bottom { text-align: left; }
+.book-sheet .gb, .book-sheet .gc { position: relative; }
 .book-sheet .gn { font: 400 10px Arial, Helvetica, sans-serif; display: flex; align-items: flex-end; padding: 2px; }
 .book-sheet .ga { display: flex; flex-direction: column; align-items: center; justify-content: center; color: #111; }
 .book-sheet .grow.info-row { grid-template-columns: 4fr 30fr 43.5fr 26.5fr; min-height: 190px; }
@@ -464,7 +477,16 @@ details.fold[open] > summary { margin-bottom: 8px; }
 .preread.collapsed .box .preread-top h2 { font-size: 13px; }
 .preread.collapsed .startcard .start-count { font-size: 36px; }
 .preread.collapsed .box .big { font-size: 18px; }
-.preread.collapsed .prebtns { margin-top: 4px !important; }
+.preread.collapsed .prebtns { margin-top: 2px !important; }
+/* N1: the folded strip must show the start card, the count and every button inside the 46 % road view at 1366x768 */
+.preread.collapsed .box { padding: 3px 10px; }
+.preread.collapsed .preread-top { gap: 6px; }
+.preread.collapsed .startcard .launch-plan { font-size: 12px; }
+.preread.collapsed .startcard .start-queue { margin-top: 0; font-size: 11px; }
+.preread.collapsed .startcard .start-warning { margin: 2px 0; padding: 2px 8px; font-size: 12px; }
+.preread.collapsed .startcard .start-count { margin-top: 0; font-size: 26px; }
+.preread.collapsed .box .big { font-size: 16px; line-height: 1.1; }
+.preread.collapsed .prebtns button { padding: 3px 8px; font-size: 12px; }
 .perfcard .transitpace, #perfcard .transitpace { margin: 3px 0; }
 /* PLAY-010: the TA done button pinned in the form's header */
 .ta-panel .ta-head { position: sticky; top: -8px; z-index: 2; background: rgba(20,26,34,0.98); padding: 2px 0; }

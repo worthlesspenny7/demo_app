@@ -199,6 +199,22 @@ export function inCalibrationRun(sc: Pick<Scenario, 'book'>, lastExecutedLine: n
   return false;
 }
 
+/**
+ * N14: true while the car is inside a transit or warm-up (opens with a transit box, closes at its end line or a restart): nothing is timed against the
+ * ghost there, so no early / late number or pace aid is shown. `lastExecutedLine` is the driver's last check-off (null before the first).
+ */
+export function inTransitRun(sc: Pick<Scenario, 'book'>, lastExecutedLine: number | null | undefined): boolean {
+  const book = sc.book ?? [];
+  let t = !!(book[0]?.transit && !book[0].transit.end);
+  const upTo = isNum(lastExecutedLine) ? Math.min(book.length, lastExecutedLine) : 0;
+  for (let i = 1; i <= upTo; i++) {
+    const ins = book[i - 1]!;
+    if (ins.transit && !ins.transit.end) t = true;
+    if (ins.transit?.end || (ins.restartTime !== undefined && ins.section === 'restart')) t = false;
+  }
+  return t;
+}
+
 // ---------- PROTO-001: the driver's lines and the next-call prompt ----------
 
 export type DriverLineKind = 'confirm' | 'mark' | 'holding' | 'count' | 'readback' | 'question' | 'info';
@@ -357,7 +373,7 @@ export function launchPlanFromInfo(info: { ownTime: number; netLoss: number; lau
 
 export interface StartDeltaRow { line: number; kind: string; text: string; delta: number | null; flagged: boolean }
 /** The starts and restarts against their launch times (result.startDeltas): "line 1 start: own 09:32:00, launch 09:31:57, left 09:31:58 (+1.0 s)". */
-export function startDeltaRows(result: unknown): StartDeltaRow[] {
+export function startDeltaRows(result: unknown, opts: { drillStart?: boolean } = {}): StartDeltaRow[] {
   const list = ((result ?? {}) as Record<string, unknown>)['startDeltas'];
   if (!Array.isArray(list)) return [];
   return (list as Record<string, unknown>[]).filter(d => d && typeof d === 'object' && isNum(d['line'])).map(d => {
@@ -365,6 +381,6 @@ export function startDeltaRows(result: unknown): StartDeltaRow[] {
     const actual = isNum(d['actual']) ? formatClock(d['actual'] as number) : 'did not leave';
     const delta = isNum(d['delta']) ? (d['delta'] as number) : null;
     return { line: d['line'] as number, kind: String(d['kind'] ?? 'start'), delta, flagged: delta === null || Math.abs(delta) > 1.5,
-      text: `line ${d['line']} ${d['kind'] ?? 'start'}: own time ${own}, launch ${launch}, left ${actual}${delta === null ? '' : ` (${delta > 0 ? '+' : ''}${delta.toFixed(1)} s)`}${d['warned'] === false ? ', no warning to the driver' : ''}` };
+      text: `line ${d['line']} ${d['kind'] ?? 'start'}: own time ${own}, launch ${launch}, left ${actual}${delta === null ? '' : ` (${delta > 0 ? '+' : ''}${delta.toFixed(1)} s)`}${d['warned'] === false && !d['auto'] && !opts.drillStart ? ', no warning to the driver' : ''}` };
   });
 }

@@ -8,7 +8,7 @@ const mmss = (s: number): string => `${Math.floor(s / 60)}m${String(Math.round(s
 
 export function renderCampaign(root: HTMLElement): void {
   const d13 = (() => { try { return allDrills().find(d => d.id === 'D13') ?? null; } catch { return null; } })();
-  const tierNames = d13 ? d13.tiers.map(t => t.name) : ['Rookie', 'Sportsman', 'Legal'];
+  const tierNames = d13 ? d13.tiers.map(t => t.name) : ['Bronze', 'Silver', 'Gold'];
   const page = el('div', { class: 'page', id: 'campaign' }, el('h1', {}, 'D13 Campaign: the Great Race'),
     el('p', { class: 'muted' }, 'The Trophy Run (Stage 0) and nine stages, each a full D12 stage on its own seed and its own assigned starting position (ASP), scored with the age factor. Your division discards its worst legs of Stages 1-7 (REG-003); the Trophy Run is not part of the total and only breaks ties. Your best score per stage and the running total are kept in this browser. A real stage is 4 to 5 hours of driving at 1x: play one per evening, or use 4x on the open stretches.'));
   let tier = 0;
@@ -34,8 +34,8 @@ export function renderCampaign(root: HTMLElement): void {
       el('p', {}, sum.played ? `Raw ${c.raw} s, minus the worst ${sum.discardCount} legs of Stages 1-7${c.discarded.length ? ` (${c.discarded.map(mmss).join(', ')})` : ''} = ${c.afterDiscards} s, x age factor ${c.ageFactor.toFixed(3)} (1939) = ${c.ageFactored.toFixed(2)} points.` : `Play a stage to start the total. The ${sum.divisionLabel} division discards its worst ${sum.discardCount} legs of Stages 1-7; the age factor for a 1939 car is ${c.ageFactor.toFixed(3)}.`),
       c.withoutDetail.length ? el('p', { class: 'muted' }, `${c.withoutDetail.length === 1 ? `Stage ${c.withoutDetail[0]} was` : `Stages ${c.withoutDetail.join(', ')} were`} stored without leg detail, so ${c.withoutDetail.length === 1 ? 'it counts' : 'they count'} whole (no discards); replay ${c.withoutDetail.length === 1 ? 'it' : 'them'} to include ${c.withoutDetail.length === 1 ? 'it' : 'them'} in the discards.`) : null,
       c.eligible ? null : el('p', { class: 'muted' }, 'A DNF on Stage 8 or 9 removes Championship eligibility (V.F.5).'));
-    const st = el('table', { id: 'camp-standings' }, el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'Team'), el('th', { class: 'num' }, 'Total (x age factor)'), el('th', { class: 'num' }, 'Scoring year'), el('th', { class: 'num' }, 'Trophy Run pos.'))));
-    const sb = el('tbody', {}); for (const s of sum.standings) sb.append(el('tr', { class: s.you ? 'primary' : '' }, el('td', {}, String(s.rank)), el('td', {}, s.name), el('td', { class: 'num' }, s.total.toFixed(2)), el('td', { class: 'num' }, String(s.scoringYear)), el('td', { class: 'num' }, s.trophyRunPosition === undefined ? '-' : String(s.trophyRunPosition)))); st.append(sb);
+    const st = el('table', { id: 'camp-standings' }, el('thead', {}, el('tr', {}, el('th', {}, '#'), el('th', {}, 'Team (car, division)'), el('th', { class: 'num', title: 'Raw seconds after discards, times the car\'s age factor' }, 'Total (x age factor)'), el('th', { class: 'num' }, 'Scoring year'), el('th', { class: 'num' }, 'Trophy Run pos.'))));
+    const sb = el('tbody', {}); for (const s of sum.standings) sb.append(el('tr', { class: s.you ? 'primary' : '' }, el('td', {}, s.you && !sum.played ? '-' : String(s.rank)), el('td', {}, s.name), el('td', { class: 'num' }, s.you && !sum.played ? 'play a stage' : s.total.toFixed(2)), el('td', { class: 'num' }, String(s.scoringYear)), el('td', { class: 'num' }, s.trophyRunPosition === undefined ? '-' : String(s.trophyRunPosition)))); st.append(sb);
     const standings = el('div', { class: 'panel' }, el('h3', {}, 'Standings against benchmark pace'), el('p', { class: 'muted' }, `Order: ${sum.tieBreak.join(', then ')} (REG-004). The Trophy Run is only that last tie-break. Benchmark pace is a typical day score with no discards, for the stages you have played.`), st);
     table.replaceChildren(el('p', {}, el('b', {}, `${sum.played} of 9 stages played`), sum.played ? ` · stage scores total ${sum.total.toFixed(1)} points (${sum.totalRaw} raw s) · ${sum.aces} aces${sum.complete ? ' · campaign complete' : ''}` : ''), champ, t, standings);
   };
@@ -43,7 +43,7 @@ export function renderCampaign(root: HTMLElement): void {
   (sel as HTMLSelectElement).onchange = () => { tier = Number((sel as HTMLSelectElement).value) || 0; draw(); };
   (divSel as HTMLSelectElement).onchange = () => { setCampaignDivision((divSel as HTMLSelectElement).value as Division); draw(); };
   const reset = el('button', { class: 'danger' }, 'Clear campaign scores'); reset.onclick = () => { if (confirm('Erase the campaign table?')) { try { const keep = data().division; localStorage.removeItem(CAMPAIGN_KEY); if (keep) setCampaignDivision(keep); } catch { /* ignore */ } draw(); } };
-  page.append(el('div', { style: 'display:flex;gap:10px;align-items:center;margin:10px 0;flex-wrap:wrap' }, el('span', {}, 'Tier:'), sel, el('span', {}, 'Division:'), divSel, el('a', { href: '#/' }, 'Home')), table, el('div', { style: 'margin-top:12px' }, reset));
+  page.append(el('div', { style: 'display:flex;gap:10px;align-items:center;margin:10px 0;flex-wrap:wrap' }, el('span', { title: 'Bronze, Silver or Gold: how hard the stage is played (the driver and the speedometer)' }, 'Tier:'), sel, el('span', { title: 'Your division sets how many of your worst legs are discarded' }, 'Division:'), divSel, el('a', { href: '#/' }, 'Home')), table, el('div', { style: 'margin-top:12px' }, reset));
   void app;
   draw();
   root.replaceChildren(page);

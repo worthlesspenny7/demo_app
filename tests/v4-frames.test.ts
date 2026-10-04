@@ -131,7 +131,7 @@ describe('GRIID-002 GRIID-003 GRIID-010 the real page anatomy: Column B and C', 
   });
   it('GRIID-010 a restart is the bold zone label over a digital wristwatch with the time inside, then the speed; a restart may carry a timed chain; End timed portion is the watch in a circle with a slash and the interval below', () => {
     const restart = bookRows(stage.book, 1).find(r => r.cIcons.includes('restart'))!; const html = columnCHtml(restart);
-    expect(html).toMatch(/<div class="cicons"><b class="zone">CDT<\/b><span class="csym"><svg[^>]*data-sym="restart"/); expect(html).toMatch(new RegExp(`<text[^>]*>${restart.tod!.time}</text>`)); expect(html).toMatch(/<div class="cl (speed|time)">[^<]+<\/div>$/);
+    expect(html).toMatch(/<div class="cicons"><b class="zone">CDT<\/b><span class="csym"><svg[^>]*data-sym="restart"/); expect(html).toMatch(new RegExp(`<text[^>]*>${restart.tod!.time}</text>`)); expect(html).toMatch(/<div class="cl (speed|time)">[^<]+<\/div>(<span class="vseg[^>]*><\/span>)?$/);
     expect(restart.tod).toEqual({ zone: 'CDT', time: expect.stringMatching(/^\d+:\d\d:\d\d$/) });
     const chain = ins({ section: 'restart', restartTime: hms(9, 15, 0), baseTime: hms(9, 15, 0), timed: { holdSpeed: 25, seconds: 72, thenSpeed: 30 } }); expect(columnCLines(chain)).toEqual(['CDT 9:15:00', '25 MPH', '1m12s', '30 MPH']);
     const watch = griidIcon('restart', 44, { time: '12:00:00' }); expect(watch).toContain('>12:00:00<'); expect(watch).toContain('rx="12"'); expect(watch).toContain('width="30" height="8"');   // the case with a band stub above and below

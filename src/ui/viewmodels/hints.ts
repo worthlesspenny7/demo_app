@@ -8,7 +8,7 @@ const HINTS: Record<string, DrillHint> = {
   D03: { keys: [['G', 'go when the bezel hits the card dwell'], ['[ ]', 'set the bezel (Shift = 0.2 s)'], ['Space', 'start the watch at "Stopped"']], preread: null },
   D04: { keys: [['L', 'lap at the landmark'], ['digits + Enter', 'call the new speed on the count'], ['Space', 'watch']], preread: null },
   D05: { keys: [['digits + Enter', 'call the speed half a ramp early'], ['L', 'lap at the sign'], ['Space', 'watch']], preread: null },
-  D16: { keys: [['Q', 'pull up once the car ahead has left'], ['W', 'warn the driver: about 30 s'], ['G', 'go on the launch second'], ['M', 'watch TOD mode: the time of day']], preread: null },
+  D16: { keys: [['Q', 'pull up once the car ahead has left'], ['W', 'warn the driver: about 30 s'], ['G', 'go on the launch second'], ['M', 'watch TOD mode: the time of day'], ['K', 'read the clock at every IN, OUT and restart']], preread: null },
   D07: { keys: [['L', 'lap at each calibration mark'], ['digits + Enter', 'hold 50 on the speedo'], ['Calibration box', 'set the Timewise factor or card']], preread: null },
 };
 export function drillHint(drillId: string | null | undefined): DrillHint { return (drillId && HINTS[drillId]) || GENERIC; }

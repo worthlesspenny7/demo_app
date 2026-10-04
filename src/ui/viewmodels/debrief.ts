@@ -10,7 +10,7 @@ import type { Scenario, AidsConfig, Instruction } from '../../core/course.js';
 import { buildGhost, ghostTimeAt } from '../../core/ghost.js';
 import { stopLoss, rampLead, accelLoss } from '../../core/perf-table.js';
 import { headlineTip as engineHeadlineTip, timedAnchorTod, prevCrossTod, uncalledSpeeds } from '../../core/drills/rubrics.js';
-import { drillTip } from '../../core/drills/index.js';
+import { drillTip, drillRubric } from '../../core/drills/index.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { stopsFromEvents, speedsByNode, turnCap } from './counterfactual.js';
 import { restartLabel, lineSpeeds } from './cockpitinfo.js';
@@ -133,7 +133,7 @@ export function debriefViewModel(result: StageResult | null | undefined, scenari
     let sum = 0;
     for (const b of BUCKETS) {
       let v = num(att?.buckets?.[b]);
-      if (b === 'ta') v -= num(l.taCredit); // TA credit reduces the scored error
+      if (b === 'ta' && v === 0) v = -num(l.taCredit); // N2: the engine already sets the ta bucket to -credit (older results do not); the credit is counted once
       if (Math.abs(v) < 0.05) continue;
       v = r1(v);
       segments.push({ bucket: b, label: BUCKET_LABEL[b], seconds: v });
@@ -208,11 +208,13 @@ export function workedStops(events: SimEvent[] | null | undefined, scenario?: Sc
       ? `dwell = ${pause} - ? ; you called go at ${yourDwell.toFixed(1)} s`
       : `dwell = ${pause} - ${carLoss.toFixed(1)} = ${idealDwell!.toFixed(1)} s; you called go at ${yourDwell.toFixed(1)} s; ${signed1(net)} s${trafficWait > 0.5 ? `; traffic held the car ${trafficWait.toFixed(1)} s (ledger)` : ''}`;
     const noPause = pause === 0 && carLoss !== null;
+    // B16: a STOP with no pause and no printed speeds (inside a transit) has no arithmetic to show: no "entry ? / exit ?" row
+    if (pause === 0 && carLoss === null) continue;
     const text = noPause
-      ? `Stop at line ${line ?? '?'}: no pause printed, so the stop and go costs the car ${carLoss!.toFixed(1)} s that no dwell can save: go as soon as it is safe and make the seconds up with the 10 % rule.${trafficNote}`
+      ? `Stop, line ${line ?? '?'}: no pause printed, so the stop and go costs the car ${carLoss!.toFixed(1)} s that no dwell can save: go as soon as it is safe and make the seconds up with the 10 % rule.${trafficNote}`
       : carLoss === null
-      ? `Stop at line ${line ?? '?'}: pause ${pause} s; you waited ${yourDwell.toFixed(1)} s; ${signed1(net)} s vs the printed pause.`
-      : `Stop at line ${line ?? '?'}: entry ${vIn ?? vOut} / exit ${vOut}${turn && turn !== 'S' ? ` (turn ${turn}, capped at ${turnCap(turn, scenario!)} mph)` : ''}. Pause ${pause} s minus car loss ${carLoss.toFixed(1)} s = ideal dwell ${idealDwell!.toFixed(1)} s. You called go at ${yourDwell.toFixed(1)} s -> ${signed1(net)} s.${trafficNote}`;
+      ? `Stop, line ${line ?? '?'}: pause ${pause} s; you waited ${yourDwell.toFixed(1)} s; ${signed1(net)} s vs the printed pause.`
+      : `Stop, line ${line ?? '?'}: entry ${vIn ?? vOut} / exit ${vOut}${turn && turn !== 'S' ? ` (turn ${turn}, capped at ${turnCap(turn, scenario!)} mph)` : ''}. Pause ${pause} s minus car loss ${carLoss.toFixed(1)} s = ideal dwell ${idealDwell!.toFixed(1)} s. You called go at ${yourDwell.toFixed(1)} s -> ${signed1(net)} s.${trafficNote}`;
     out.push({
       legIndex: st.legIndex, nodeId: st.nodeId, line, vIn, vOut, entrySpeed: vIn, exitSpeed: vOut, pause, carLoss, cardLoss: carLoss,
       idealDwell, correctDwell: idealDwell, yourDwell, trafficWait, goAt, net, delta: noPause ? r1(yourDwell) : net, waitTod: st.waitTod, releaseTod: st.releaseTod, text, formulaText, ...(noPause ? { noPause: true } : {}),
@@ -374,7 +376,7 @@ export function workedCruise(attribution: LegAttribution[] | null | undefined, s
     const meanTrue = assigned === null ? null : r1(assigned * ratio);
     const pct = ratio > 0 ? r1((1 / ratio - 1) * 100) : 0;
     const miss = missed.filter(m => m.legIndex === a.legIndex);
-    const cause = miss.length ? ` -> you never called ${miss.map(m => `${m.mph} at line ${m.line}`).join(', ')}: the driver kept the old speed (call every new speed, and the out speed after every stop)`
+    const cause = miss.length ? ` -> you never called ${miss.map(m => `${m.mph} at line ${m.line}`).join(', ')}: the driver kept the old speed (call every new speed; a stop that leaves at the speed it came in at needs no call)`
       : Math.abs(pct) >= 0.3 ? (perfectSpeedo ? ` -> the driver wandered ${pct > 0 ? 'under' : 'over'} the speed (the speedometer reads true): call ${pct > 0 ? '+1' : '-1'} sooner` : ` -> your card is ${Math.abs(pct).toFixed(1)} % ${pct > 0 ? 'low (call more)' : 'high (call less)'}`) : '';
     const text = `Leg ${a.legIndex}: mean true speed ${meanTrue === null ? `${(ratio * 100).toFixed(1)} % of assigned` : `${meanTrue.toFixed(1)} for assigned ${la?.mixed ? '~' : ''}${assigned}`} -> ratio ${ratio.toFixed(3)} -> ${signed1(secondsOver)} s over ${Math.round(cruiseSeconds)} s of cruise${cause}.`;
     out.push({ legIndex: a.legIndex, assigned, meanTrue, ratio, cruiseSeconds, secondsOver, cardCorrectionPct: pct, text, ...(miss.length ? { uncalled: miss.map(m => ({ line: m.line, mph: m.mph })) } : {}) });
@@ -401,7 +403,7 @@ const FIX: Record<ManeuverType, { bias: (m: number, o: { perfectSpeedo: boolean 
   cruise: { bias: (m, o) => (o.perfectSpeedo
     ? (m > 0 ? `You lose ${Math.abs(m).toFixed(1)} s per leg at cruise: the driver wanders under the assigned speed (the speedometer is a perfect Timewise). Call +1 sooner.` : `You gain ${Math.abs(m).toFixed(1)} s per leg at cruise: the driver wanders over the assigned speed. Call -1 sooner.`)
     : (m > 0 ? `You lose ${Math.abs(m).toFixed(1)} s per leg at cruise: your indicated speed reads high; correct the card by about 0.5 mph.` : `You gain ${Math.abs(m).toFixed(1)} s per leg at cruise: the speedometer reads low; call half a mph less.`)),
-    noise: 'Cruise error scatters from leg to leg: check that every new speed (and the out speed after every stop) was called, then ask for the read-back ("At 36").' },
+    noise: 'Cruise error scatters from leg to leg: check that every new speed (and an out speed that differs from the one you carried in) was called, then ask for the read-back ("At 36").' },
   restart: { bias: m => (m > 0 ? `You leave restarts ${Math.abs(m).toFixed(1)} s late: call go at the out-time minus the standing-start loss, on the clock, not on the stopwatch.` : `You leave restarts ${Math.abs(m).toFixed(1)} s early: hold until the out-time minus the standing-start loss.`), noise: 'Restart timing scatters: set the clock bezel to the out-time and call go on the count.' },
 };
 
@@ -440,11 +442,18 @@ export function biasNoise(src: { stops: StopRow[]; timed: TimedRow[]; landmarks:
  */
 export function rankTips(result: StageResult | null | undefined, scenario: Scenario | null | undefined, hasRows: boolean, bucketTip: string, bias: BiasNoiseVm, totals: Record<Bucket, number>): string[] {
   let first = bucketTip;
-  if (hasRows && result) { try { first = engineHeadlineTip(result, scenario ?? undefined); } catch { first = bucketTip; } }
+  // B7: the headline knows the run's stars (the drill's rubric, or the stage's raw-score bands), so a 0-2 star run never reads "Clean run"
+  if (hasRows && result) {
+    try {
+      const rb = scenario ? drillRubric(result, scenario) : null; const raw = num(result.score?.raw);
+      const stars = rb ? rb.stars : raw <= 3 ? 3 : raw <= 13 ? 2 : raw <= 25 ? 1 : 0;
+      first = engineHeadlineTip(result, scenario ?? undefined, { stars });
+    } catch { first = bucketTip; }
+  }
   // EDU-002: a drill run leads with the drill's own tip (its rubric knows when the stars came from calls, chart cells, notations, laps or departures)
   if (hasRows && result && scenario) { const t = drillTip(result, scenario); if (t) first = t; }
   const tips = [first];
-  if (!hasRows || !bias.tip || !bias.topType || first.startsWith('Clean run')) return tips;
+  if (!hasRows || !bias.tip || !bias.topType || first.startsWith('Clean run') || first.startsWith('Leg times are clean')) return tips;
   if (bias.topType === 'cruise') return tips; // the headline already covers cruise, with the speedometer caveat
   if (bias.topType === 'turn') {
     const row = bias.rows.find(r => r.type === 'turn');

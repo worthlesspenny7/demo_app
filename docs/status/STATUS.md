@@ -14,13 +14,10 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): UI fix sprint from PT-07 (Sonnet) on e7d77d5 (education sprint landed: 542 unit, 62 e2e, 311/311,
-  ENGINE 3.1.0; new Start-here order four-s, griid-cameo, protocol, D09, lost, D10, transits, D16, ghost-car, D01, D03,
-  D04, D05, D06, D08, D07, D18). PT-07 top-10: day-stage cockpit collapse at 1366x768 (High), debrief truth (TA credit
-  counted twice, no-pause stop 'go earlier', 'never called 40'), D04 count start, D16 lead consistency + clock prompts,
-  drill-start text, pace chip in untimed states, TA form T/Done, legal-rung giveaways, book arrows/footer/marks.
-  When it lands: five checks, commit, push, then PT-08 replay. Known not-done: PT-06 LOW 14, 20-27; D08b not a gate
-  for D11/D12; D05 rookie at Gold 1-2 stars.
+- In flight (2026-10-04): UI fix sprint PT-07 LANDED in the working tree (NOT committed): tsc clean, 558 unit, 322/322 specs, 73 e2e
+  (see LOG "UI fix sprint PT-07"). Next: commit, push, then the PT-08 replay on the new build. Known not-done: PT-06 LOW 14, 20-27;
+  D08b not a gate for D11/D12; D05 rookie at Gold 1-2 stars; PT-07 leftovers listed in the LOG entry (TA worksheet shows the lapped
+  delay beside the engine's, CAMEO road names, page count).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

@@ -75,7 +75,7 @@ export function renderDebrief(root: HTMLElement): void {
   // worked arithmetic
   const worked = el('details', { class: 'panel worked fold', id: 'worked', style: 'margin-top:14px' }, el('summary', {}, 'Worked arithmetic per maneuver (stops, restarts, timed changes, turns)'));
   const ul = el('ul', {});
-  for (const s of vm.stops) ul.append(el('li', {}, `Stop, line ${s.line ?? '?'}: entry ${s.entrySpeed ?? '?'} / exit ${s.exitSpeed ?? '?'}; pause ${s.pause}; car loss ${s.cardLoss?.toFixed(1) ?? '?'} s; ideal dwell ${s.correctDwell?.toFixed(1) ?? '?'} s; you called go at ${s.yourDwell.toFixed(1)} s → ${sgn(s.delta)} s${s.trafficWait > 0.5 ? `; traffic held the car ${s.trafficWait.toFixed(1)} s (ledger)` : ''}`));
+  for (const s of vm.stops) ul.append(el('li', {}, s.text));   // B16: the row's own text (no "entry ?" rows, no-pause stops say "make the seconds up")
   for (const r of vm.restarts) ul.append(el('li', {}, r.text));
   for (const t of vm.timed) ul.append(el('li', {}, t.text));
   for (const t of vm.landmarks) ul.append(el('li', {}, t.text));

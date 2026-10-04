@@ -206,4 +206,9 @@ export function drillTip(r: StageResult, sc: Scenario): string | null {
   const d = drillOfScenario(sc); if (!d || d.kind !== 'drive') return null;
   try { const rb = d.rubric(r, sc); return rb.tip ?? rb.feedback[0] ?? null; } catch { return null; }
 }
+/** B7: the drill's rubric for a finished run (stars included), or null when the scenario is not a drill or the rubric fails. */
+export function drillRubric(r: StageResult, sc: Scenario): Rubric | null {
+  const d = drillOfScenario(sc); if (!d || d.kind !== 'drive') return null;
+  try { return d.rubric(r, sc); } catch { return null; }
+}
 export type { Drill, Rubric };

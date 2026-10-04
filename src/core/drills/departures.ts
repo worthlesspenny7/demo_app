@@ -26,7 +26,7 @@ export function startFeedback(r: StageResult): string[] {
   const out: string[] = [];
   for (const d of r.startDeltas ?? []) {
     if (d.actual === null || d.delta === null) { out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): never left.`); continue; }
-    out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): your time ${formatClock(d.ownTime)}, launch ${formatClock(d.launchTime)} (minus ${Math.round(d.ownTime - d.launchTime)} s for the ${d.netLoss.toFixed(1)} s standing-start loss), left ${formatClock(d.actual)} (${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} s against the launch time${d.warned ? '' : '; no 30-second warning was given'}).`);
+    out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): your time ${formatClock(d.ownTime)}, launch ${formatClock(d.launchTime)} (minus ${Math.round(d.ownTime - d.launchTime)} s for the ${d.netLoss.toFixed(1)} s standing-start loss), left ${formatClock(d.actual)} (${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} s against the launch time${d.warned || d.auto ? '' : '; no 30-second warning was given'}).`);
   }
   for (const f of r.findings ?? []) if (f.kind === 'oneMinuteMistake' || f.kind === 'lateLaunch' || f.kind === 'earlyLaunch') out.push(f.text);
   return out;
@@ -62,7 +62,7 @@ export function departuresOf(r: StageResult, sc: Scenario): Departure[] {
       if (isRestart) target = ins.restartTime!;
       else if (isExactEnd) { target = outFor(ins); kind = 'transitOut'; }
       else if (ins.promotedStop) {
-        kind = 'promoted'; lead = 0;
+        kind = 'promoted';   // N6: the lunch departure follows the launch rule of every hold: leave at the out-time minus the standing-start loss (lead = accelLoss), same tolerance
         for (let j = book.indexOf(ins) + 1; j < book.length; j++) {
           const x = book[j]!;
           if (x.restartTime !== undefined) { target = x.restartTime - ins.promotedStop.leaveBeforeEndSeconds; break; }

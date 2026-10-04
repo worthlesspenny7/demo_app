@@ -106,7 +106,7 @@ export function scorecardViewModel(result: StageResult | null | undefined, scena
     items, raw: score?.raw ?? 0, ageFactor: af, ageYear: year, ageText: `${af.toFixed(3)}${year !== null ? ` (${year})` : ''}`,
     score: score?.score ?? 0, scoreText: (score?.score ?? 0).toFixed(2), aces: score?.aces ?? 0,
     dnf, dnfReason: score?.dnfReason ?? '', banner: dnf ? `DNF / FNS: ${score?.dnfReason ?? 'the final checkpoint was missed'}. The stage is excluded from championship awards.` : '',
-    v3, startDeltas: startDeltaRows(result),
+    v3, startDeltas: startDeltaRows(result, { drillStart: scenario?.startProcedure === 'drill' }),
     discipline: { findings, clean: findings.length === 0, summary: findings.length === 0 ? 'Clean: every timing action used the right instrument.' : `${findings.length} instrument finding${findings.length === 1 ? '' : 's'}: use the clock for time of day, the stopwatch for intervals.` },
   };
 }

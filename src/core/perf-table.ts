@@ -163,7 +163,10 @@ export function buildPerfTable(car: CarSpec): PerfTable {
       stopGo.rows[r] = {}; turns.rows[r] = {};
       for (const c of sp) {
         stopGo.rows[r]![c] = Math.max(0, round1(15 - (accel.rows[r]![0]!) - (accel.rows[0]![c]!)));
-        turns.rows[r]![c] = round1(turnLoss(90, r, c, car));
+        // PT-07 N18: chart (c) is the printed summary: the step the physics has at the apex speed (a car at or under it never slows for the turn) is spread over 6 mph so 12 and 15 mph do not
+        // look like different charts; the simulator's own loss (turn[...] below) is unchanged
+        const full = turnLoss(90, r, c, car); const lo = Math.min(r, c); const cap = apexSpeed(90, car);
+        turns.rows[r]![c] = round1(lo > cap ? (r === c ? 0 : speedChangeLoss(r, c, car)) + Math.min(1, (lo - cap) / 6) * (full - (r === c ? 0 : speedChangeLoss(r, c, car))) : full);
       }
     }
   }

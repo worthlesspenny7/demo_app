@@ -105,7 +105,8 @@ export function campaignSummary(d: CampaignData, tier: number): CampaignSummary 
   const trophyRank = (own: number): number => 1 + FIELD.filter(x => x.perDay < own).length + (trophy && trophy.raw < own ? 1 : 0);
   const field: Standing[] = FIELD.map(x => ({ name: x.name, total: r2(x.perDay * Math.max(played, 1) * ageFactor(x.year)), scoringYear: x.year, trophyRunPosition: trophyRank(x.perDay) }));
   const you: Standing = { name: `You (${FORD_1939.year} Ford, ${divisionLabel(division)})`, total, scoringYear: FORD_1939.year, trophyRunPosition: trophy ? 1 + FIELD.filter(x => x.perDay < trophy.raw).length : undefined };
-  const ranked = rankStandings([you, ...field]).map((s, i): StandingRow => ({ ...s, you: s === you, rank: i + 1 }));
+  // B20: with no stage played yet there is no total to rank: you start below the field's benchmark rows instead of heading the table at 0.00
+  const ranked = (played ? rankStandings([you, ...field]) : [...rankStandings(field), you]).map((s, i): StandingRow => ({ ...s, you: s === you, rank: i + 1 }));
   return {
     tier, rows, played, complete: played === CAMPAIGN_STAGES, total: Math.round(cum * 10) / 10, totalRaw: raw, aces,
     division, divisionLabel: divisionLabel(division), discardCount: DIVISION_DISCARDS[division],

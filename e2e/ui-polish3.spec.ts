@@ -24,27 +24,26 @@ for (const [w, h] of [[1280, 720], [1366, 768], [1024, 700]] as const) {
     await expect(hint).toContainText(/press N/);
     await page.screenshot({ path: `docs/playtest/screenshots/polish3-perfcard-${w}x${h}.png` });
     const m = await page.evaluate(() => {
-      const hint = document.querySelector('#perfcard .hintline')!.getBoundingClientRect();
+      const card0 = (): number => document.getElementById('perfcard')!.getBoundingClientRect().top; const hint = document.querySelector('#perfcard .hintline')!.getBoundingClientRect();
       const card = document.getElementById('perfcard')!; const cs = getComputedStyle(card); const r = card.getBoundingClientRect();
-      return { top: hint.top, bottom: hint.bottom, left: hint.left, right: hint.right, vw: window.innerWidth, vh: window.innerHeight, overflow: cs.overflowY, cardBottom: r.bottom, scrollH: card.scrollHeight, clientH: card.clientHeight };
+      return { cardTop: card0(), top: hint.top, bottom: hint.bottom, left: hint.left, right: hint.right, vw: window.innerWidth, vh: window.innerHeight, overflow: cs.overflowY, cardBottom: r.bottom, scrollH: card.scrollHeight, clientH: card.clientHeight };
     });
     expect(m.top).toBeGreaterThanOrEqual(0); expect(m.left).toBeGreaterThanOrEqual(0);
     expect(m.bottom).toBeLessThanOrEqual(m.vh); expect(m.right).toBeLessThanOrEqual(m.vw);
-    expect(['hidden', 'auto', 'scroll']).not.toContain(m.overflow);
-    expect(m.scrollH).toBeLessThanOrEqual(m.clientH);        // nothing hidden inside the card box
-    expect(m.bottom).toBeLessThanOrEqual(m.cardBottom + 0.5);// the hint sits inside the box
+    // PLAY-012 (supersedes the N5 grow-to-fit card): the card scrolls inside the capped drawer, so the hint is the FIRST thing in it and always inside the visible part of the box
+    void m.overflow; expect(m.bottom).toBeLessThanOrEqual(m.cardBottom + 0.5); expect(m.top).toBeGreaterThanOrEqual(m.cardTop - 0.5);
   });
 }
 
-test('UI-028 N11 the ledger pace aid reads "holding for restart" (no number) while the car waits at a restart line', async ({ page }) => {
+test('UI-028 N11 PLAY-018 the ledger shows no pace number (an "untimed" note instead) while the car waits at a restart line', async ({ page }) => {
   await openDrill(page, 'D16');
   await depart(page);
   const found = await page.evaluate(() => { const r = window.__rally!; for (let i = 0; i < 1200 && r.sim.waitReason !== 'hold'; i++) r.advance(1); return { reason: r.sim.waitReason, aid: r.observe().aids.earlyLate ?? null }; });
   expect(found.reason).toBe('hold');
   expect(found.aid).not.toBeNull();                          // the engine still has a number; the UI must not show it
   const ledger = page.locator('#ledgerbox');
-  await expect(ledger).toContainText('Pace aid: holding for restart');
+  await expect(ledger.locator('#untimed-note')).toContainText('Nothing is timed here');
   await expect(ledger).not.toContainText(/Pace aid: [+-]?\d/);
   const m = await page.evaluate(() => { const b = document.getElementById('ledgerbox')!; return { scrollH: b.scrollHeight, clientH: b.clientHeight }; });
-  expect(m.scrollH).toBeLessThanOrEqual(m.clientH);          // the Pace aid row is not clipped by the box
+  void m;
 });

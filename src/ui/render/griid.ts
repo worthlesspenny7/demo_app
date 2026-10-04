@@ -20,10 +20,19 @@ export function columnAHtml(a: CameoParts): string {
 }
 
 /** Column B: pictograms centred in the cell, the odometer box under a begin symbol, the "no-host" label above a meal. */
-export function columnBHtml(r: Pick<BookRow, 'b' | 'odometer'> & { bLabel?: string | null }): string {
+export function columnBHtml(r: Pick<BookRow, 'b' | 'odometer'> & Arrows & { bLabel?: string | null }): string {
   // the odometer box sits under the first of tire / speedometer / hourglass on the line (HB App. D: tire "0090", speedometer "0240", hourglass "0045"); never under an end symbol
   const host = r.odometer ? r.b.find(s => s === 'warmup' || s === 'calibration' || s === 'transit-begin') : undefined;
-  return r.b.map(sym => `<span class="bsym">${sym === 'meal' && r.bLabel ? `<b class="blabel">${esc(r.bLabel)}</b>` : ''}${griidIcon(sym)}${sym === host && r.odometer ? odometerHtml(r.odometer) : ''}</span>`).join('');
+  return withArrows(r, r.b.map(sym => `<span class="bsym">${sym === 'meal' && r.bLabel ? `<b class="blabel">${esc(r.bLabel)}</b>` : ''}${griidIcon(sym)}${sym === host && r.odometer ? odometerHtml(r.odometer) : ''}</span>`).join(''));
+}
+
+/** The class list of a Column B or C cell: the section arrow (`vin` arrives from above, `vout` leaves downward; real sheets draw it down both columns for a transit or the calibration run). */
+export function arrowClass(base: string, r: Pick<BookRow, 'vin' | 'vout' | 'vcont'>): string { return `${base}${r.vin ? ' vin' : ''}${r.vout ? ' vout' : ''}${r.vcont ? ' vcont' : ''}`; }
+type Arrows = Partial<Pick<BookRow, 'vin' | 'vout' | 'vcont'>>;
+/** The arrow segments wrapped around a column's content: arrival from the row above (head), departure to the row below (tail), or the line straight through (cont). */
+function withArrows(a: Arrows, inner: string): string {
+  if (a.vcont) return `<span class="vseg cont" aria-hidden="true"></span>${inner}`;
+  return `${a.vin ? '<span class="vseg head" aria-hidden="true"></span>' : ''}${inner}${a.vout ? '<span class="vseg tail" aria-hidden="true"></span>' : ''}`;
 }
 
 const lineClass = (l: string): string => /^\(.*\)$/.test(l) ? 'approx' : /MPH$/.test(l) ? 'speed' : 'time';
@@ -33,7 +42,7 @@ const lineClass = (l: string): string => /^\(.*\)$/.test(l) ? 'approx' : /MPH$/.
  * with the time inside, then the speed or interval; the end of a timed portion is the same watch in a circle with a slash, the interval below. A calibration box is thin:
  * interval left over cumulative right. The calibration start prints the speed, the allowance, then the empty box with its dot and "0m00.0s".
  */
-export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & { cIcons?: BookRow['cIcons']; tod?: BookRow['tod'] }): string {
+export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & Arrows & { cIcons?: BookRow['cIcons']; tod?: BookRow['tod'] }): string {
   const out: string[] = [];
   const icons = r.cIcons ?? [];
   let lines = r.c;
@@ -54,7 +63,7 @@ export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & { cIcons?: BookRow[
     }
     out.push(`<div class="cl ${lineClass(l)}">${esc(l)}</div>`);
   });
-  return out.join('');
+  return withArrows(r, out.join(''));
 }
 
 export function columnDHtml(r: Pick<BookRow, 'd'>): string { return r.d ? esc(r.d) : ''; }
@@ -82,8 +91,8 @@ export function griidRowHtml(r: BookRow, a: CameoParts, extraClass = ''): string
   if (r.ta) return `<div class="grow ta-row ${extraClass}" data-n="${r.n}"><div class="gn">${esc(r.printed)}</div>${taBannerHtml(r)}</div>`;
   const c = griidCells(r, a);
   if (r.info !== null) return `<div class="grow info-row ${extraClass}" data-n="${r.n}"><div class="gn">${c.n}</div><div class="ga">${c.a}</div><div class="gbc">${infoBoxHtml(r)}</div><div class="gd">${c.d}</div></div>`;
-  return `<div class="grow ${extraClass}${r.omitted ? ' omitted' : ''}" data-n="${r.n}">`
-    + `<div class="gn">${c.n}</div><div class="ga">${c.a}</div><div class="gb">${c.b}</div><div class="gc">${c.c}</div><div class="gd">${c.d}${r.omitted ? ' <em>(omitted)</em>' : ''}</div></div>`;
+  return `<div class="grow ${extraClass}${r.omitted ? ' omitted' : ''}" data-n="${r.n}"${r.pause ? ` data-pause="${r.pause}"` : ''}>`
+    + `<div class="gn">${c.n}</div><div class="ga">${c.a}</div><div class="${arrowClass('gb', r)}">${c.b}</div><div class="${arrowClass('gc', r)}">${c.c}</div><div class="gd">${c.d}${r.omitted ? ' <em>(omitted)</em>' : ''}</div></div>`;
 }
 
 /** The page footer of the real sheets: three blocks, no rule, no page header ("(c) 2026, Great Race" | "Hemmings Motor News Great Race / Page n of N" | "stage / date"). */

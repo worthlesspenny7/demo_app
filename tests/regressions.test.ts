@@ -134,7 +134,9 @@ describe('re-validation specs (2026-10-03)', () => {
   it('RUB-001 clean run only at mean error <= 3 s; stops lost + cruise recovered is labelled a recovery, not a wandering driver', () => {
     const d = drillById('D03')!; const sc = d.scenario(3, 0);
     const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim));
-    expect(headlineTip(r, sc)).toMatch(/^Clean run/);
+    // PT-07 B7: "Clean run" needs no finding of any kind; the oracle bot does not drive the stopwatch, so its instrument findings are cleared for the clean case and kept for the other
+    expect(headlineTip({ ...r, instrumentDiscipline: [] } as typeof r, sc)).toMatch(/^Clean run/);
+    if ((r.instrumentDiscipline ?? []).length) expect(headlineTip(r, sc)).not.toMatch(/^Clean run/);
     const fake = { ...r, offCourseCount: 0, score: { ...r.score, legs: r.score.legs.map(l => ({ ...l, error: 9, penalty: 9 })) }, attribution: [{ legIndex: 0, buckets: { stop: 14, cruise: -5, start: 0, speedChange: 0, timedChange: 0, turn: 0, hazard: 0, ta: 0 } }] } as typeof r;
     const tip = headlineTip(fake, sc); expect(tip).not.toMatch(/^Clean run/); expect(tip).toMatch(/lost 14 s in stops and recovered 5 s in cruise/);
     const noisy = { ...fake, attribution: [{ legIndex: 0, buckets: { stop: 0, cruise: 9, start: 0, speedChange: 0, timedChange: 0, turn: 0, hazard: 0, ta: 0 } }] } as typeof r;
