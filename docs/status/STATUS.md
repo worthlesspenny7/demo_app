@@ -14,10 +14,10 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): UI fix sprint PT-07 LANDED in the working tree (NOT committed): tsc clean, 558 unit, 322/322 specs, 73 e2e
-  (see LOG "UI fix sprint PT-07"). Next: commit, push, then the PT-08 replay on the new build. Known not-done: PT-06 LOW 14, 20-27;
-  D08b not a gate for D11/D12; D05 rookie at Gold 1-2 stars; PT-07 leftovers listed in the LOG entry (TA worksheet shows the lapped
-  delay beside the engine's, CAMEO road names, page count).
+- In flight (2026-10-04): PT-08 playability replay (Opus) and PT-09 engine re-hunt (Sonnet), read-only on 07961f4
+  (UI sprint PT-07 landed: 558 unit, 73 e2e, 322/322, ENGINE 3.1.0). When they land: commit reports, one fix sprint,
+  five checks, commit, push, repeat. Known not-done: PT-06 LOW 14, 20-27; D08b not a gate for D11/D12; D05 rookie at
+  Gold 1-2 stars; Bronze stage prints example sentences in Column D by design; 39-page day vs 13-26 real.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
