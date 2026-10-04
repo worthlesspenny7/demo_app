@@ -179,3 +179,5 @@ Sources: docs/playtest/PT-05-playability-v3.md (all ten top fixes, the three dri
 - Checks: tsc clean, 542 unit, build clean, 311/311 specs, 62 e2e.
 - Not done: D05 rookie at Gold still 1-2 stars and D04 goCount at Gold 2-3 (the "D05/D04 thresholds against the bias row" note of report fix 6 was not in this sprint's list);
   D08b is still not a gate for D11/D12; D13 not re-run; human-facing D01 thresholds (0.4 / 0.8 / 1.5 s mean absolute) not tried by a person.
+- PT-07 replay (1fa4191): 41/55, 18/22 fixed, 0 regressed; new High N1 (stage cockpit collapse at 1366x768).
+  Education sprint v3 landed (e7d77d5). UI fix sprint PT-07 launched (Sonnet).

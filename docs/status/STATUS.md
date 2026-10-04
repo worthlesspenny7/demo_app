@@ -14,11 +14,13 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): (a) PT-07 playability replay (Opus, read-only) on 5bd53b2 -> docs/playtest/PT-07-playability-v3-fixed.md;
-  (b) education fix sprint (Opus) editing content/, src/core/drills, rubrics, curriculum, home/school/reference, tests:
-  curriculum reordered to the Four S's, honest headlines (no 'Clean run' under 0-2 stars), Dad's card to ~12 lines,
-  gates tightened, 16 slips fixed, 'Measure your car' lesson, D06 Bronze within 15-50. When (b) lands: five checks,
-  commit, push. When (a) lands: commit the report, then a UI fix sprint from its top-10. Known not-done: PT-06 LOW 14, 20-27.
+- In flight (2026-10-04): UI fix sprint from PT-07 (Sonnet) on e7d77d5 (education sprint landed: 542 unit, 62 e2e, 311/311,
+  ENGINE 3.1.0; new Start-here order four-s, griid-cameo, protocol, D09, lost, D10, transits, D16, ghost-car, D01, D03,
+  D04, D05, D06, D08, D07, D18). PT-07 top-10: day-stage cockpit collapse at 1366x768 (High), debrief truth (TA credit
+  counted twice, no-pause stop 'go earlier', 'never called 40'), D04 count start, D16 lead consistency + clock prompts,
+  drill-start text, pace chip in untimed states, TA form T/Done, legal-rung giveaways, book arrows/footer/marks.
+  When it lands: five checks, commit, push, then PT-08 replay. Known not-done: PT-06 LOW 14, 20-27; D08b not a gate
+  for D11/D12; D05 rookie at Gold 1-2 stars.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
