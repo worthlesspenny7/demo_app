@@ -10,7 +10,7 @@ import { Session, type Request } from './protocol.js';
 import { makeBot, runBot, type BotName } from './bots.js';
 import { builtinScenario } from './scenarios.js';
 import type { Scenario } from '../core/course.js';
-import { validateScenario } from '../core/course.js';
+import { validateScenario, normalizeScenario } from '../core/course.js';
 import { formatClock } from '../core/units.js';
 
 function arg(name: string, def?: string): string | undefined { const i = process.argv.indexOf(`--${name}`); return i >= 0 ? process.argv[i + 1] : def; }
@@ -19,7 +19,7 @@ function flag(name: string): boolean { return process.argv.includes(`--${name}`)
 export async function loadScenario(spec: string, seed: number): Promise<Scenario> {
   const [kind, rest] = spec.includes(':') ? [spec.slice(0, spec.indexOf(':')), spec.slice(spec.indexOf(':') + 1)] : ['builtin', spec];
   if (kind === 'builtin') return builtinScenario(rest!, seed);
-  if (kind === 'file') return JSON.parse(readFileSync(rest!, 'utf8')) as Scenario;
+  if (kind === 'file') return normalizeScenario(JSON.parse(readFileSync(rest!, 'utf8')) as Scenario); // ENG-008: older files gain DEFAULT_RULES, asp 0, ...
   if (kind === 'gen') {
     const genPath = '../core/generator/generate.js';
     const mod = await import(genPath).catch(() => null) as null | { generateStage?: (seed: number, profile: unknown) => Scenario; generateLeg?: (seed: number, profile: unknown) => Scenario; PROFILES?: Record<string, unknown> };

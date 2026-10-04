@@ -105,6 +105,11 @@ export interface Instruction {
  * (the calibration run's allowance, the transit to the finish).
  */
 export interface TransitSpec { exact: boolean; seconds: number; miles?: number; end?: boolean; plain?: boolean }
+/** PLAY-002: a suggested pace for a transit / warm-up line that prints no speed: printed miles over printed minutes, to the whole mph (null when the box prints no distance). */
+export function transitPaceMph(t: TransitSpec | undefined): number | null {
+  if (!t || t.end || !(t.miles !== undefined && t.miles > 0) || !(t.seconds > 0)) return null;
+  return Math.max(5, Math.round(t.miles / (t.seconds / 3600)));
+}
 
 export interface Checkpoint { id: string; s: number; kind: 'timing' | 'observation'; sightDistance: number }
 
@@ -249,6 +254,8 @@ export interface Scenario {
   /** Probability that cross traffic holds the car at a STOP for an extra 2-12 s. */
   trafficWaitProbability?: number;
   tags?: string[];
+  /** PLAY-005: 'drill' = a drill-sized start (D01-D05): no start queue and no count; the car launches itself on the printed launch second. Default: the full start procedure. */
+  startProcedure?: 'full' | 'drill';
 }
 
 export const DEFAULT_RULES: RulesConfig = {
@@ -359,8 +366,21 @@ export function instructionS(course: Course, ins: Instruction): number {
 }
 
 /** Validate structural invariants; returns a list of problems (empty = valid). */
+/** ENG-008: the rules keys a scenario must carry as finite numbers. */
+const RULE_NUMBERS = ['maxLate', 'maxEarly', 'missedCheckpoint', 'missedCpLateMinutes', 'sightZonePenalty', 'observationMissPenalty', 'earlyDepartureMinutes', 'taOverDeclareTolerance', 'taGranularitySeconds', 'taMaxRequestSeconds', 'splitHoldSeconds', 'clockMinuteSlop'] as const;
+/** ENG-008: fill the V2/V3 fields a scenario file written before them lacks (rules merged over DEFAULT_RULES, asp 0, CDT, example wording). */
+export function normalizeScenario(sc: Scenario): Scenario {
+  const x = sc as Partial<Scenario> & Scenario;
+  return { ...x, rules: { ...DEFAULT_RULES, ...(x.rules ?? {}) }, asp: typeof x.asp === 'number' && Number.isFinite(x.asp) ? x.asp : 0, timeZone: x.timeZone ?? 'CDT', bookStyle: x.bookStyle ?? 'example', baseStartTime: x.baseStartTime ?? x.startTime };
+}
 export function validateScenario(sc: Scenario): string[] {
   const problems: string[] = [];
+  // ENG-008: a scenario without a numeric asp or a complete rules block would draw NaN pace cars or score NaN
+  if (!(typeof sc.asp === 'number' && Number.isFinite(sc.asp) && sc.asp >= 0)) problems.push('asp must be a number of minutes >= 0 (0 for drills); load older files through normalizeScenario');
+  if (!sc.rules || typeof sc.rules !== 'object') problems.push('rules missing');
+  else { for (const k of RULE_NUMBERS) if (!(typeof sc.rules[k] === 'number' && Number.isFinite(sc.rules[k]))) problems.push(`rules.${k} must be a finite number`);
+    if (!Array.isArray(sc.rules.earlyDeparturePenalties) || sc.rules.earlyDeparturePenalties.length !== 2) problems.push('rules.earlyDeparturePenalties must be [first, second]'); }
+  if (!sc.course || !Array.isArray(sc.course.nodes) || !Array.isArray(sc.book) || !Array.isArray(sc.checkpoints)) { problems.push('course, book and checkpoints are required'); return problems; }
   const nodes = sc.course.nodes;
   for (let i = 1; i < nodes.length; i++) if (nodes[i]!.s < nodes[i - 1]!.s) problems.push(`nodes not sorted at ${nodes[i]!.id}`);
   const ids = new Set(nodes.map(n => n.id));

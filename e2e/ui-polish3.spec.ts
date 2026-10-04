@@ -10,14 +10,15 @@ async function depart(page: Page): Promise<void> {
 }
 
 for (const [w, h] of [[1280, 720], [1366, 768], [1024, 700]] as const) {
-  test(`UI-028 N5 the perf card hint "Book is on line N: press N" is fully visible and not clipped at ${w}x${h}`, async ({ page }) => {
+  test(`UI-028 N5 PLAY-008 the book jumps to the stopped line by itself; moved away, the hint "Book is on line N: press N" is fully visible and not clipped at ${w}x${h}`, async ({ page }) => {
     await page.setViewportSize({ width: w, height: h });
     await openDrill(page, 'D03');
     await depart(page);
     await page.evaluate(() => { const r = window.__rally!; for (let i = 0; i < 600 && r.observe().stoppedAtLine === null; i++) r.advance(1); });
     const o = await page.evaluate(() => { const x = window.__rally!.observe(); return { stopped: x.stoppedAtLine, cur: x.currentLine }; });
     expect(o.stopped).not.toBeNull();
-    expect(o.cur).not.toBe(o.stopped);                       // Bronze: the book pointer waits for N
+    expect(o.cur).toBe(o.stopped);                           // PLAY-008: stopped at the sign, the book is on that line with no N
+    await page.evaluate(() => window.__rally!.act({ type: 'line.set', n: 1 }));   // the player looks back at line 1: the hint offers N
     const hint = page.locator('#perfcard .hintline');
     await expect(hint).toBeVisible();
     await expect(hint).toContainText(/press N/);

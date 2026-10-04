@@ -200,7 +200,7 @@ test('LESSON-008 the Reference page has a "Rally school" panel with the TA web f
 
 test('LESSON-002 LESSON-006 the team protocol lesson teaches ICE and "keep counting", and the clock lesson is the director\'s method', async ({ page }) => {
   await page.goto('/#/school/protocol');
-  await expect(page.locator('.lesson')).toContainText('ICE: identify, confirm, execute'); await expect(page.locator('.lesson')).toContainText('keep counting'); await expect(page.locator('.printcard li')).toHaveCount(8);
+  await expect(page.locator('.lesson')).toContainText('ICE: identify, confirm, execute'); await expect(page.locator('.lesson')).toContainText('keep counting'); await expect(page.locator('.printcard li')).toHaveCount(9);
   await page.goto('/#/school/which-timer');
   await expect(page.locator('.lesson')).toContainText('one-minute mistake'); await expect(page.locator('.lesson')).toContainText('time-of-day (TOD) mode');
 });

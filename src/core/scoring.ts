@@ -63,6 +63,7 @@ export interface StageScore {
 
 /** REG-002: the printed age-factor table (V.D). Never interpolated. 1954+ 1.000, 1953 0.915, -0.005/yr to 1930 = 0.800, -0.010/yr to 1900 = 0.500. */
 export function ageFactor(year: number): number {
+  if (!Number.isFinite(year)) throw new RangeError(`age factor needs a model year, got ${year}`); // ENG-013
   const y = Math.floor(year);
   let milli: number;
   if (y >= 1954) milli = 1000;
@@ -154,7 +155,7 @@ export function scoreStage(
   else if (extra.observationNeverReached) { dnf = true; dnfReason = 'The final Observation Checkpoint was missed (V.E.2.d)'; }
   const f = ageFactor(year);
   const formalProblemPenalty = 30 * Math.max(0, Math.floor(extra.formalProblems ?? 0));
-  return { legs, benchmark: benchmarkLabel(raw), raw, ageFactor: f, formalProblemPenalty, score: Math.round(raw * f * 100) / 100 + formalProblemPenalty, aces: legs.filter(l => l.ace).length, earlyRestartPenalty: earlyDeparturePenalty, earlyDeparturePenalty, earlyDepartures, observationPenalty, dnf, dnfReason, penaltyItems };
+  return { legs, benchmark: benchmarkLabel(raw), raw, ageFactor: f, formalProblemPenalty, score: roundFactored(raw, f) + formalProblemPenalty, aces: legs.filter(l => l.ace).length, earlyRestartPenalty: earlyDeparturePenalty, earlyDeparturePenalty, earlyDepartures, observationPenalty, dnf, dnfReason, penaltyItems };
 }
 
 // ---------- championship (REG-003, REG-004) ----------
@@ -194,8 +195,15 @@ function itemsOf(s: ChampionshipStageInput['score']): number[] {
 }
 
 /** REG-003: pool Stages 1-7, discard the division's worst legs, keep Stages 8-9 whole, then apply the age factor. */
+/** ENG-012: raw x age factor to the nearest 0.01 s, half up, in integer arithmetic (5 x 0.845 = 4.225 -> 4.23, never float-noise 4.22). */
+export function roundFactored(raw: number, factor: number): number {
+  const milli = Math.round(factor * 1000); const p = Math.round(raw * milli); // raw x factor in thousandths of a second... x 1000
+  return Math.sign(p) * Math.floor((Math.abs(p) + 5) / 10) / 100;
+}
 export function championshipTotal(stages: ChampionshipStageInput[], division: Division = DEFAULT_DIVISION, opts: { year?: number } = {}): ChampionshipTotal {
-  const counted = stages.filter(s => s.stage >= 1 && s.stage <= 9);
+  // ENG-013: one entry per stage number (a repeated stage counts once: the later entry replaces the earlier)
+  const byStage = new Map<number, ChampionshipStageInput>(); for (const s of stages) if (s.stage >= 1 && s.stage <= 9) byStage.set(s.stage, s);
+  const counted = [...byStage.values()].sort((a, b) => a.stage - b.stage);
   const pool: number[] = []; let kept = 0; let raw = 0;
   for (const s of counted) {
     const items = itemsOf(s.score); const sum = items.reduce((a, b) => a + b, 0); raw += sum;
@@ -207,7 +215,7 @@ export function championshipTotal(stages: ChampionshipStageInput[], division: Di
   const afterDiscards = sorted.slice(n).reduce((a, b) => a + b, 0) + kept;
   const f = opts.year !== undefined ? ageFactor(opts.year) : (counted[0]?.score.ageFactor ?? 1);
   return {
-    division, discardCount: n, discarded, raw, afterDiscards, ageFactor: f, ageFactored: Math.round(afterDiscards * f * 100) / 100,
+    division, discardCount: n, discarded, raw, afterDiscards, ageFactor: f, ageFactored: roundFactored(afterDiscards, f),
     stagesCounted: counted.map(s => s.stage), championshipEligible: !counted.some(s => (s.stage === 8 || s.stage === 9) && s.score.dnf),
   };
 }
@@ -215,7 +223,7 @@ export function championshipTotal(stages: ChampionshipStageInput[], division: Di
 export interface Standing { name: string; /** cumulative / stage score */ total: number; scoringYear: number; /** finishing position on the Trophy Run (1 = best) */ trophyRunPosition?: number }
 /** REG-004 (V.C.2.f(2)): lower score first; a tie goes to the older Scoring Year, then to the better Trophy Run position. */
 export function compareStandings(a: Standing, b: Standing): number {
-  if (a.total !== b.total) return a.total - b.total;
+  { const ha = Math.round(a.total * 100), hb = Math.round(b.total * 100); if (ha !== hb) return ha - hb; } // ENG-013: compare to the 0.01 s, not float noise
   if (a.scoringYear !== b.scoringYear) return a.scoringYear - b.scoringYear;
   const ta = a.trophyRunPosition ?? Infinity, tb = b.trophyRunPosition ?? Infinity;
   return ta === tb ? 0 : ta < tb ? -1 : 1;

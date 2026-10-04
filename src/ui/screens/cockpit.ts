@@ -128,7 +128,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   }
   function renderCharts(o: Observation): void {
     if (!showCharts) return;
-    const line = o.stoppedAtLine ?? focusLine(o, rung, bookLen).line;
+    const line = o.stoppedAtLine ?? manualLine ?? focusLine(o, rung, bookLen).line;
     const key = `${line}|${policy.computedCard}`; if (key === chartsKey) return; chartsKey = key;
     const sp = lineSpeeds(scenario, line);
     const grids = chartGrids(scenario.car, policy.computedCard ? sp : null);
@@ -140,7 +140,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const taField = (id: string): HTMLInputElement | null => taPanel.querySelector(`#${id}`) as HTMLInputElement | null;
   const cpCardBox = el('div', { class: 'cpcard', id: 'cpcard' }); cpCardBox.style.display = 'none'; roadWrap.append(cpCardBox);
   // UI-037 / START-001: the start card (your time, launch time), the 30-second warning banner and the visible count; one on the road at a restart, one in the pre-read box
-  const roadStart = el('div', { class: 'startcard road-start', id: 'startcard-road' }); roadStart.style.display = 'none'; roadWrap.append(roadStart);
+  // PLAY-004: the restart card and its count live at the top of the book column, outside the 155-px road view, so the count is never clipped at 1366x768
+  const roadStart = el('div', { class: 'startcard road-start book-start', id: 'startcard-road' }); roadStart.style.display = 'none';
   type StartParts = { plan: HTMLElement; queue: HTMLElement; warn: HTMLElement; count: HTMLElement };
   const startCardParts = (host: HTMLElement): StartParts => {
     const sfx = host === roadStart ? '-road' : '';
@@ -188,7 +189,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const bookHead = el('div', { class: 'book-head' }, el('b', {}, 'GRIID'), el('span', { class: 'muted' }, `${scenario.name} · ${scenario.book.length} lines · N / Shift+N move, click to set`),
     el('a', { id: 'book-print', href: printHref, target: '_blank', rel: 'noopener', title: 'the whole book, six rows a page, printable', style: 'margin-left:auto' }, 'Print book'));
   const rows = el('div', { class: 'rows', id: 'book' });
-  const book = el('div', { class: 'book' }, bookHead, rows);
+  const book = el('div', { class: 'book' }, bookHead, roadStart, rows);
   // drawer
   const callout = el('span', { class: 'callout', id: 'callout' });
   const promptWrap = el('span', { id: 'prompt' });
@@ -250,7 +251,9 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   let seenEvents = sim.events.length; let activeCard: CpCard | null = null;
   let finished = false;
   let flashUntil = 0;
-  let followedExec: number | null = null;
+  let followedExec: number | null = null; let stoppedFollowed: number | null = null;
+  /** PLAY-008: a line the player put the book on by hand (key, click, line.set); cleared at the next check-off. */
+  let manualLine: number | null = null; let manualAtExec: number | null = null;
   let stopCalledTod: number | null = null;
   let stopWaitTod: number | null = null;
   let lastSave = performance.now();
@@ -334,10 +337,10 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       case 'line':
         // at a STOP, N jumps to the stopped line first (C1)
         if (cmd.delta > 0 && obs.stoppedAtLine && obs.currentLine !== obs.stoppedAtLine) act({ type: 'line.set', n: obs.stoppedAtLine });
-        else act({ type: 'line.set', n: Math.max(1, Math.min(bookLen, obs.currentLine + cmd.delta)) });
+        else { const n = Math.max(1, Math.min(bookLen, obs.currentLine + cmd.delta)); setManual(n); act({ type: 'line.set', n }); }
         break;
-      case 'line.home': act({ type: 'line.set', n: 1 }); break;
-      case 'line.end': act({ type: 'line.set', n: bookLen }); break;
+      case 'line.home': setManual(1); act({ type: 'line.set', n: 1 }); break;
+      case 'line.end': setManual(bookLen); act({ type: 'line.set', n: bookLen }); break;
       case 'scale': if (!lockedTo1x) requested = nextScale(requested, cmd.delta); break;
       case 'pause': paused = !paused; break;
       case 'ta': {
@@ -389,7 +392,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   window.addEventListener('resize', onResize);
 
   // ---------- book ----------
-  rows.onclick = e => { const r = (e.target as HTMLElement).closest('.row') as HTMLElement | null; if (r && !(e.target as HTMLElement).closest('input,button')) { act({ type: 'line.set', n: Number(r.dataset.n) }); renderNow(); } };
+  rows.onclick = e => { const r = (e.target as HTMLElement).closest('.row') as HTMLElement | null; if (r && !(e.target as HTMLElement).closest('input,button')) { setManual(Number(r.dataset.n)); act({ type: 'line.set', n: Number(r.dataset.n) }); renderNow(); } };
+  function setManual(n: number): void { manualLine = Math.max(1, Math.min(bookLen, n)); manualAtExec = sim.observe({ peek: true }).driver.lastExecutedLine; }
   /** PREREAD-001: write a preset hand mark on the book. The text typed is formatted as the real mark ("10.2" -> "P10.2", "2.9" -> "-2.9", "3:47" -> "TRAIN Delay 3:47" with a star). */
   function writeMark(kind: MarkKind, n: number, pageTop: boolean): void {
     const ins = scenario.book[n - 1]; if (!ins) return;
@@ -481,7 +485,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const mode: TaFormMode = taMode;
     const carDefault = String((scenario as unknown as { carNumber?: number | string }).carNumber ?? '');
     const formState: TaFormState = { draft: taDraft, legs: vm.legs, first: first ? { legIndex: first.legIndex, fromLine: first.fromLine, toLine: first.toLine, suggested: first.suggested, cause: first.cause } : null, carDefault, loggedIn: taLoggedIn, endOfStage: vm.endOfStage, acked: vm.acked };
-    taPanel.innerHTML = `<div class="ta-head"><b>${esc(mode === 'paper' ? 'Time Delay Form (classic paper sheet)' : vm.title)}</b><span class="mono" id="ta-count"></span><label class="ta-paper-toggle" title="the older paper sheet handed to an official at lunch or at the finish; practice only"><input type="checkbox" id="ta-paper" ${mode === 'paper' ? 'checked' : ''}> classic paper</label><button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
+    taPanel.innerHTML = `<div class="ta-head"><b>${esc(mode === 'paper' ? 'Time Delay Form (classic paper sheet)' : vm.title)}</b><span class="mono" id="ta-count"></span><label class="ta-paper-toggle" title="the older paper sheet handed to an official at lunch or at the finish; practice only"><input type="checkbox" id="ta-paper" ${mode === 'paper' ? 'checked' : ''}> classic paper</label>${vm.endOfStage ? `<button id="ta-done-pin" class="mini ta-done-pin" type="button" title="the red Done button of the lessons: press it once, after the last Time Allowance of the ENTIRE stage"${vm.acked ? ' disabled' : ''}>Done (red button)</button>` : ''}<button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
       <div class="ta-body" id="ta-body">
         <p class="muted ta-help">${mode === 'paper' ? 'The paper sheet (older rally schools): fill it in at the stop, hand it to an official at lunch or at the finish. ' : 'The 2026 web form (grscores.com/timeallowance), filed within 15 minutes of the TA point; the red button at the end of the day prints the scorecard. '}Time in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
         <details class="ta-worksheet" id="ta-worksheet" open><summary>Your worksheet (not on the form)</summary>
@@ -542,11 +546,14 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     };
     const see = taPanel.querySelector('#ta-see') as HTMLButtonElement | null;
     if (see) see.onclick = () => { taShowFiled = !taShowFiled; taSig = ''; renderNow(); };
-    const ackBtn = taPanel.querySelector('#ta-ack-btn') as HTMLButtonElement | null;
-    if (ackBtn) ackBtn.onclick = () => {
-      if (!taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).endOfStage) { flash('Press the red button once, after the last Time Allowances of the ENTIRE stage (the end-of-stage TA point)'); return; }
+    const doAck = (): void => {
+      if (!taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).endOfStage) { flash('Press the red Done button once, after the last Time Allowances of the ENTIRE stage (the end-of-stage TA point)'); return; }
       act({ type: 'scorecard.ack' }); renderNow();
     };
+    const ackBtn = taPanel.querySelector('#ta-ack-btn') as HTMLButtonElement | null;
+    if (ackBtn) ackBtn.onclick = doAck;
+    const pin = taPanel.querySelector('#ta-done-pin') as HTMLButtonElement | null;   // PLAY-010: the same red Done button, pinned in the header so it is never below the fold
+    if (pin) pin.onclick = doAck;
     (taPanel.querySelector('#ta-submit') as HTMLButtonElement).onclick = () => {
       const witnesses: TaWitness[] = [1, 2].map(n => ({ car: val(`ta-w${n}-car`).trim(), description: val(`ta-w${n}-name`).trim(), ...(val(`ta-w${n}-role`) ? { role: val(`ta-w${n}-role`) as 'contestant' | 'official' } : {}) }));
       const typeSel = taPanel.querySelector('input[name="ta-type"]:checked') as HTMLInputElement | null;
@@ -575,16 +582,23 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (filed) filed.innerHTML = vm.requests.length ? `<b>Filed</b>${vm.requests.map(r => `<div class="${r.status === 'refused' ? 'danger' : ''}">Leg ${r.legIndex}: ${formatInterval(r.requested)}${r.adjustment ? ` (${esc(r.adjustment)})` : ''} ${r.status === 'refused' ? `refused: ${esc(r.reason ?? '')}` : 'filed'}</div>`).join('')}` : '';
     const ack = taPanel.querySelector('#ta-ack') as HTMLElement | null;
     if (ack) {
-      ack.innerHTML = vm.endOfStage ? (vm.acked ? '<div class="ok" id="ta-acked">Scorecard acknowledged.</div>' : '<p class="muted">End of the stage: press the red button once the last Time Allowance is in, so the scoring crew can print your scorecard.</p>') : '';
+      ack.innerHTML = vm.endOfStage ? (vm.acked ? '<div class="ok" id="ta-acked">Scorecard acknowledged.</div>' : '<p class="muted">End of the stage: press the red Done button (pinned at the top of this form) once the last Time Allowance is in, so the scoring crew can print your scorecard.</p>') : '';
       const rb = taPanel.querySelector('#ta-ack-btn') as HTMLButtonElement | null; if (rb) rb.disabled = vm.acked;
+      const pb = taPanel.querySelector('#ta-done-pin') as HTMLButtonElement | null; if (pb) pb.disabled = vm.acked;
     }
   }
 
   // ---------- render ----------
   /** Keep the book on the line being executed: at rung >= 1 the pointer follows the driver's check-off (C1). */
   function autoFollow(): void {
-    if (rung < 1 || scenario.aids.autoAdvanceLine) return;
-    const p = sim.observe({ peek: true }); const le = p.driver.lastExecutedLine;
+    { const le0 = sim.observe({ peek: true }).driver.lastExecutedLine; if (manualLine !== null && le0 !== manualAtExec) manualLine = null; }   // the driver checked a line off: the card follows him again
+    if (rung < 1) return;
+    const p = sim.observe({ peek: true });
+    // PLAY-008: stopped at a sign the navigator can read: the book goes to that line (no N needed at the first stop)
+    if (p.stoppedAtLine && p.stoppedAtLine !== stoppedFollowed) { stoppedFollowed = p.stoppedAtLine; if (p.currentLine !== p.stoppedAtLine) act({ type: 'line.set', n: p.stoppedAtLine }); return; }   // once per stop: the player may look elsewhere after
+    if (!p.stoppedAtLine) stoppedFollowed = null;
+    if (scenario.aids.autoAdvanceLine) return;
+    const le = p.driver.lastExecutedLine;
     if (le === null || le === followedExec) return;
     followedExec = le;
     const n = Math.min(bookLen, le + 1);
@@ -642,7 +656,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       parts.queue.textContent = show && q ? q.text : ''; parts.queue.dataset.state = show && q ? q.state : '';
       if (!show || !al || !cnt) { parts.plan.textContent = ''; parts.warn.style.display = 'none'; parts.count.style.display = 'none'; return; }
       parts.plan.textContent = `Line ${al.line}: ${al.plan.text}`;
-      parts.warn.style.display = cnt.warning ? '' : 'none'; if (cnt.banner) parts.warn.textContent = cnt.banner;
+      parts.warn.style.display = cnt.warning && !o.launch?.warned ? '' : 'none'; if (cnt.banner) parts.warn.textContent = cnt.banner;   // B19: the banner goes once W has warned the driver
       parts.count.style.display = cnt.beatText !== null ? '' : 'none'; if (cnt.beatText !== null) { parts.count.textContent = cnt.beatText; parts.count.dataset.beat = cnt.beatText; parts.count.className = `start-count${cnt.phase === 'go' ? ' go' : ''}`; }
     };
     const onRoad = o.phase !== 'preread' && atSign;
@@ -675,7 +689,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (o.stoppedAtLine && pace !== null) {
       if (rung >= 3) {
         const pc = cachedCard(o.stoppedAtLine);
-        if (pc?.restart) { const ins = scenario.book[o.stoppedAtLine - 1]; waitMoreS = ins?.restartTime !== undefined ? Math.round((ins.restartTime - (pc.restart.accel ?? 0) - o.tod) * 10) / 10 : null; }
+        if (pc?.restart) { const ins = scenario.book[o.stoppedAtLine - 1]; waitMoreS = ins?.restartTime !== undefined ? Math.round((ins.restartTime - Math.round(pc.restart.accel ?? 0) - o.tod) * 10) / 10 : null; }
         else waitMoreS = waitMore(cachedStop(o.stoppedAtLine), dwellSoFar);
         paceMode = waitMoreS === null ? 'arrow' : 'wait';
       } else paceMode = 'arrow';
@@ -728,6 +742,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (o.phase === 'preread') {
       preread.style.display = '';
       if (!preread.firstChild) buildPreread();
+      // PLAY-004: 45 s before the launch the box folds itself away (unless the player chose), so the clock and the watch can be read
+      { const al0 = o.launch ?? sim.launchInfo(scenario.book[0] ?? null); if (!prereadUserChoice && al0 && al0.launchTime - o.tod <= 45 && !prereadCollapsed && !pendingSave) setPrereadCollapsed(true); }
       const cd = preread.querySelector('#countdown'); if (cd) cd.textContent = policy.digitalReadouts ? `T ${o.secondsToStart >= 0 ? '-' : '+'} ${formatElapsed(Math.abs(o.secondsToStart), 1)}` : '';
     } else preread.style.display = 'none';
     // drawer
@@ -750,26 +766,40 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (activeCard && o.tod <= activeCard.showUntil) { cpCardBox.style.display = ''; cpCardBox.innerHTML = `Checkpoint ${escapeHtml(activeCard.cpId)}: <b>${activeCard.error > 0 ? '+' : ''}${activeCard.error}</b> s${activeCard.largestBucket ? `<div class="muted">largest: ${escapeHtml(activeCard.largestBucket)} ${activeCard.largestBucketSeconds > 0 ? '+' : ''}${activeCard.largestBucketSeconds} s${activeCard.largestEvent ? ` · ${escapeHtml(activeCard.largestEvent)}` : ''}</div>` : ''}`; }
     else cpCardBox.style.display = 'none';
   }
+  // PLAY-004: the pre-read box collapses to a strip over the road (start card, countdown, buttons) so the clock and the stopwatch stay visible during the launch
+  let prereadCollapsed = false; let prereadUserChoice = false;
+  function setPrereadCollapsed(on: boolean, byUser = false): void {
+    prereadCollapsed = on; if (byUser) prereadUserChoice = true;
+    preread.classList.toggle('collapsed', on);
+    const t = preread.querySelector('#preread-toggle'); if (t) t.textContent = on ? 'Show the pre-read' : 'Hide the pre-read (show clock and watch)';
+  }
   function buildPreread(): void {
-    const dep = el('button', { class: 'primary', id: 'depart' }, 'Depart now (D)'); dep.onclick = () => { if (blockedBySave()) return; act({ type: 'start' }); renderNow(); };
+    const drillStart = scenario.startProcedure === 'drill';   // PLAY-005: D01-D05 launch themselves on the printed second
+    const dep = el('button', { class: drillStart ? '' : 'primary', id: 'depart', title: drillStart ? 'leave now, before your launch second (an early departure)' : 'leave now' }, drillStart ? 'Depart early (D)' : 'Depart now (D)'); dep.onclick = () => { if (blockedBySave()) return; act({ type: 'start' }); renderNow(); };
     const warnBtn = el('button', { id: 'warn-driver', title: 'W: tell the driver "about 30 seconds"' }, 'Warn the driver (W)'); warnBtn.onclick = () => handle({ type: 'call.warn' });
     const pullBtn = el('button', { id: 'pull-up', title: 'Q: pull up to the start sign, once the car ahead has left' }, 'Pull up (Q)'); pullBtn.onclick = () => handle({ type: 'pullUp' });
-    const skip = el('button', { id: 'skip' }, 'Fast-forward to the start time'); skip.onclick = () => { if (blockedBySave()) return; act({ type: 'skipPreread' }); renderNow(); };
-    const v0 = scenario.book[0]?.speed; let accel = ''; if (v0) { try { accel = ` Your car loses about ${accelLoss(v0, scenario.car).toFixed(1)} s getting up to ${v0} mph, so depart a few seconds early.`; } catch { accel = ''; } }
-    const generic = `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one. The ghost leaves exactly on the second.${accel} Nobody releases you: wait for your time, launch your standing-start loss early, and expect the driver's warning about 30 seconds before.`;
+    const li0 = sim.launchInfo(scenario.book[0] ?? null); const minus = li0 ? Math.round(li0.ownTime - li0.launchTime) : 0;
+    const skip = el('button', { id: 'skip', class: drillStart ? 'primary' : '' }, drillStart ? 'Fast-forward to the launch' : 'Fast-forward to the start time');
+    skip.onclick = () => { if (blockedBySave()) return; act(drillStart ? { type: 'skipPreread', secondsBefore: minus + 5 } : { type: 'skipPreread' }); renderNow(); };
+    const toggle = el('button', { id: 'preread-toggle', class: 'mini', title: 'collapse the pre-read to a strip over the road' }, 'Hide the pre-read (show clock and watch)'); toggle.onclick = () => setPrereadCollapsed(!prereadCollapsed, true);
+    const v0 = li0?.speed; let accel = '';
+    if (v0 && li0) accel = drillStart ? ` Drill start: no queue and no count. The car launches itself at ${formatClock(li0.launchTime)}, your time minus ${minus} s for its ${li0.netLoss.toFixed(1)} s standing-start loss to ${v0} mph.` : ` Your car loses about ${li0.netLoss.toFixed(1)} s getting up to ${v0} mph, so launch ${minus} s before your time (${formatClock(li0.launchTime)}).`;
+    const generic = drillStart
+      ? `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one.${accel} Wait for it or fast-forward; leaving earlier is an early departure.`
+      : `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one. The ghost leaves exactly on the second.${accel} Nobody releases you: wait for your time, launch your standing-start loss early, and expect the driver's warning about 30 seconds before.`;
     const keysRow = el('div', { class: 'keys3' }); for (const [k, d] of hint.keys) keysRow.append(el('div', {}, el('kbd', {}, k), ' ', d));
     const rs = restartLines(scenario);
-    const preStart = el('div', { class: 'startcard' }); preStartParts = startCardParts(preStart);
+    const preStart = el('div', { class: 'startcard keep' }); preStartParts = startCardParts(preStart);
     preread.append(el('div', { class: 'box' },
       resumeBanner(),
-      el('h2', {}, drill ? `${drill.id}: ${drill.title}` : scenario.name),
+      el('div', { class: 'keep preread-top' }, el('h2', {}, drill ? `${drill.id}: ${drill.title}` : scenario.name), toggle),
       preStart,
       el('p', { class: 'objective' }, el('b', {}, 'Objective: '), objective),
       el('div', { class: 'keys-title muted' }, 'The keys that matter'), keysRow,
-      el('p', {}, hint.preread ?? generic),
+      el('p', {}, drillStart && hint.preread ? `${hint.preread}${accel}` : hint.preread ?? generic),
       rs.length ? el('p', { class: 'accent' }, rs.map(r => `Line ${r.line}: ${r.label}`).join(' · ')) : null,
-      el('div', { class: 'big', id: 'countdown' }),
-      el('div', { style: 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap' }, pullBtn, warnBtn, dep, skip),
+      el('div', { class: 'big keep', id: 'countdown' }),
+      el('div', { class: 'keep prebtns', style: 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap' }, ...(drillStart ? [skip, dep] : [pullBtn, warnBtn, dep, skip])),
       el('p', { class: 'muted', style: 'margin-top:8px' }, 'Space starts the stopwatch; most navigators start it on the official second and run it as time-of-day all day.')));
   }
   /** N4: the cockpit pre-read offers the saved run of this drill: Resume restores it exactly as Home does, Start fresh discards it. */
@@ -784,7 +814,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       if (location.hash === h) window.dispatchEvent(new HashChangeEvent('hashchange')); else location.hash = h;
     };
     const fresh = el('button', { id: 'start-fresh' }, 'Start fresh');
-    fresh.onclick = () => { clearStored(LIVE_KEY); pendingSave = null; banner.remove(); flash('Saved run discarded'); renderNow(); };
+    fresh.onclick = () => { if (!confirm('Start fresh and discard the saved run? It cannot be resumed afterwards.')) return; clearStored(LIVE_KEY); pendingSave = null; banner.remove(); flash('Saved run discarded'); renderNow(); };   // PLAY-010: discarding asks first
     const banner = el('div', { class: 'resume-banner', id: 'resume-banner' },
       el('div', {}, el('b', {}, 'You have an unfinished run of this drill: '), `${describeSource(sv.source, names)} (saved ${ago} min ago, ${sv.actions.length} actions).`),
       el('div', { style: 'display:flex;gap:8px;justify-content:center;margin-top:6px' }, res, fresh));
@@ -798,7 +828,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   }
   function renderPerfCard(o: Observation, dwellSoFar: number): void {
     const fl = focusLine(o, rung, bookLen);
-    const line = o.stoppedAtLine ?? (fl.line);
+    const line = o.stoppedAtLine ?? manualLine ?? fl.line;   // PLAY-008: the line the player moved the book to wins until the driver's next check-off
     const card = cachedCard(line);
     cardTitle.textContent = o.stoppedAtLine ? `Stopped: line ${line}` : policy.computedCard ? 'Perf card for the next line' : 'Your notes for this line';
     renderSimpleChart(line);
@@ -808,8 +838,12 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const lp = policy.computedCard ? startLaunchFor(scenario, line) : null;   // START-001: your time, launch at your time minus the standing-start loss
     if (lp) parts.push(`<div class="launchcard" id="launchcard"><b>Launch</b> <span class="mono">${esc(lp.text)}</span><div class="muted">Warn the driver about 30 s before; count so the last count lands on the launch second.</div></div>`);
     if (hold) parts.push(`<div class="holdcard ${hold.kind}" id="holdcard"><b>${escapeHtml(hold.title)}</b><div class="mono">${escapeHtml(hold.text)}</div></div>`);
+    // PLAY-002: the transit in force prints no speed and none is called yet: its pace stays on the card whatever line the pointer is on
+    { let tp = card.transitPace ?? null;
+      if (!tp && o.phase === 'running' && o.driver.targetIndicated === null) for (let n = line; n >= 1; n--) { const ins = scenario.book[n - 1]; if (ins?.transit?.end) break; if (ins?.transit && !ins.transit.end) { tp = cachedCard(n)?.transitPace ?? null; break; } }
+      if (tp) parts.push(`<div class="transitpace accent" id="transitpace">${escapeHtml(tp.text)}</div>`); }
     if (card.restart) {
-      parts.push(`<div class="accent">Not a stop: call go so the car leaves at the out-time${card.restart.accel !== null ? ` minus the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);
+      parts.push(`<div class="accent">Not a stop: call go so the car leaves at the out-time${card.restart.accel !== null ? ` minus ${Math.round(card.restart.accel)} s for the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);
     } else if (card.mode === 'answers') {
       if (card.stop) {
         const s = card.stop; const more = waitMore(s, dwellSoFar);
@@ -841,7 +875,14 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   function baseScale(o: Observation): number {
     const nearest = o.ahead.length ? Math.min(...o.ahead.map(f => f.approxDistanceFt)) : null;
     const hazard = o.ahead.some(f => f.kind === 'slow' || f.kind === 'construction' || f.gateDown || f.signalColor === 'red');
-    return effectiveScale({ requested, paused, phase: o.phase, carStopped: o.carStopped, waitingForGo: o.driver.waitingForGo, nearestFeatureFt: nearest, hazardActive: hazard, countdownSeconds: o.aids.countdown ?? null, bezelRemaining: o.stopwatch.running && o.stopwatch.kind === 'analog' ? o.stopwatch.bezelRemaining : null, lockedTo1x });
+    return effectiveScale({ requested, paused, phase: o.phase, carStopped: o.carStopped, waitingForGo: o.driver.waitingForGo, nearestFeatureFt: nearest, hazardActive: hazard, countdownSeconds: o.aids.countdown ?? null, bezelRemaining: o.stopwatch.running && o.stopwatch.kind === 'analog' ? o.stopwatch.bezelRemaining : null, lockedTo1x, holdSecondsLeft: holdSecondsLeft(o) });
+  }
+  /** PLAY-003: seconds to the out time of the hold the car waits at (the launch second at a restart), or null. */
+  function holdSecondsLeft(o: Observation): number | null {
+    if (o.phase !== 'running' || !o.driver.waitingForGo || sim.waitReason !== 'hold' || !o.stoppedAtLine) return null;
+    const ins = scenario.book[o.stoppedAtLine - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined; if (!node) return null;
+    const li = sim.launchInfo(); const go = li ? li.launchTime : sim.holdGoTod(node);
+    return go === null ? null : go - o.tod;
   }
 
   // ---------- loop ----------
@@ -892,7 +933,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   window.__rally = {
     sim,
     advance(seconds: number) { const s = Math.max(0, Number(seconds) || 0); let left = s; while (left > 0 && sim.phase !== 'finished') { const d = Math.min(60, left); sim.step(d); left -= d; } renderNow(); if (sim.phase === 'finished') finish(); return obs; },
-    act(a: Action) { act(a); renderNow(); return obs; },
+    act(a: Action) { if (a.type === 'line.set') setManual(a.n); act(a); renderNow(); return obs; },
     observe: () => sim.observe({ peek: true }),
     result: () => sim.result(),
     finish,

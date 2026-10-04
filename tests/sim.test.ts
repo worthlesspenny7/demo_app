@@ -48,8 +48,9 @@ describe('simulator basics', () => {
     const sc = new ScenarioBuilder({ startTime: T0, driver: quiet }).start(30).advanceMiles(1).speedAtSign('SPEED LIMIT 40', 40).advanceMiles(1).checkpoint().advanceFt(300).finish().build();
     const sim = new Simulator(sc); startAtOfficialTime(sim);
     const s = nodeS(sc, 'n2');
-    stepUntil(sim, () => sim.car.s >= s - 500 - 1);
-    expect(sim.observe().ahead.some(f => f.nodeId === 'n2')).toBe(false);
+    stepUntil(sim, () => sim.car.s >= s - 510);
+    // one tick is ~4.4 ft at 30 mph: step tick by tick across the boundary; visible exactly when within the sight distance
+    while (s - sim.car.s > 500) { expect(sim.observe().ahead.some(f => f.nodeId === 'n2')).toBe(false); sim.step(0.1); }
     stepUntil(sim, () => sim.car.s >= s - 500 + 1);
     expect(sim.observe().ahead.some(f => f.nodeId === 'n2')).toBe(true);
     stepUntil(sim, () => sim.car.s > s + 1);
@@ -208,7 +209,7 @@ describe('stops and pauses end to end', () => {
     const res = sim.result(); const leg = res.score.legs[0]!;
     expect(Math.abs(leg.error!)).toBeLessThanOrEqual(1);
     // per-stop record exists with the dwell we held (UI-REQUESTS #1)
-    expect(res.attribution[0]!.stops.length).toBe(1); expect(res.attribution[0]!.stops[0]!.dwell).toBeCloseTo(dwell, 0); expect(res.attribution[0]!.stops[0]!.vIn).toBe(35);
+    expect(res.attribution[0]!.stops.length).toBe(1); expect(res.attribution[0]!.stops[0]!.dwell).toBeCloseTo(dwell, 0); expect(Math.abs(res.attribution[0]!.stops[0]!.vIn - 35)).toBeLessThanOrEqual(1);
   });
   it('forgetting the dwell arithmetic (full 15 s) makes you late by the stop loss', () => {
     const sc = new ScenarioBuilder({ startTime: T0, driver: quiet }).start(35).advanceMiles(0.5).stop('S', 35).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();

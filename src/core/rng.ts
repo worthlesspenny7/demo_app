@@ -16,6 +16,7 @@ function hashString(s: string): number {
 
 export function rng(seed: number | string): Rng {
   let a = (typeof seed === 'string' ? hashString(seed) : seed >>> 0) || 1;
+  const seed0 = a;
   const next = (): number => {
     a = (a + 0x6D2B79F5) >>> 0;
     let t = a;
@@ -34,7 +35,8 @@ export function rng(seed: number | string): Rng {
       return mean + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
     },
     chance: (p) => next() < p,
-    fork: (label) => rng(hashString(`${a}:${label}`)),
+    /** DET-001: a fork depends on (seed, label) only, never on how many draws the parent has made. */
+    fork: (label) => rng(hashString(`${seed0}:${label}`)),
   };
   return r;
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
 import { DRIVER_EXPERT, DEFAULT_RULES } from '../src/core/course.js';
 import { scoreLeg } from '../src/core/scoring.js';
-import { Simulator, validateAction, ACTION_LIST } from '../src/core/sim.js';
+import { Simulator, validateAction, ACTION_LIST, ENGINE_VERSION } from '../src/core/sim.js';
 import { OracleBot, runBot } from '../src/agent/bots.js';
 import { Session } from '../src/agent/protocol.js';
 import { hms } from '../src/core/units.js';
@@ -42,7 +42,8 @@ describe('Time Allowance (REG V.H)', () => {
     sim.act({ type: 'ta.request', legIndex: 1, seconds: 0, fromLine: 2, toLine: 2 }); expect(sim.taRequests[sim.taRequests.length - 1]!.status).toBe('refused');
     sim.act({ type: 'ta.request', legIndex: 1, seconds: 30, fromLine: 5, toLine: 2 }); expect(sim.taRequests[sim.taRequests.length - 1]!.reason).toMatch(/instruction numbers/);
     sim.act({ type: 'ta.request', legIndex: 7, seconds: 30, fromLine: 2, toLine: 2 }); expect(sim.taRequests[sim.taRequests.length - 1]!.reason).toMatch(/Leg 7/);
-    sim.act({ type: 'ta.request', legIndex: 1, seconds: 1770, fromLine: 1, toLine: 4 }); expect(sim.taRequests[sim.taRequests.length - 1]!.status).toBe('filed');
+    // ENG-011: one request per leg: a second filing for leg 1 is refused (it does not silently replace the first)
+    sim.act({ type: 'ta.request', legIndex: 1, seconds: 1770, fromLine: 1, toLine: 4 }); expect(sim.taRequests[sim.taRequests.length - 1]!.status).toBe('refused'); expect(sim.taRequests[sim.taRequests.length - 1]!.reason).toMatch(/already has a request/); expect(sim.taDeclared[1]).toBe(rec.adjusted);
     expect(sim.sc.rules.taMaxRequestSeconds).toBe(1770);
     expect(validateAction({ type: 'ta.request', legIndex: 1, seconds: 30, fromLine: 1, toLine: 1 })).toBeNull(); expect(validateAction({ type: 'ta.request', seconds: 30 })).not.toBeNull();
     expect(ACTION_LIST).toEqual(expect.arrayContaining(['ta.request', 'scorecard.ack', 'speed.emergency', 'speed.resume', 'ta.declare']));
@@ -112,7 +113,7 @@ describe('Time Allowance (REG V.H)', () => {
     const sc = trainStage(); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { noRecovery: true }));
     expect(r.ta.requests.length).toBe(1); const q = r.ta.requests[0]!; expect(q.status).toBe('filed'); expect(q.adjusted % 10).toBe(0); expect(q.legIndex).toBe(1);
     expect(r.ta.scorecardAcked).toBe(true); expect(r.score.legs[0]!.taCredit).toBeGreaterThan(40);
-    expect(r.engineVersion).toBe('3.0.0');
+    expect(r.engineVersion).toBe(ENGINE_VERSION);
   });
 
   it('TA-004 only trains, accident scenes, hazard-forced stops and declared emergency reduced speeds qualify; navigation errors, a slow vehicle and cross traffic never do', () => {

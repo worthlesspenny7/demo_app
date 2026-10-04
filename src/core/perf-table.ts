@@ -109,7 +109,8 @@ export function turnLoss(angleAbs: number, vIn: number, vOut: number, car: CarSp
     const ap = Math.min(cap, vIn, vOut);
     return matrixAt(car.tables.accel, vIn, ap) + matrixAt(car.tables.accel, ap, vOut);
   }
-  if (cap >= Math.min(vIn, vOut)) return 0;
+  // PLAY-009: at or below the apex speed the turn itself costs nothing, but the IN -> OUT change still does (the ghost changes instantly): chart (c)'s 10 mph row is not all zeros
+  if (cap >= Math.min(vIn, vOut)) return vIn === vOut ? 0 : speedChangeLoss(vIn, vOut, car);
   const c = new Car(car); c.v = mphToFps(vIn); c.mode = 'cruise';
   const vi = mphToFps(vIn), vo = mphToFps(vOut), vc = mphToFps(cap);
   let t = 0;
@@ -143,8 +144,8 @@ export interface PerfTable {
   turn: Record<string, number>;
 }
 /** Speeds of the model-driven charts (IN rows / OUT columns). */
-/** SPEED-001: 10 to 55 mph in steps of 5, plus the 12 mph row the real charts carry (11a: the rows run 55 ... 15, 12, 10). */
-export const CHART_SPEEDS = [10, 12, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+/** SPEED-001: 10 to 55 mph in steps of 5, plus the 12 mph row the real charts carry (11a: the rows run 55 ... 15, 12, 10) and the 48 mph row generated books assign (PLAY-009). */
+export const CHART_SPEEDS = [10, 12, 15, 20, 25, 30, 35, 40, 45, 48, 50, 55];
 /** Speeds used by the older reference tables. */
 export const SPEEDS = [20, 25, 30, 35, 40, 45, 50];
 

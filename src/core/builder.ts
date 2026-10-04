@@ -56,6 +56,8 @@ export interface BuilderOptions {
   asp?: number; timeZone?: TimeZoneLabel; bookStyle?: 'example' | 'race';
   car?: CarSpec; speedo?: SpeedoSpec; driver?: DriverSpec; rules?: Partial<RulesConfig>; aids?: AidsConfig;
   prereadSeconds?: number; excursionFt?: number; tags?: string[]; trafficWaitProbability?: number;
+  /** PLAY-005: 'drill' = drill-sized start (no queue, no count; the car launches itself on the printed launch second). */
+  startProcedure?: 'full' | 'drill';
 }
 
 /** Standard exits for common intersections (angle: negative = left). */
@@ -233,7 +235,9 @@ export class ScenarioBuilder {
       excursionFt: o.excursionFt ?? 2640, tags: o.tags ?? [], asp: o.asp ?? 0, timeZone: o.timeZone ?? 'CDT', bookStyle: o.bookStyle ?? bookStyleForRung(aids.rung),
     };
     this.trafficWaitProbability = o.trafficWaitProbability ?? 0;
+    this.startProcedure = o.startProcedure;
   }
+  private readonly startProcedure: 'full' | 'drill' | undefined;
 
   get position(): number { return this.s; }
   /** Number of instruction lines added so far. */
@@ -475,6 +479,13 @@ export class ScenarioBuilder {
     return this;
   }
   finish(): this { return this.observationFinish(); }
+  /** PLAY-005: a finish banner with no Observation Checkpoint (D01, a stopwatch drill, has nothing to do at the finish). */
+  plainFinish(): this {
+    this.markTransitGuide(this.s);
+    this.instruction({ kind: 'finish', control: 'none', sightDistance: 400, label: 'Finish banner' }, { section: 'finish' });
+    this.closeTransit(this.s);
+    return this;
+  }
 
   hazard(h: DistributiveOmit<Hazard, 's'> & { s?: number }): this {
     this.hazards.push({ ...h, s: h.s ?? this.s } as Hazard);
@@ -500,6 +511,7 @@ export class ScenarioBuilder {
       course: { nodes: [...this.nodes].sort((a, b) => a.s - b.s), lengthFt }, book, checkpoints: [...this.checkpoints].sort((a, b) => a.s - b.s), hazards: this.hazards,
       startTime: this.teamStartTime, baseStartTime: this.opts.startTime, asp: this.opts.asp, timeZone: this.opts.timeZone, bookStyle: this.opts.bookStyle,
       prereadSeconds: this.opts.prereadSeconds, rules: this.opts.rules, aids: this.opts.aids, excursionFt: this.opts.excursionFt, tags: this.opts.tags, trafficWaitProbability: this.trafficWaitProbability,
+      ...(this.startProcedure ? { startProcedure: this.startProcedure } : {}),
     };
     if (sc.book.some(i => i.section === 'calibration')) annotatePerfectTimes(sc);
     return sc;

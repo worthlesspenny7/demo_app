@@ -70,8 +70,16 @@ export function playerGrid(id: ChartId, speeds: number[], values: Record<string,
 export const gridHasNegative = (g: ChartGrid): boolean => g.rows.some(r => r.cells.some(c => c.neg));
 
 /** The three charts for a car, with the current (IN, OUT) pair highlighted in each (accel: a start from rest highlights row 0). */
+/** PLAY-009: a chart that does not print 48 mph (the Packard's 15-50 table) gets a 48 row and column interpolated between its 45 and 50 cells. */
+export function with48(m: Matrix): Matrix {
+  if (m.speeds.includes(48) || !m.speeds.includes(45) || !m.speeds.includes(50)) return m;
+  const speeds = [...m.speeds, 48].sort((a, b) => a - b); const rows: Matrix['rows'] = {};
+  for (const i of speeds) { rows[i] = {}; for (const o of speeds) rows[i]![o] = m.rows[i]?.[o] ?? Math.round(matrixAt(m, i, o) * 10) / 10; }
+  return { speeds, rows };
+}
 export function chartGrids(car: CarSpec, pair: { vIn: number | null; vOut: number | null } | null = null): ChartGrid[] {
-  const t = buildPerfTable(car);
+  const t0 = buildPerfTable(car);
+  const t = car.tables ? { ...t0, accel: with48(t0.accel), stopGo: with48(t0.stopGo), turns: with48(t0.turns) } : t0;
   const vOut = pair?.vOut ?? null; const vIn = pair?.vIn ?? null;
   const p = vOut !== null ? { vIn: vIn !== null && vIn > 0 ? vIn : vOut, vOut } : null;
   const pa = vOut !== null ? { vIn: vIn ?? 0, vOut } : null;

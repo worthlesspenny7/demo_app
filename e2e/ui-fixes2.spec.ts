@@ -164,7 +164,8 @@ test('UI-026 the pending callout asks for S when the finish is in sight, and the
   // D11 line with a turn: the card carries the turn-loss rows
   await openDrill(page, 'D11');
   await depart(page);
-  await page.evaluate(() => { const r = window.__rally!; const b = r.observe().book; const n = b.find(i => i.turn === 'L' || i.turn === 'R')!.n; r.act({ type: 'line.set', n }); });
+  // a turn that is not a STOP (PLAY-008: a turning STOP's card has no separate turn-loss block)
+  await page.evaluate(() => { const r = window.__rally!; const b = r.observe().book; const n = b.find(i => (i.turn === 'L' || i.turn === 'R') && !i.pause && !/STOP/.test(i.text))!.n; r.act({ type: 'line.set', n }); });
   await expect(page.locator('#perfcard .turnloss')).toContainText(/Turn loss/);
   await expect(page.locator('#perfcard .turnloss')).toContainText(/90°/);
 });

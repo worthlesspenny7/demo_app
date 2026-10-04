@@ -121,3 +121,34 @@ Source of truth: docs/research/11a (training sessions, sections 3-5), 11b (Class
 - 7 Checkpoint signs (road.ts, sim.ts label, traps.ts, lessons/reference): red GREAT RACE STOP board on a wire stand for the Observation Checkpoint, green for Timing; SIM-004 wording and trap tips updated. 8 Lost: LOST_GUIDANCE and LESSON-008 carry "find the order of start and your position: the car a minute behind you is your clock" and the definition of hacking. 9 Speeds: 12 mph in the charts (SPEED-001).
 - Also: reference CAMEO legend shows the sign faces; quiz cameos carry the card's sign; the GRIID lesson text matches the new anatomy. Fixed on the way: the "GO at" field no longer echoes engine annotations of the preset marks.
 - Not done: see STATUS "Phase VI" (hand marks in the printable view; two-row railroad crossing; Packard simple chart edges).
+
+## Fix sprint PT-05/PT-06 (2026-10-04)
+Sources: docs/playtest/PT-05-playability-v3.md (all ten top fixes, the three driver's-card gaps) and docs/playtest/PT-06-engine-bughunt-v3.md (MEDIUM 1-8, LOW 9-13 and 15-19). One agent, no sub-agents (none available in this session). Not committed. New SPECS section "FIX SPRINT PT-05 / PT-06": PLAY-001..011, ENG-001..013, ENG-015..019 (29 ids). Verification: tsc clean, 523 unit (was 489; +22 tests/fix-sprint-engine.test.ts, +12 tests/fix-sprint-ui.test.ts), build clean, 62 e2e (was 56; +6 e2e/fix-sprint.spec.ts), spec:check 300/300 (was 271). ENGINE_VERSION 3.1.0, golden transcript regenerated (varied-3 oracle raw 1 -> 0).
+- Engine (src/core/sim.ts, rng.ts, course.ts, scoring.ts, builder.ts, perf-table.ts; src/agent/protocol.ts, cli.ts):
+  stale call.go at v = 0 off a stop line is refused, never stored (ENG-001); call.pullover has its own wait and call.go / call.speed ends it (it used to end the stage) (ENG-002);
+  "Give me about 30 seconds" is a question and advance {untilEvent} stops 30 s before the launch and never past it (ENG-003); cross traffic on a stream keyed by (seed, node),
+  driver noise and ramps on their own streams, rng.fork by (seed, label) (ENG-004); one-minute / late-launch findings only for discretionary departures (StartDelta.arrivedLate)
+  (ENG-005); exact-transit IN clock read judged in [-60, +60] s at the end (ENG-006); ta.request refused after the finish / after result() (ENG-007); validateScenario requires asp and
+  the rules numbers, normalizeScenario for older files, no pace cars without asp >= 1 (ENG-008); TA window float tolerance (ENG-009); no zone delay during a stop inside a zone
+  (ENG-010); TA requests < 10 s and second requests per leg refused, whole leg/line numbers (ENG-011); half-up integer rounding of raw x factor (ENG-012); standings to the 0.01 s,
+  a repeated stage counted once, ageFactor rejects NaN (ENG-013); untilEvent scans only its own events and honours `seconds` (ENG-015); carStopped schedules never fire in the
+  pre-read, malformed `when` refused, 100-action cap (ENG-016); per-type action whitelist (ENG-017); agent-side redaction at rung <= 1 (whole-second tod, no launch, coarse hour
+  hand when ambiguous; pace-car errors and car-ahead departure times withheld until the finish) (ENG-018, in Session, not in Simulator.observe, which the UI reads); no pace cars in the
+  calibration run (ENG-019). PT-05 engine side: the driver asks "what speed?" on a transit with no printed speed (PLAY-002), drill-sized start (Scenario.startProcedure 'drill',
+  auto launch on the launch second) (PLAY-005), the driver names the hold (PLAY-007), speaks up at a slow vehicle (PLAY-010), cross traffic after the go goes to the hazard bucket
+  (PLAY-006), the start line is checked off at departure and stale next-call prompts clear (PLAY-008), launch = own time - round(net loss) (PLAY-009).
+- Drills / rubrics (src/core/drills/index.ts, d01.ts, rubrics.ts, departures.ts): D01-D05 drill-sized starts, D01 without an Observation Checkpoint; D04/D05 graded on the call error at
+  each change (callErrors, timedAnchorTod for STOP + timed lines), the D05 thresholds 0.8/1.3/2.0 s (x driver scale); "Clean run" only without penalty items or findings; cruise tip
+  names uncalled speeds (uncalledSpeeds); instrument finding wording "no stopwatch start or lap at the landmark of a timed interval".
+- UI (src/ui/screens/cockpit.ts, home.ts, school.ts, debrief.ts; viewmodels curriculum, timescale, cockpitinfo, debrief, counterfactual, charts, hints, v3; styles.css; content/lessons.ts):
+  the Start-here path ticks on a Bronze star and Next opens the next step (Home, lesson 1, the Debrief) (PLAY-001); transit pace on the perf card (PLAY-002); holds at the chosen
+  scale until 60 s before the out time (PLAY-003); restart card and count at the top of the book column, collapsible pre-read that folds itself 45 s before the launch (PLAY-004);
+  D01-D05 pre-read with "Fast-forward to the launch" (PLAY-005); debrief rows (per-leg assigned speed, no lunch/OUT stop rows, no-pause STOP "make it up", What-if uses the go
+  call, D04 stars = bias row) (PLAY-006); "leave AT ... (not before ... - 5 min penalty window)" (PLAY-007); perf card follows the line (manual line wins until the next check-off,
+  book jumps to the stopped line once, no turn-loss block on a STOP) (PLAY-008); 48 mph chart rows (Ford; interpolated for the Packard table), turn chart low-speed cells, one launch
+  rounding rule (PLAY-009); red Done button pinned in the TA form header, Discard / Start fresh confirm, the 30-s banner clears after W (PLAY-010); driver's card 9 lines with who
+  says "I see it" and the start routine, rule 6 launches early by the start loss (PLAY-011).
+- Changed existing tests (with the reason in the test): BOT-006 (3.1.0 noise: >= 2 stars every seed, 3 on >= 9 of 10), DRILL-019 (late calls instead of a faked bucket), UI-028
+  (Bronze ticks the path; the book follows the stop), UI-032 / UI-026 / LESSON-002 / START-001 / SPEED-001 / CHART-001 / TA-001 / TAF-001 (wording, 48 row, whole-second launch,
+  one request per leg), SIM-002 (steps tick by tick across the sight boundary).
+- Not done: see STATUS HANDOFF.

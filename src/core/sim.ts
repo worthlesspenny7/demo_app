@@ -1,7 +1,7 @@
 /** The Simulator: world state machine. DESIGN §7, §9, §11. */
 import {
   type Scenario, type Node, type Exit, type TurnDir, type Checkpoint, type Hazard, type Instruction, type SlowHazard, type ConstructionHazard, type AccidentHazard, type TractorHazard, type CombineHazard, type SchoolBusHazard,
-  nodeById, instructionS,
+  nodeById, instructionS, transitPaceMph,
 } from './course.js';
 import { buildGhost, ghostTimeAt, exactTransitBegin, type GhostTable, type Leg } from './ghost.js';
 import { Car } from './car.js';
@@ -138,7 +138,11 @@ export interface ClockView { hourAngle: number; minuteAngle: number; secondAngle
 /** Debrief findings of the run (UI-037 names them separately). */
 export interface DebriefFinding { kind: 'oneMinuteMistake' | 'timedIntervalDisturbed' | 'lateLaunch' | 'earlyLaunch'; line: number; text: string; seconds?: number }
 /** START-001: one start / restart against its launch time. delta = actual - launchTime (+ late). */
-export interface StartDelta { line: number; kind: 'start' | 'restart'; ownTime: number; netLoss: number; launchTime: number; actual: number | null; delta: number | null; warned: boolean; pulledUp: boolean; refusedPullUps: number }
+export interface StartDelta { line: number; kind: 'start' | 'restart'; ownTime: number; netLoss: number; launchTime: number; actual: number | null; delta: number | null; warned: boolean; pulledUp: boolean; refusedPullUps: number;
+  /** ENG-005: the car reached the restart line after its launch time, so the departure was not the navigator's choice (no late-side finding). */
+  arrivedLate?: boolean;
+  /** PLAY-005: the simulator launched the car itself (drill-sized start at the printed launch second, or the 30-minute auto-departure). */
+  auto?: 'drill' | 'late' }
 
 export interface Observation {
   phase: 'preread' | 'running' | 'finished';
@@ -216,7 +220,8 @@ export interface StageResult {
   /** INST-002 / MAKEUP-001 / START-001: oneMinuteMistake, timedIntervalDisturbed, lateLaunch, earlyLaunch. */
   findings: DebriefFinding[];
 }
-export const ENGINE_VERSION = '3.0.0';
+/** 3.1.0 (PT-06 bug 4): cross-traffic holds come from a keyed stream per STOP node and the driver's noise / ramps from their own streams. */
+export const ENGINE_VERSION = '3.1.0';
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
@@ -247,9 +252,10 @@ export function validateAction(a: unknown): string | null {
     case 'call.warn': return x.seconds === undefined || num(x.seconds, 1, 600) ? null : 'call.warn.seconds must be 1..600';
     case 'call.identify': return typeof x.text === 'string' && x.text.length <= 200 ? null : 'call.identify.text must be a string (<= 200 chars)';
     case 'count': return num(x.n, -1000, 1000) && Number.isInteger(x.n) ? null : 'count.n must be an integer';
-    case 'ta.declare': return num(x.seconds, 0, 3600) && (x.legIndex === undefined || num(x.legIndex, 1, 1000)) ? null : 'ta.declare.seconds must be 0..3600';
+    case 'ta.declare': return num(x.seconds, 0, 3600) && (x.legIndex === undefined || (num(x.legIndex, 1, 1000) && Number.isInteger(x.legIndex))) ? null : 'ta.declare.seconds must be 0..3600 (legIndex a whole leg number)';
     case 'ta.request': {
       if (!(num(x.legIndex, 1, 1000) && num(x.seconds, 0, 86400) && num(x.fromLine, 1, 10000) && num(x.toLine, 1, 10000) && (x.note === undefined || (typeof x.note === 'string' && x.note.length <= 500)))) return 'ta.request needs legIndex, seconds, fromLine, toLine (and an optional note of at most 500 chars)';
+      if (!Number.isInteger(x.legIndex) || !Number.isInteger(x.fromLine) || !Number.isInteger(x.toLine)) return 'ta.request legIndex, fromLine and toLine must be whole numbers';
       if (x.password !== undefined && !(typeof x.password === 'string' && /^\d{4}$/.test(x.password))) return 'ta.request.password must be 4 digits';
       if (x.phone !== undefined && !(typeof x.phone === 'string' && x.phone.length <= 24)) return 'ta.request.phone must be a string (<= 24 chars)';
       if (x.carNumber !== undefined && !num(x.carNumber, 0, 9999)) return 'ta.request.carNumber must be a number';
@@ -264,13 +270,30 @@ export function validateAction(a: unknown): string | null {
     }
     case 'speed.emergency': return num(x.mph, 5, 60) ? null : 'speed.emergency.mph must be a finite number 5..60';
     case 'line.set': return num(x.n, 1, 10000) ? null : 'line.set.n must be a line number';
-    case 'line.annotate': return num(x.n, 1, 10000) && typeof x.text === 'string' && x.text.length <= 500 ? null : 'line.annotate needs n and text (<= 500 chars)';
+    case 'line.annotate': return num(x.n, 1, 10000) && Number.isInteger(x.n) && typeof x.text === 'string' && x.text.length <= 500 ? null : 'line.annotate needs a whole line number n and text (<= 500 chars)';
     case 'note': return typeof x.text === 'string' && x.text.length <= 2000 ? null : 'note.text must be a string';
     case 'speedo.setFactor': return num(x.k, 0.5, 2) ? null : 'speedo.setFactor.k must be a finite number 0.5..2';
     case 'card.set': return x.card && typeof x.card === 'object' && Object.values(x.card as Record<string, unknown>).every(v => num(v, 0, 80)) ? null : 'card.set.card must map speeds to finite mph values';
     case 'skipPreread': return x.secondsBefore === undefined || num(x.secondsBefore, 0, 86400) ? null : 'skipPreread.secondsBefore must be a finite number';
     default: return null;
   }
+}
+/** ENG-017: the fields each action type carries; anything else is dropped before the action is recorded or logged. */
+const ACTION_KEYS: Record<string, string[]> = {
+  'watch.reset': ['force'], 'watch.mode': ['mode'], 'clock.read': ['source'], 'watch.bezel': ['seconds'], 'bezel.set': ['seconds'], 'ledger.set': ['seconds', 'entries'],
+  'call.speed': ['mph'], 'call.turn': ['dir'], 'line.set': ['n'], 'line.annotate': ['n', 'text'], note: ['text'],
+  'ta.request': ['legIndex', 'seconds', 'fromLine', 'toLine', 'note', 'carNumber', 'password', 'phone', 'stage', 'cause', 'witnesses', 'requestType', 'contestantStatus', 'circumstances', 'witnessedBy'],
+  'ta.declare': ['seconds', 'legIndex'], 'speed.emergency': ['mph'], 'call.warn': ['seconds'], 'call.identify': ['text'], count: ['n'], 'speedo.setFactor': ['k'], 'card.set': ['card'], skipPreread: ['secondsBefore'],
+};
+/** ENG-017: a copy of a (validated) action with only its documented fields; nested rows are rebuilt the same way. */
+export function sanitizeAction(a: Action): Action {
+  const src = a as unknown as Record<string, unknown>; const out: Record<string, unknown> = { type: a.type };
+  for (const k of ACTION_KEYS[a.type] ?? []) if (src[k] !== undefined) out[k] = src[k];
+  if (Array.isArray(out.entries)) out.entries = (out.entries as { seconds: number; source: string }[]).map(e => ({ seconds: e.seconds, source: e.source }));
+  if (out.witnesses && typeof out.witnesses === 'object') { const w = out.witnesses as Record<string, unknown>; out.witnesses = { ...(w.ahead !== undefined ? { ahead: w.ahead } : {}), ...(w.behind !== undefined ? { behind: w.behind } : {}) }; }
+  if (Array.isArray(out.witnessedBy)) out.witnessedBy = (out.witnessedBy as Record<string, unknown>[]).map(w => { const r: Record<string, unknown> = {}; if (w && typeof w === 'object') { if (typeof w.car === 'string' || (typeof w.car === 'number' && Number.isFinite(w.car))) r.car = w.car; if (typeof w.description === 'string') r.description = w.description.slice(0, 200); if (w.role === 'contestant' || w.role === 'official') r.role = w.role; } return r; });
+  if (out.card && typeof out.card === 'object') out.card = { ...(out.card as Record<string, number>) };
+  return out as unknown as Action;
 }
 const TURN_ZONE_FT = 60;
 const turnZoneOf = (c: { turnZoneFt?: number }): number => c.turnZoneFt ?? TURN_ZONE_FT;
@@ -285,6 +308,9 @@ export class Simulator {
   readonly watch: Stopwatch;
   readonly clock: RallyClock;
   readonly rnd: Rng;
+  /** ENG-004: the driver's speed-holding noise and his ramp factors use their own streams, so hidden hazards do not depend on the navigator's calls. */
+  private readonly drvRng: Rng;
+  private readonly rampRng: Rng;
   tod: number;
   phase: Observation['phase'] = 'preread';
   readonly events: SimEvent[] = [];
@@ -303,7 +329,7 @@ export class Simulator {
   pendingTurn: TurnDir | null = null;
   holdRequested = false;
   waitingForGo = false;
-  waitReason: 'stop' | 'ask' | 'signal' | 'train' | 'hold' | 'roadEnd' | 'finish' | null = null;
+  waitReason: 'stop' | 'ask' | 'signal' | 'train' | 'hold' | 'roadEnd' | 'finish' | 'pullover' | null = null;
   waitStartTod = 0;
   patienceWarned = false;
   passRequested = false;
@@ -396,6 +422,8 @@ export class Simulator {
   private drivingSeconds = 0;
   private finishedTod: number | null = null;
   private departed = false;
+  private autoDeparted: 'drill' | 'late' | null = null;
+  private slowSaid = new Set<number>();
   /** Turn zone: cap applies while car.s < turnZoneEndS; set when the exit is known (pre-braking) and at crossing. */
   private turnZoneEndS = -1; private turnCap = Infinity;
   private executed = new Set<number>();
@@ -406,6 +434,7 @@ export class Simulator {
     this.rnd = rng(sc.seed);
     { const slop = sc.rules.clockMinuteSlop ?? 5; this.clock = new RallyClock(slop, (rng(`${sc.seed}:v3:clock`).next() * 2 - 1) * slop); }
     this.protoRng = rng(`${sc.seed}:v3:proto`);
+    this.drvRng = rng(`${sc.seed}:drv`); this.rampRng = rng(`${sc.seed}:ramp`);
     this.car = new Car(sc.car);
     this.speedo = new Speedometer(sc.speedo, this.rnd.fork('speedo'));
     this.watch = new Stopwatch(opts.watch ?? DEFAULT_WATCH, opts.dialSeconds ?? 60, sc.rules.splitHoldSeconds ?? 5);
@@ -437,8 +466,14 @@ export class Simulator {
   private checkClockUse(what: string, line: number): void {
     if (!this.clockRecentlyRead()) this.findings.push({ kind: 'clockForTimeOfDay', line, text: `${what} (line ${line}) was taken with the stopwatch in chrono mode and no clock read in the last minute: read the time of day from the clock` });
   }
+  /** ENG-006: exact-transit IN crossings, judged at the end: a clock read (or TOD-mode read) from 60 s before to 60 s after the sign counts (the IN time is read as the sign goes by). */
+  private pendingInChecks: { tod: number; line: number; todMode: boolean }[] = [];
   private disciplineFindings(): InstrumentFinding[] {
     const out = [...this.findings];
+    for (const c of this.pendingInChecks) {
+      const read = c.todMode || this.instrumentLog.some(e => e.tod >= c.tod - 60 && e.tod <= c.tod + 60 && (e.kind === 'clock.read' || (e.kind === 'watch.mode' && e.mode === 'tod')));
+      if (!read) out.push({ kind: 'clockForTimeOfDay', line: c.line, text: `Exact-transit IN time (line ${c.line}) was taken with the stopwatch in chrono mode and no clock read within a minute of the sign: read the time of day from the clock` });
+    }
     const near = (a: { tod: number }, t: number, before: number, after: number): boolean => a.tod >= t - before && a.tod <= t + after;
     for (const a of this.anchors) {
       const used = this.instrumentLog.some(e => (e.kind === 'watch.start' || e.kind === 'watch.lap') && near(e, a.tod, 2, a.kind === 'calibration' ? 3 : 2));
@@ -454,6 +489,7 @@ export class Simulator {
   // ---------- public API ----------
   act(a: Action): void {
     const bad = validateAction(a); if (bad) throw new Error(bad);
+    a = sanitizeAction(a);
     const now = this.tod;
     this.actions.push({ tick: this.tick, action: a });
     if (a.type.startsWith('watch.') || a.type.startsWith('line.') || a.type === 'note' || a.type === 'bezel.set') this.log(a.type, { ...(a as unknown as Record<string, unknown>) });
@@ -499,7 +535,7 @@ export class Simulator {
         break;
       }
       case 'scorecard.ack': {
-        if (this.taWindow?.endOfStage && this.tod <= this.taWindow.endTod) { this.scorecardAcked = true; this.say('Scoring crew: scorecard acknowledged', 'info'); this.log('scorecard.ack'); }
+        if (this.taWindow?.endOfStage && this.tod <= this.taWindow.endTod + 1e-6) { this.scorecardAcked = true; this.say('Scoring crew: scorecard acknowledged', 'info'); this.log('scorecard.ack'); }
         else { this.say('Scoring crew: the scorecard is acknowledged at the end-of-stage TA point, within its window', 'info'); this.log('scorecard.refused'); }
         break;
       }
@@ -549,6 +585,8 @@ export class Simulator {
         this.targetIndicated = mph; this.announceAtSpeed = true;
         this.say(`Holding ${mph}`, 'readback');
         this.log('call.speed', { mph });
+        if (this.pullover && this.phase === 'running') { if (this.waitingForGo && this.waitReason === 'pullover' && this.car.v === 0) this.release('pullover'); this.pullover = false; } // ENG-002: a speed call ends the pull-over
+        this.speedAsked = false;
         this.noteMakeUp(mph);
         this.beginRamp();
         break;
@@ -560,13 +598,14 @@ export class Simulator {
       case 'call.go':
         this.log('call.go');
         if (this.phase === 'preread') { this.depart(); break; }
-        if (this.waitingForGo && (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish')) {
+        if (this.waitingForGo && (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish' || this.waitReason === 'pullover')) {
           if (this.curStop && this.curStop.goCalledAt === null) this.curStop.goCalledAt = this.tod;
           if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.zeroCounts = 0; this.say('Waiting on traffic', 'info'); this.say('Keep counting', 'info'); this.log('traffic', { wait: this.trafficClearTod - this.tod, ledgerEligible: true }); }
           else { const wn = this.waitNodeId; this.say('Going', 'readback'); this.release(this.waitReason); if (wn) this.checkEarlyDeparture(wn); }
         }
         else if (this.waitingForGo) this.say(`Can't go yet (${this.waitReason})`, 'info');
-        else if (this.car.v === 0 && this.phase === 'running') { this.goRequestedEarly = true; this.say('Go, got it', 'readback'); }
+        else if (this.car.v === 0 && this.phase === 'running' && this.atStopLineSoon()) { this.goRequestedEarly = true; this.goRequestedAt = this.tod; this.say('Go, got it', 'readback'); }
+        else if (this.car.v === 0 && this.phase === 'running') this.say(this.startRamp ? 'Already rolling' : 'We are not at a stop: I go when the road ahead is clear', 'info'); // ENG-001: never stored for a later STOP
         else if (this.phase === 'running' && this.stopAhead()) { this.say('No: we stop at that Stop Sign. Running a Stop Sign is a DNF (V.E.3.e)', 'question'); this.log('stopSkipRefused'); }
         else this.say('Already rolling', 'info');
         break;
@@ -576,30 +615,50 @@ export class Simulator {
         else this.say('Turn around? We are on course as far as I can tell', 'question');
         break;
       case 'call.pass': this.passRequested = true; this.say('Will pass when clear', 'readback'); this.log('call.pass'); break;
-      case 'call.pullover': this.pullover = true; this.say('Pulling over', 'readback'); this.log('call.pullover'); break;
+      case 'call.pullover': this.pullover = true; this.say('Pulling over. Say go (or call a speed) when we leave', 'readback'); this.log('call.pullover'); break;
     }
   }
 
-  private depart(): void {
+  private depart(auto: 'drill' | 'late' | null = null): void {
     if (this.phase !== 'preread') return;
-    this.phase = 'running';
+    this.phase = 'running'; this.goRequestedEarly = false;
+    this.autoDeparted = auto;
     this.departed = true;
     const early = this.sc.startTime - this.tod;
     this.log('depart', { early });
-    if (this.sc.book[0]) this.recordStartDelta(this.sc.book[0], this.tod);
+    if (this.sc.book[0]) this.recordStartDelta(this.sc.book[0], this.tod, undefined, auto ?? undefined);
     this.nextHoldingTod = this.tod + 120 + this.protoRng.next() * 120;
     if (early > 0) this.buckets.start -= early; // ghost anchor is official start: leaving early = early
     else { this.buckets.start += -early; this.secondsLateAtStart = -early; }
-    this.say(early > 2 ? `Leaving ${Math.round(early)} s early` : early < -2 ? `Leaving ${Math.round(-early)} s late` : 'Rolling on time', 'info');
     const first = this.sc.book[0]!;
     if (first.speed !== undefined && this.targetIndicated === null) this.targetIndicated = this.useCard && this.card[String(first.speed)] !== undefined ? this.card[String(first.speed)]! : first.speed;
+    if (this.targetIndicated === null) this.askSpeed(first); // PLAY-002: a warm-up / transit line with no printed speed: he asks instead of sitting silent
+    else this.say(early > 2 ? `Leaving ${Math.round(early)} s early` : early < -2 ? `Leaving ${Math.round(-early)} s late` : 'Rolling on time', 'info');
     this.executed.add(1);
+    // PLAY-008: the start line is done once the car leaves: the pointer (and the perf card) move to line 2 at once
+    this.lastExecutedLine = 1; this.lastCrossedLine = 1;
+    if (this.sc.aids.autoAdvanceLine && this.currentLine === 1) this.currentLine = Math.min(this.sc.book.length, 2);
     if (first.transit && !first.transit.end) this.inTransit = true;
     this.nextNodeIdx = this.sc.course.nodes.findIndex(n => n.s > 0);
     if (this.nextNodeIdx < 0) this.nextNodeIdx = this.sc.course.nodes.length;
     this.car.mode = 'cruise';
     this.startRamp = true; this.announceAtSpeed = true;
     if (this.sc.car.a0 >= 1e4 && this.targetIndicated !== null) this.car.v = mphToFps(this.speedo.inverse(this.targetIndicated)); // instant (ghost) car leaves at speed
+  }
+
+  /** PLAY-002: the driver has no speed to drive (a transit or warm-up line prints none): he asks, naming the transit pace the box implies. */
+  private speedAsked = false; private speedAskTod = -Infinity;
+  private askSpeed(ins: Instruction | undefined): void {
+    const t = ins?.transit; const pace = transitPaceMph(t);
+    const what = ins?.section === 'warmup' || /warm-?up/i.test(ins?.text ?? '') ? 'the warm-up' : t ? 'the transit' : 'this line';
+    this.say(pace !== null ? `What speed for ${what}? The book prints none: about ${pace} mph makes ${t!.miles} mi in ${Math.round(t!.seconds / 60)} min` : `What speed for ${what}? The book prints none`, 'question');
+    this.speedAsked = true; this.speedAskTod = this.tod; this.log('speed.asked', { line: ins?.n ?? null, suggested: pace });
+  }
+  /** The transit / warm-up line the car is driving now (the last begin line it has passed), for the speed question. */
+  private transitLineHere(): Instruction | undefined {
+    let found: Instruction | undefined;
+    for (const ins of this.sc.book) { if (instructionS(this.sc.course, ins) > this.car.s + 1) break; if (ins.transit && !ins.transit.end) found = ins; else if (ins.transit?.end) found = undefined; }
+    return found ?? this.sc.book[0];
   }
 
   /** `clock: true` records that the navigator looked at the time of day (WATCH-009). */
@@ -629,8 +688,8 @@ export class Simulator {
       aids, notes: [...this.notes], legIndex: this.sc.aids.rung >= 2 ? this.legIndex : null, startTime: this.sc.startTime, rules: this.sc.rules,
       ta: this.taState(), asp: this.sc.asp, timeZone: this.sc.timeZone,
       clock: { hourAngle: hands.hourAngle, minuteAngle: hands.minuteAngle, secondAngle: hands.secondAngle, minuteAmbiguous: hands.minuteAmbiguous, hour: hands.hour, minute: this.sc.aids.rung <= 1 && hands.minuteAmbiguous ? null : hands.minute, second: hands.second },
-      launch, startQueue: lline ? this.startQueue(lline) : null,
-      paceCars: { ahead: pace.ahead && pace.aheadVisible ? pace.ahead : null, behind: pace.behind && pace.behindVisible ? pace.behind : null },
+      launch, startQueue: lline && !(this.sc.startProcedure === 'drill' && lline.n === 1) ? this.startQueue(lline) : null,
+      paceCars: calRun ? { ahead: null, behind: null } : { ahead: pace.ahead && pace.aheadVisible ? pace.ahead : null, behind: pace.behind && pace.behindVisible ? pace.behind : null }, // ENG-019: none in the calibration run
       cues: { gainingOnCarAhead: !calRun && pace.aheadVisible && this.gainingNow },
       ledgerEntries: this.ledgerEntries.map(e => ({ ...e })), makeUpTotal: makeUpTotal(this.ledgerEntries),
       nextCall: this.sc.aids.rung >= 2 ? this.nextCallNow : null,
@@ -659,7 +718,13 @@ export class Simulator {
     if (this.phase === 'finished') return;
     this.tick++;
     const todNext = this.tod0 + this.tick * TICK;
-    if (this.phase === 'preread') { this.tod = todNext; this.launchTick(); if (this.tod > this.sc.startTime + 30 * 60) { this.say('We are 30 minutes late, I am leaving', 'info'); this.depart(); } return; }
+    if (this.phase === 'preread') {
+      this.tod = todNext; this.launchTick();
+      // PLAY-005: a drill-sized start launches the car itself on the printed launch second (no queue, no count)
+      if (this.sc.startProcedure === 'drill') { const li = this.launchInfo(); if (li && this.tod >= li.launchTime - 1e-6) { this.depart('drill'); return; } }
+      if (this.tod > this.sc.startTime + 30 * 60) { this.say('We are 30 minutes late, I am leaving', 'info'); this.depart('late'); }
+      return;
+    }
     this.drivingSeconds += dt;
     if (this.forceResetAt !== null && this.drivingSeconds >= this.forceResetAt) { this.forceResetAt = null; this.watch.stop(this.tod); this.watch.reset(this.tod); this.log('watchLost'); this.say('Your watch! It fell and reset', 'info'); }
     const sBefore = this.car.s;
@@ -676,14 +741,21 @@ export class Simulator {
     const de = dt - ds / vg;
     this.buckets[this.currentBucket()] += de;
     // TA-004: only an accident scene or a declared emergency reduced speed accrues qualifying delay while driving (trains and signals are booked at the stop)
-    if (!this.off && (this.emergency || this.activeAccident() || this.activeQualZone())) { this.accrueEpisode(Math.max(0, de)); this.taCause[this.legIndex] = this.activeAccident() ? 'accident' : this.activeQualZone()?.kind ?? 'emergency'; }
-    else if (this.qualEpisode) this.closeQualEpisode();
+    // ENG-010: a printed-pause stop (or any stop the book or the stop booking pays) inside a zone is not zone delay
+    // (the dwell, the braking into the stop and the pull-away back up to the zone's speed are the stop's, which the pause and the chart pause time pay)
+    const zoneMph = this.activeAccident()?.speedMph ?? this.activeQualZone()?.speedMph ?? null;
+    const inStop = this.waitingForGo || (this.curStop !== null && (this.car.mode === 'stopping' || (zoneMph !== null && this.car.v < mphToFps(zoneMph) - 0.3)));
+    if (!this.off && !inStop && (this.emergency || this.activeAccident() || this.activeQualZone())) { this.accrueEpisode(Math.max(0, de)); this.taCause[this.legIndex] = this.activeAccident() ? 'accident' : this.activeQualZone()?.kind ?? 'emergency'; }
+    else if (this.qualEpisode && !inStop) this.closeQualEpisode();
     if (this.currentBucket() === 'cruise') { this.cruiseDt += dt; this.cruiseDs += ds; this.cruiseGhostDs += vg * dt; }
     if (this.off && this.off.phase === 'turning') { this.off.turnTimer -= dt; if (this.off.turnTimer <= 0) { this.off.phase = 'back'; this.say('Heading back', 'info'); } }
     this.checkFinish();
   }
 
+  /** ENG-007: once result() has been read, no request can be filed (the committee's numbers are in it). */
+  private resultRead = false;
   result(): StageResult {
+    if (this.phase === 'finished') this.resultRead = true;
     const legs = this.scoreLegs();
     const attribution = [...this.attribution, this.currentAttribution()].filter(a => a.legIndex <= Math.max(1, this.ghost.legs.length));
     for (const l of legs) { const a = attribution.find(x => x.legIndex === l.index); if (a && l.taCredit) a.buckets.ta = -l.taCredit; }
@@ -744,6 +816,7 @@ export class Simulator {
     if (this.off) return 'offCourse';
     if (this.startRamp) return 'start';
     if (this.waitingForGo && (this.waitReason === 'signal' || this.waitReason === 'train')) return 'hazard';
+    if (this.waitingForGo && this.waitReason === 'stop' && this.goPending) return 'hazard'; // PLAY-006: cross traffic after the go is a hazard (ledger), not the navigator's stop
     if (this.curStop) return 'stop';
     if (this.activeSlowHazard() || this.activeAccident() || this.blockerAhead()) return 'hazard';
     if (this.car.s < this.turnZoneEndS || this.turnRecovering) return 'turn';
@@ -757,8 +830,8 @@ export class Simulator {
     if (Math.abs(trueTarget - this.car.v) > mphToFps(1.5) && !this.curStop && !this.off) {
       this.rampTarget = trueTarget;
       this.rampKind = this.timedChange ? 'timedChange' : 'speedChange';
-      this.car.accelFactor = 1 + this.rnd.gauss(0, this.sc.driver.inconsistency);
-      this.car.decelFactor = 1 + this.rnd.gauss(0, this.sc.driver.inconsistency);
+      this.car.accelFactor = 1 + this.rampRng.gauss(0, this.sc.driver.inconsistency);
+      this.car.decelFactor = 1 + this.rampRng.gauss(0, this.sc.driver.inconsistency);
     }
   }
 
@@ -778,11 +851,12 @@ export class Simulator {
     }
     this.waitingForGo = false; this.waitReason = null; this.patienceWarned = false;
     if (this.waitNodeId) { const wn = this.sc.course.nodes.find(x => x.id === this.waitNodeId); { const k = wn ? this.holdKind(wn) : null; if (wn && (k === 'restart' || k === 'transitEnd')) this.checkClockUse(k === 'restart' ? 'Restart time' : 'Exact-transit OUT time', this.sc.book.find(i => i.nodeId === wn.id)?.n ?? 0);
-      if (wn && k === 'restart') { const ri = this.sc.book.find(i => i.nodeId === wn.id); if (ri) this.recordStartDelta(ri, this.tod); }
-      if (wn && k === 'transitEnd') { const go = this.holdGoTod(wn); const ri = this.sc.book.find(i => i.nodeId === wn.id); if (go !== null && ri) this.checkOneMinute(ri.n, go, this.tod, 'Exact-transit OUT'); } } if (wn && this.isHoldNode(wn)) this.startRamp = true; this.releasedNodeId = this.waitNodeId; this.waitNodeId = null; }
+      if (wn && k === 'restart') { const ri = this.sc.book.find(i => i.nodeId === wn.id); if (ri) this.recordStartDelta(ri, this.tod, this.waitStartTod); }
+      if (wn && k === 'transitEnd') { const go = this.holdGoTod(wn); const ri = this.sc.book.find(i => i.nodeId === wn.id); if (go !== null && ri) this.checkOneMinute(ri.n, go, this.tod, 'Exact-transit OUT', this.waitStartTod); } } if (wn && this.isHoldNode(wn)) this.startRamp = true; this.releasedNodeId = this.waitNodeId; this.waitNodeId = null; }
     this.announceAtSpeed = true;
     if (this.curStop) { this.curStop.dwell = this.curStop.dwellStart !== null ? this.tod - this.curStop.dwellStart : 0; }
-    this.car.accelFactor = 1 + this.rnd.gauss(0, this.sc.driver.inconsistency);
+    this.car.accelFactor = 1 + this.rampRng.gauss(0, this.sc.driver.inconsistency);
+    this.goRequestedEarly = false; if (this.pullover && this.car.v === 0) this.pullover = false; // ENG-002: going again ends a pull-over
     this.log('release', { reason });
   }
 
@@ -840,8 +914,8 @@ export class Simulator {
     // speed-holding error process (indicated mph)
     const sd = drv.skill === 'perfect' ? 0 : drv.skill === 'expert' ? 0.2 : drv.skill === 'sportsman' ? 0.5 : 1.0;
     const tauB = 30;
-    this.bias += (-this.bias / tauB) * dt + sd * Math.sqrt(2 * dt / tauB) * this.rnd.gauss();
-    const jitter = this.rnd.gauss(0, sd * 0.15);
+    this.bias += (-this.bias / tauB) * dt + sd * Math.sqrt(2 * dt / tauB) * this.drvRng.gauss();
+    const jitter = this.drvRng.gauss(0, sd * 0.15);
     let targetTrue = this.targetIndicated === null ? 0 : mphToFps(Math.max(0, this.speedo.inverse(this.targetIndicated + this.bias + jitter)));
     if (this.off) { this.offCourseDrive(dt, targetTrue); return; }
 
@@ -899,10 +973,11 @@ export class Simulator {
     { const blk = this.blockerAhead(); this.car.step(dt, targetTrue, blk ? (stopAt === null ? blk.s - 40 : Math.min(stopAt, blk.s - 40)) : stopAt); }
     if (stopAt !== null && node && this.car.v === 0 && Math.abs(this.car.s - stopAt) <= 2 && !this.waitingForGo) {
       this.beginWait(node);
+      if (this.goRequestedEarly && this.tod - this.goRequestedAt > 1.5) this.goRequestedEarly = false; // ENG-001: a go is for the stop the car is settling at, not the next one
       if (this.goRequestedEarly) { this.goRequestedEarly = false; if (this.curStop && this.curStop.goCalledAt === null) this.curStop.goCalledAt = this.tod; if (this.waitReason === 'stop' || this.waitReason === 'hold' || this.waitReason === 'finish') { if (this.waitReason === 'stop' && this.tod < this.trafficClearTod) { this.goPending = true; this.say('Waiting on traffic', 'info'); } else { const wn = this.waitNodeId; this.say('Going', 'readback'); this.release(this.waitReason); if (wn) this.checkEarlyDeparture(wn); } } }
       this.car.step(0, 0, stopAt); return;
     }
-    if (this.pullover && this.car.v === 0) { if (!this.waitingForGo) { this.waitingForGo = true; this.waitReason = 'finish'; this.waitStartTod = this.tod; this.log('pulledOver'); } }
+    if (this.pullover && this.car.v === 0) { if (!this.waitingForGo) { this.waitingForGo = true; this.waitReason = 'pullover'; this.waitStartTod = this.tod; this.log('pulledOver'); } } // ENG-002: its own wait (a 'finish' wait would end the stage)
     if (this.startRamp && this.targetIndicated !== null && this.car.v >= mphToFps(this.speedo.inverse(this.targetIndicated)) - 0.3) this.startRamp = false;
     // ramp bookkeeping
     if (this.rampKind && this.rampTarget !== null && Math.abs(this.car.v - this.rampTarget) < 0.3) { this.rampKind = null; this.rampTarget = null; }
@@ -914,6 +989,13 @@ export class Simulator {
   private goPending = false;
   private turnConsumed = false;
   private goRequestedEarly = false;
+  private goRequestedAt = -Infinity;
+  /** ENG-001: the car is at rest within a few feet of the stop line of a node it must stop at (the go of a stop it is settling at). */
+  private atStopLineSoon(): boolean {
+    const n = this.nextNode(); if (!n || this.off || !this.mustStopAt(n)) return false;
+    const line = n.s - (n.stopLineOffset ?? 0);
+    return line - this.car.s <= 6 && line - this.car.s > -2;
+  }
 
   private mustStopAt(node: Node): boolean {
     if (this.releasedNodeId === node.id) return false;
@@ -984,11 +1066,13 @@ export class Simulator {
     else if (this.isHoldNode(node)) {
       this.waitReason = 'hold';
       const k = this.holdKind(node); const go = this.holdGoTod(node);
-      if (k === 'restart') this.say('Lunch stop. Say go at our restart time', 'info');
-      else if (k === 'transitEnd') this.say(go !== null ? `End of the transit. Say go at our out time ${formatClock(go)}` : 'End of the transit. Say go at our out time', 'info');
-      else this.say(go !== null ? `Stopped at the ${this.sc.book.find(i => i.nodeId === node.id)?.promotedStop?.kind ?? ''} stop. We leave at ${formatClock(go)}` : 'Stopped at the stop', 'info');
+      // PLAY-007: the line names the kind of hold (restart, exact-transit OUT, lunch / pit / fuel / rest stop)
+      if (k === 'restart') this.say(go !== null ? `Restart line. Our time is ${formatClock(go)}: give me 30 seconds and count me down to the launch second` : 'Restart line. Count me down to our launch second', 'info');
+      else if (k === 'transitEnd') this.say(go !== null ? `End of the exact transit. Say go at our out time ${formatClock(go)}` : 'End of the exact transit. Say go at our out time', 'info');
+      else { const pk = this.sc.book.find(i => i.nodeId === node.id)?.promotedStop?.kind; const word = pk === 'meal' ? 'Lunch' : pk === 'refuel' ? 'Fuel' : pk === 'pit' ? 'Pit' : pk === 'rest' ? 'Rest' : 'Promoted';
+        this.say(go !== null ? `${word} stop. We leave AT ${formatClock(go)}, not before ${formatClock(go - this.sc.rules.earlyDepartureMinutes * 60)} (${this.sc.rules.earlyDepartureMinutes}-minute penalty window)` : `${word} stop`, 'info'); }
     }
-    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0 && this.rnd.chance(p)) { this.trafficClearTod = this.tod + this.rnd.next() * 20; } }
+    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0) { const tr = rng(`${this.sc.seed}:traffic:${node.id}`); if (tr.chance(p)) this.trafficClearTod = this.tod + tr.next() * 20; } }
     else if (this.holdRequested) { this.waitReason = node.kind === 'finish' ? 'finish' : 'hold'; this.say('Stopped here', 'info'); }
     else if (node.kind === 'intersection' && !this.pendingTurn) { this.waitReason = 'ask'; this.say('Left or right?', 'question'); }
     else { this.waitReason = 'hold'; }
@@ -1064,22 +1148,26 @@ export class Simulator {
     const paper = this.sc.rules.taMode === 'paper';
     const refuse = (reason: string): void => { rec.status = 'refused'; rec.reason = reason; rec.adjusted = 0; this.taRequests.push(rec); this.say(`Scoring crew: request refused. ${reason}`, 'info'); this.log('ta.refused', { legIndex, seconds, reason }); };
     const nLegs = this.ghost.legs.length;
+    // ENG-007: once the stage has finished the committee's numbers are known: no more requests (no result peeking)
+    // (a paper sheet may still be handed in at the final red checkpoint stop, until the result has been read)
+    if (this.phase === 'finished' && (!paper || this.resultRead)) return refuse('The stage has finished: requests are filed during the stage, at the TA point.');
     if (!lenient && paper) {
       // TAF-001 classic paper sheets: handed in at a red (observation) checkpoint stop, no window; any completed leg
       if (!this.atRedCheckpoint()) return refuse('Paper Time Allowance sheets are handed in at a red (observation) checkpoint stop.');
       if (!(legIndex >= 1 && legIndex <= this.legIndex - 1)) return refuse(`Leg ${legIndex} has not been completed.`);
     } else if (!lenient) {
       if (!this.taWindow) return refuse('Time Allowance requests are accepted only at a printed TA point (the yellow box after End timed portion).');
-      if (this.tod > this.taWindow.endTod) return refuse(`The ${Math.round((this.taWindow.endTod - this.taWindow.startTod) / 60)}-minute window after the TA point has closed.`);
+      if (this.tod > this.taWindow.endTod + 1e-6) return refuse(`The ${Math.round((this.taWindow.endTod - this.taWindow.startTod) / 60)}-minute window after the TA point has closed.`);
       if (!(legIndex > this.taWindow.legBase && legIndex <= this.taWindow.legBase + Math.max(0, this.taEligibleCount()))) return refuse(`Leg ${legIndex} is not one of the legs of the portion that just ended.`);
     } else if (legIndex < 1 || legIndex > nLegs) return refuse(`There is no leg ${legIndex}.`);
     if (form?.requestType === 'formal-problem') {
       // TAF-003: a Formal Problem Resolution Request (VI.A.2) asks no allowance: the contestant consents to 30 s added to the total stage score
       rec.requested = 0; rec.adjusted = 0; this.taRequests.push(rec); this.say('Scoring crew: Formal Problem Resolution Request received (30 s will be added to the stage score).', 'info'); this.log('ta.formal', { legIndex }); return;
     }
-    if (!(seconds > 0)) return refuse('A request must be at least 0m10s.');
+    if (!(seconds > 0) || (!lenient && seconds < 10)) return refuse('A request must be at least 0m10s.'); // ENG-011: never rounded up past the request
     if (seconds > this.sc.rules.taMaxRequestSeconds) return refuse(`A request may not exceed ${Math.floor(this.sc.rules.taMaxRequestSeconds / 60)}m${this.sc.rules.taMaxRequestSeconds % 60}s.`);
     if (fromLine > toLine || toLine > this.sc.book.length) return refuse('Name the instruction numbers on or between which the delay occurred.');
+    if (!lenient && this.taRequests.some(r => r.legIndex === legIndex && r.status === 'filed' && r.requestType !== 'formal-problem')) return refuse(`Leg ${legIndex} already has a request on file: one request per leg.`); // ENG-011: a second request does not silently replace the first
     if (!lenient && seconds % 10 !== 0) {
       // V.H.6: adjusted up or down to a multiple of 0m10s, to the possible detriment of the contestant
       const lo = Math.floor(seconds / 10) * 10; const hi = lo + 10; const measured = this.taQualifying[legIndex] ?? 0;
@@ -1100,7 +1188,7 @@ export class Simulator {
       const legs = atRed ? Array.from({ length: Math.max(0, this.legIndex - 1) }, (_, i) => i + 1) : [];
       return { hasTaPoints: this.sc.book.some(i => i.taPoint), windowOpen: atRed, windowEndsTod: null, secondsLeft: null, endOfStage: false, eligibleLegs: legs, requests: this.taRequests.map(r => ({ ...r })), scorecardAcked: this.scorecardAcked, emergency: this.emergency !== null, mode: 'paper', atRedCheckpoint: atRed };
     }
-    const open = !!w && this.tod <= w.endTod;
+    const open = !!w && this.tod <= w.endTod + 1e-6;
     const eligible = open ? Array.from({ length: this.taWindowLegs }, (_, i) => w!.legBase + 1 + i) : [];
     return {
       hasTaPoints: this.sc.book.some(i => i.taPoint), windowOpen: open, windowEndsTod: open ? w!.endTod : null, secondsLeft: open ? Math.max(0, w!.endTod - this.tod) : null, endOfStage: open ? w!.endOfStage : false,
@@ -1125,6 +1213,7 @@ export class Simulator {
   }
   private launchSpeed(ins: Instruction): number {
     if (ins.speed !== undefined) return ins.speed;
+    { const p = transitPaceMph(ins.transit); if (p !== null) return p; } // PLAY-009: the same speed the cockpit's launch plan uses
     const v = Math.round(fpsToMph(this.ghostSpeedAt(instructionS(this.sc.course, ins) + 1)));
     return v > 0 ? v : 30;
   }
@@ -1138,15 +1227,17 @@ export class Simulator {
   launchInfo(ins: Instruction | null = this.launchLine()): LaunchInfo | null {
     if (!ins) return null;
     const ownTime = ins.restartTime ?? this.sc.startTime; const speed = this.launchSpeed(ins);
-    const netLoss = Math.round(this.netLossFor(speed) * 10) / 10;
-    const launchTime = ownTime - netLoss;
+    const raw = this.netLossFor(speed); const netLoss = Math.round(raw * 10) / 10;
+    const launchTime = ownTime - Math.round(raw); // PLAY-009: one rounding rule everywhere: launch on the whole second, own time minus the net loss rounded
     return { line: ins.n, kind: ins.n === 1 ? 'start' : 'restart', ownTime, speed, netLoss, launchTime, secondsToLaunch: launchTime - this.tod, warned: this.launchStateFor(ins.n).warned };
   }
   /** The driver's expectation: "about 30 seconds" before we go. Said once when the navigator has not warned him within 45 s of the launch time. */
   private launchTick(): void {
     const li = this.launchInfo(); if (!li) return;
     const st = this.launchStateFor(li.line);
-    if (!st.expectSaid && !st.warned && this.tod >= li.launchTime - 45 && this.tod < li.launchTime) { st.expectSaid = true; this.say('Give me about 30 seconds before we go', 'readback'); this.log('launch.expect', { line: li.line, launchTime: li.launchTime }); }
+    if (this.sc.startProcedure === 'drill' && li.kind === 'start') return;
+    // ENG-003: a request to the navigator (a question), so an agent's advance {untilEvent} wakes on it
+    if (!st.expectSaid && !st.warned && this.tod >= li.launchTime - 45 && this.tod < li.launchTime) { st.expectSaid = true; this.say('Give me about 30 seconds before we go', 'question'); this.log('launch.expect', { line: li.line, launchTime: li.launchTime }); }
   }
   private queueFor(ins: Instruction): QueuedCar[] {
     const hit = this.queueCache.get(ins.n); if (hit) return hit;
@@ -1166,22 +1257,28 @@ export class Simulator {
     return { cars, carAheadAtSign: !!a && a.atSign, carAheadLeavesTod: a?.leavesTod ?? null, pulledUp: this.launchStateFor(ins.n).pulledUp };
   }
   /** INST-002: a departure one minute (50-70 s) off its time is the one-minute mistake. Returns true when it is. */
-  private checkOneMinute(line: number, target: number, actual: number, what: string): boolean {
+  private checkOneMinute(line: number, target: number, actual: number, what: string, arrival?: number): boolean {
     const d = actual - target;
     if (Math.abs(d) < 50 || Math.abs(d) > 70) return false;
+    if (d > 0 && arrival !== undefined && arrival >= target - 2) return false; // ENG-005: the car was not there yet; a late arrival is not a misread minute
     this.debriefFindings.push({ kind: 'oneMinuteMistake', line, seconds: Math.round(d), text: `${what} (line ${line}) left ${Math.abs(Math.round(d))} s ${d > 0 ? 'late' : 'early'}: the minute was misread. The dash clock's minute hand is loose within ${this.sc.rules.clockMinuteSlop ?? 5} s of the minute change: take the time of day from the stopwatch's TOD mode and the seconds from the clock's second hand.` });
     this.log('oneMinuteMistake', { line, seconds: Math.round(d) });
     return true;
   }
-  private recordStartDelta(ins: Instruction, actual: number): void {
+  /** `arrival` = when the car reached a restart line (ENG-005); `auto` = the simulator launched the car itself (PLAY-005): only discretionary departures get a finding. */
+  private recordStartDelta(ins: Instruction, actual: number, arrival?: number, auto?: 'drill' | 'late'): void {
     if (this.startDeltas.some(d => d.line === ins.n)) return;
     const li = this.launchInfo(ins)!; const st = this.launchStateFor(ins.n);
     const delta = Math.round((actual - li.launchTime) * 10) / 10;
-    this.startDeltas.push({ line: ins.n, kind: li.kind, ownTime: li.ownTime, netLoss: li.netLoss, launchTime: li.launchTime, actual, delta, warned: st.warned, pulledUp: st.pulledUp, refusedPullUps: st.refused });
+    const arrivedLate = arrival !== undefined && arrival >= li.launchTime - 2;
+    this.startDeltas.push({ line: ins.n, kind: li.kind, ownTime: li.ownTime, netLoss: li.netLoss, launchTime: li.launchTime, actual, delta, warned: st.warned, pulledUp: st.pulledUp, refusedPullUps: st.refused, ...(arrivedLate ? { arrivedLate } : {}), ...(auto ? { auto } : {}) });
+    if (auto) return;
     const what = li.kind === 'start' ? 'Start' : 'Restart';
-    if (this.checkOneMinute(ins.n, li.ownTime, actual, what)) return;
-    if (delta > 2) this.debriefFindings.push({ kind: 'lateLaunch', line: ins.n, seconds: delta, text: `${what} (line ${ins.n}) left ${delta.toFixed(1)} s after the launch time: launch = own time minus the standing-start net loss (${li.netLoss.toFixed(1)} s).` });
-    else if (delta < -3) this.debriefFindings.push({ kind: 'earlyLaunch', line: ins.n, seconds: delta, text: `${what} (line ${ins.n}) left ${(-delta).toFixed(1)} s before the launch time: lead the car by its net loss (${li.netLoss.toFixed(1)} s) only.` });
+    // PLAY-005: leaving the pre-read early without running the launch procedure (no "about 30 seconds") is an early departure by choice, not a misread minute
+    const fromPreread = li.kind === 'start' && !st.warned;
+    if (!(fromPreread && delta < 0) && this.checkOneMinute(ins.n, li.ownTime, actual, what, arrival)) return;
+    if (delta > 2 && !arrivedLate) this.debriefFindings.push({ kind: 'lateLaunch', line: ins.n, seconds: delta, text: `${what} (line ${ins.n}) left ${delta.toFixed(1)} s after the launch time: launch = own time minus the standing-start net loss (${li.netLoss.toFixed(1)} s).` });
+    else if (delta < -3) this.debriefFindings.push({ kind: 'earlyLaunch', line: ins.n, seconds: delta, text: fromPreread ? `${what} (line ${ins.n}): you departed from the pre-read ${(-delta).toFixed(1)} s before your launch time. Wait for your minute: give the driver "about 30 seconds" and count down so GO lands on the launch second.` : `${what} (line ${ins.n}) left ${(-delta).toFixed(1)} s before the launch time: lead the car by its net loss (${li.netLoss.toFixed(1)} s) only.` });
   }
   private allStartDeltas(): StartDelta[] {
     const out = [...this.startDeltas];
@@ -1222,7 +1319,7 @@ export class Simulator {
   /** START-002: the cars one minute ahead (position asp - 1) and behind (asp + 1), with their seeded errors. Only with an assigned starting position of 1 or more. */
   private paceCarsNow(): { ahead: PaceCarView | null; behind: PaceCarView | null; aheadVisible: boolean; behindVisible: boolean } {
     const none = { ahead: null, behind: null, aheadVisible: false, behindVisible: false };
-    if (this.sc.asp < 1 || this.phase !== 'running' || this.off) return none;
+    if (!(this.sc.asp >= 1) || this.phase !== 'running' || this.off) return none; // ENG-008: a scenario without a numeric asp has no pace cars
     const sSelf = this.car.s; const SIGHT = 5280; const r1 = (x: number): number => Math.round(x * 10) / 10;
     const eA = this.paceErr('ahead', this.tod), eB = this.paceErr('behind', this.tod);
     const dA = this.ghostPosAt(this.tod + 60 - eA) - sSelf, dB = sSelf - this.ghostPosAt(this.tod - 60 - eB);
@@ -1273,6 +1370,13 @@ export class Simulator {
   private v3Tick(dt: number): void {
     if (this.phase !== 'running') return;
     if (this.waitingForGo) this.launchTick();
+    // PLAY-010: the driver speaks up once when a slow vehicle holds him under the called speed
+    { const sl = this.activeSlowHazard();
+      if (sl && sl.kind === 'slow' && !this.slowSaid.has(sl.s) && !this.passRequested && this.targetIndicated !== null && this.targetIndicated > sl.speedMph + 3 && this.car.mph() <= sl.speedMph + 1) {
+        this.slowSaid.add(sl.s); this.say(`Stuck behind a slow vehicle at about ${sl.speedMph}: call pass (P) when it is clear, or time the loss and make it up`, 'question'); this.log('slow.stuck', { mph: sl.speedMph });
+      } }
+    // PLAY-002: still no speed called: ask again every 30 s while the car sits
+    if (this.targetIndicated === null && !this.waitingForGo && !this.off && this.car.v === 0 && this.tod - this.speedAskTod >= 30) this.askSpeed(this.transitLineHere());
     // PROTO-001: an unprompted read-back every 2-4 minutes while rolling ("holding 35")
     if (this.nextHoldingTod !== null && this.tod >= this.nextHoldingTod) {
       if (this.targetIndicated !== null && !this.waitingForGo && !this.off && this.car.v > mphToFps(1)) this.say(`Holding ${this.targetIndicated}`, 'readback');
@@ -1310,6 +1414,11 @@ export class Simulator {
       while (this.nextInsPtr < book.length && (this.executed.has(book[this.nextInsPtr]!.n) || book[this.nextInsPtr]!.omitted)) this.nextInsPtr++;
       const ins = book[this.nextInsPtr];
       if (this.nextCallNow && this.nextCallNow.line < (ins?.n ?? Infinity)) this.nextCallNow = null;
+      // PLAY-008: a prompt whose call has been made goes away (never "call the left" while the left is pending)
+      if (this.nextCallNow) { const c = this.nextCallNow.call; const m = /^call\.(turn|speed) (\S+)$/.exec(c);
+        if (m && m[1] === 'turn' && this.pendingTurn === m[2]) this.nextCallNow = null;
+        else if (m && m[1] === 'speed' && !this.sc.book[this.nextCallNow.line - 1]?.timed && this.targetIndicated !== null && (Math.abs(this.targetIndicated - Number(m[2])) < 0.01 || this.targetIndicated === this.card[m[2]!])) this.nextCallNow = null;
+        else if (c === 'call.stop' && this.holdRequested) this.nextCallNow = null; }
       if (ins && this.nextCallLine !== ins.n) {
         const d = instructionS(this.sc.course, ins) - this.car.s;
         if (d <= 700 && d > -30) { this.nextCallLine = ins.n; const nc = this.expectedCall(ins); if (nc) { this.nextCallNow = nc; this.log('nextCall', { ...nc }); } }
@@ -1440,7 +1549,7 @@ export class Simulator {
       if (ins.pause) { this.buckets.stop -= ins.pause; if (!this.curStop) { /* pause without a stop node: still credited to stop bucket */ } }
       if (ins.transit && !ins.transit.end) this.inTransit = true;
       if (ins.transit?.end || (ins.restartTime !== undefined && ins.section === 'restart')) this.inTransit = false;
-      if (ins.transit && !ins.transit.end && ins.transit.exact === true) { this.transitIn[ins.n] = roundToSecond(this.nodeCrossTod); this.log('transit.in', { n: ins.n, tod: this.transitIn[ins.n] }); this.checkClockUse('Exact-transit IN time', ins.n); }
+      if (ins.transit && !ins.transit.end && ins.transit.exact === true) { this.transitIn[ins.n] = roundToSecond(this.nodeCrossTod); this.log('transit.in', { n: ins.n, tod: this.transitIn[ins.n] }); this.pendingInChecks.push({ tod: this.nodeCrossTod, line: ins.n, todMode: this.watch.kind === 'digital' && this.watch.mode === 'tod' }); }
       if (ins.timed) this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'timed' });
       if (ins.section === 'calibration') this.anchors.push({ tod: this.nodeCrossTod, line: ins.n, kind: 'calibration' });
       if (ins.restartTime !== undefined && ins.section === 'restart') {

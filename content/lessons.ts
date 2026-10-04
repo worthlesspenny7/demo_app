@@ -261,7 +261,7 @@ export const LESSONS: Lesson[] = [
         'Rule 3: the driver repeats back every turn and every speed he hears (HB p.15 tip 4). After several lefts it is easy to hear "left" for "right". "Right at the stop, got it." "Thirty-five." "Holding thirty-five."',
         'Rule 4: in a timed section only the talk that follows the instructions: calls, read-backs, counts. Scenery and post-mortems wait (tip 3). Silence is how the driver hears the call.',
         'Rule 5: cross off each instruction when it is done (tip 5), with a large transparent marker, especially for identical instructions in a row, so neither of us loses the line. The driver says "done" and the navigator marks it.',
-        'Rule 6: never pull up to a restart point before your minute (tip 6). Sit short of it, count to your time, then roll up and leave exactly on it.',
+        'Rule 6: never pull up to a restart point before your minute (tip 6). Sit short of it, count down to your launch second (your minute minus the car\'s standing-start loss, about 4 s for the Ford) and go on GO, so the car is at speed exactly on your minute (Starting on Time [03:41]; HB p.7).',
         'Rule 7: make up a loss as soon as it is safe to (tip 7). We do not know where the next checkpoint is. Use the 10 % rule, then back to the assigned speed.',
         'Rule 8: team errors only (tip 2). After a mistake there is no "you missed it". We both make the correction, and we work together on a hard sign or street name.',
         'Rule 9, "comes quick": the driver watches the road; the navigator, head down in the book, reads the next two instructions out loud so the driver knows both signs to look for. The navigator\'s head is down, so the driver is the eyes: he says "I see it" for each sign he sees (the navigator answers "I see it too", the ICE confirm), and "not yet" if he does not.',
@@ -270,7 +270,8 @@ export const LESSONS: Lesson[] = [
       { card: { title: 'Card for the driver (print and keep in the car)', lines: [
         'Eyes on the road. The navigator has the book.',
         'Say back every turn and every speed: "Right, 35." Every few minutes, unprompted: "Holding 35."',
-        'ICE: the navigator names the sign; say "I see it" or "I see it too"; say "mark" as you pass it.',
+        'ICE: the navigator names the sign. Whoever sees it first says "I see it"; the other answers "I see it too". Say "mark" as you pass it.',
+        'Starts and restarts: about 30 seconds before, ask "how long?" if you have not heard "about 30 seconds". The count ends on the launch second, a few seconds before our minute: go on GO, never on your own reading of the clock.',
         'Say "Stopped" when the car rocks back. Do not move until you hear GO.',
         '"9 ... 1, GO": GO is the only signal to go. Watching traffic? Say "keep counting": the count goes 0, 1, 2 until you go.',
         'In a timed section, talk only about the instructions. Never ask "are we early or late?": hold the speed.',

@@ -28,8 +28,8 @@ function stepTo(sim: Simulator, tod: number): void { while (sim.tod < tod - 1e-9
 const msgs = (sim: Simulator): string[] => sim.driverMsgs.map(m => m.text);
 
 describe('V3 engine version', () => {
-  it('INST-001 ENGINE_VERSION is 3.0.0 and the V3 actions are in the action list and validated', () => {
-    expect(ENGINE_VERSION).toBe('3.0.0');
+  it('INST-001 ENGINE_VERSION is 3.1.0 (ENG-004 keyed RNG streams) and the V3 actions are in the action list and validated', () => {
+    expect(ENGINE_VERSION).toBe('3.1.0');
     for (const t of ['pullUp', 'call.warn', 'call.identify', 'count', 'clock.read', 'ledger.set', 'ta.request']) expect(ACTION_LIST).toContain(t);
     expect(validateAction({ type: 'call.identify', text: 'bridge' })).toBeNull(); expect(validateAction({ type: 'call.identify' })).not.toBeNull();
     expect(validateAction({ type: 'count', n: 9 })).toBeNull(); expect(validateAction({ type: 'count', n: 1.5 })).not.toBeNull();
@@ -129,7 +129,8 @@ describe('START-001 the start / restart procedure', () => {
     for (const [car, v] of [[FORD_1939, 35], [FORD_1939, 50], [PACKARD_1936, 40]] as const) {
       const sc = flat({ car, asp: 2, prereadSeconds: 300 }).start(v).advanceMiles(1).checkpoint().advanceFt(300).finish().build(); const sim = new Simulator(sc);
       const l = sim.observe({ peek: true }).launch!; expect(l.kind).toBe('start'); expect(l.line).toBe(1); expect(l.speed).toBe(v); expect(l.ownTime).toBe(T0 + 120);
-      expect(l.netLoss).toBeCloseTo(Math.round(accelLoss(v, car) * 10) / 10, 6); expect(l.netLoss).toBeGreaterThan(1.5); expect(l.launchTime).toBeCloseTo(l.ownTime - l.netLoss, 6);
+      // PLAY-009: one rounding rule: the launch is on the whole second, own time minus the net loss rounded to the second
+      expect(l.netLoss).toBeCloseTo(Math.round(accelLoss(v, car) * 10) / 10, 6); expect(l.netLoss).toBeGreaterThan(1.5); expect(l.launchTime).toBe(l.ownTime - Math.round(accelLoss(v, car)));
       expect(l.secondsToLaunch).toBeCloseTo(l.launchTime - sim.tod, 6);
     }
     expect(accelLoss(40, PACKARD_1936)).toBe(4.5);   // chart (a) 0 > 40
@@ -139,7 +140,8 @@ describe('START-001 the start / restart procedure', () => {
   it('START-001 startDeltas: every start and restart against its launch time: the oracle is on it, leaving at your own time is a lateLaunch by the net loss', () => {
     const d = drillById('D16')!; const sc = d.scenario(1, 0);
     const good = runOracle(sc).r; expect(good.startDeltas.map(x => x.kind)).toEqual(['start', 'restart']);
-    for (const x of good.startDeltas) { expect(Math.abs(x.delta!), x.kind).toBeLessThan(0.3); expect(x.netLoss).toBeGreaterThan(1.5); expect(x.launchTime).toBeCloseTo(x.ownTime - x.netLoss, 6); expect(x.actual).toBeCloseTo(x.launchTime + x.delta!, 5); }
+    // the oracle leads by the exact loss; the launch second is the loss rounded (PLAY-009), so it is within half a second of it
+    for (const x of good.startDeltas) { expect(Math.abs(x.delta!), x.kind).toBeLessThanOrEqual(0.55); expect(x.netLoss).toBeGreaterThan(1.5); expect(x.launchTime).toBe(x.ownTime - Math.round(x.ownTime - x.launchTime)); expect(Math.abs(x.ownTime - x.launchTime - x.netLoss)).toBeLessThanOrEqual(0.55); expect(x.actual).toBeCloseTo(x.launchTime + x.delta!, 5); }
     expect(good.findings.filter(f => f.kind === 'lateLaunch' || f.kind === 'earlyLaunch')).toEqual([]);
     const sim = new Simulator(sc); const rookie = runBot(sim, new OracleBot(sim, { useWatch: true, ignoreLosses: true }));   // leaves at its own time, no lead
     const late = rookie.startDeltas.filter(x => x.delta! > 3); expect(late.length).toBeGreaterThanOrEqual(1); expect(rookie.findings.filter(f => f.kind === 'lateLaunch').length).toBeGreaterThanOrEqual(1);
@@ -240,9 +242,11 @@ describe('TAF-001 the 2026 TA web form and the classic paper mode', () => {
     const sc = trainStage(); const sim = new Simulator(sc); const bot = silentBot(sim); startLikeOracle(sim); toWindow(sim, bot);
     sim.act({ ...full, seconds: 60 }); const a = sim.taRequests[0]!;
     expect(a.status).toBe('filed'); expect(a).toMatchObject({ carNumber: 12, password: '0427', phone: '555-0142', stage: 3, cause: 'train', witnesses: { ahead: 11, behind: 13 }, missingFields: [] });
-    sim.act({ type: 'ta.request', legIndex: 1, seconds: 60, fromLine: 2, toLine: 2, carNumber: 12, cause: 'train' }); const b = sim.taRequests[1]!;
+    // one request per leg (ENG-011): the partial forms go on fresh runs
+    const fresh = (): Simulator => { const s = new Simulator(sc); const b2 = silentBot(s); startLikeOracle(s); toWindow(s, b2); return s; };
+    const s2 = fresh(); s2.act({ type: 'ta.request', legIndex: 1, seconds: 60, fromLine: 2, toLine: 2, carNumber: 12, cause: 'train' }); const b = s2.taRequests[0]!;
     expect(b.status).toBe('filed'); expect(b.missingFields).toEqual(['password', 'phone', 'stage']);
-    sim.act({ type: 'ta.request', legIndex: 1, seconds: 60, fromLine: 2, toLine: 2 }); expect(sim.taRequests[2]!.missingFields).toEqual(['carNumber', 'password', 'phone', 'stage', 'cause']);
+    const s3 = fresh(); s3.act({ type: 'ta.request', legIndex: 1, seconds: 60, fromLine: 2, toLine: 2 }); expect(s3.taRequests[0]!.missingFields).toEqual(['carNumber', 'password', 'phone', 'stage', 'cause']);
     expect(sim.observe({ peek: true }).ta.mode).toBe('web'); expect(sim.observe({ peek: true }).ta.requests[0]!.carNumber).toBe(12);
   });
   it('TAF-001 the leg is checkpoints passed + 1, exposed as sim.legNumberFor(tod)', () => {
@@ -427,7 +431,7 @@ describe('PROTO-001 the callout protocol in the driver model', () => {
 
 describe('SPEED-001 speeds 10-55 in charts and the generator', () => {
   it('SPEED-001 buildPerfTable covers 10..55 mph for a model car; the Packard keeps its printed 15-50 exactly and has 55 extrapolated and flagged', () => {
-    expect(CHART_SPEEDS).toEqual([10, 12, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+    expect(CHART_SPEEDS).toEqual([10, 12, 15, 20, 25, 30, 35, 40, 45, 48, 50, 55]);
     const f = buildPerfTable(FORD_1939); expect(f.speeds).toEqual(CHART_SPEEDS); expect(f.extrapolated).toEqual([]);
     for (const m of [f.accel, f.stopGo, f.turns]) for (const r of m.speeds) for (const c of m.speeds) { expect(Number.isFinite(m.rows[r]![c]!)).toBe(true); expect(m.rows[r]![c]!).toBeGreaterThanOrEqual(0); }
     expect(f.accel.rows[0]![10]!).toBeGreaterThan(0); expect(f.accel.rows[0]![10]!).toBeLessThan(f.accel.rows[0]![55]!); expect(f.stopGo.rows[10]![10]!).toBeGreaterThan(f.stopGo.rows[55]![55]!);

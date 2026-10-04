@@ -143,7 +143,7 @@ export function replay(scenario: Scenario | null | undefined, events: SimEvent[]
           const orig = stops[stopIdx];
           const nodeId = orig?.nodeId ?? null;
           const sp = nodeId ? speeds.get(nodeId) : undefined;
-          const originalDwell = orig ? ((orig.releaseTod ?? orig.goTod ?? orig.waitTod) - orig.waitTod) : 0;
+          const originalDwell = orig ? ((orig.goTod ?? orig.releaseTod ?? orig.waitTod) - orig.waitTod) : 0; // the go call, not the release after a traffic hold (traffic replays the same: ENG-004)
           const ctx: StopCtx = { index: stopIdx, nodeId, pause: sp?.pause ?? 0, vIn: sp?.vIn ?? null, vOut: sp?.vOut ?? null, originalDwell, reason: sim.waitReason as string, legIndex: sim.legIndex };
           let dwell: number | null = null;
           try { dwell = opts.dwell ? opts.dwell(ctx) : null; } catch { dwell = null; }
@@ -232,8 +232,8 @@ export function counterfactuals(actual: StageResult | null | undefined, scenario
     for (const st of stops) {
       const spd = st.nodeId ? speeds.get(st.nodeId) : undefined;
       const ideal = cardDwell({ index: st.index, nodeId: st.nodeId, pause: spd?.pause ?? 0, vIn: spd?.vIn ?? null, vOut: spd?.vOut ?? null, originalDwell: 0, reason: 'stop', legIndex: st.legIndex });
-      if (ideal === null) continue;
-      const yours = (st.releaseTod ?? st.goTod ?? st.waitTod) - st.waitTod;
+      if (ideal === null || !(spd?.pause)) continue; // a STOP with no printed pause: the loss is unavoidable (make it up), there is no better go
+      const yours = (st.goTod ?? st.releaseTod ?? st.waitTod) - st.waitTod; // PLAY-006: your go, not the release after a traffic hold
       const idx = st.index;
       const res = replay(scenario, events, { watch: opts.watch, dwell: ctx => (ctx.index === idx ? ideal : null) });
       const rows = cpRows(actual, res);

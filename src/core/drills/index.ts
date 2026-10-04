@@ -12,7 +12,7 @@ import { D07 } from './d07.js';
 import { D01 } from './d01.js';
 import { D18, D11, D12, D13, setDayFallback } from './staged.js';
 import type { Drill, Rubric } from './types.js';
-import { basicRubric, legErrors, meanAbs } from './rubrics.js';
+import { basicRubric, legErrors, meanAbs, callErrors, driverScale } from './rubrics.js';
 import { lostProcedure, LOST_GUIDANCE } from './lost.js';
 import { formatClock } from '../units.js';
 
@@ -21,7 +21,7 @@ export { setGenerator } from './common.js';
 const D03: Drill = {
   id: 'D03', title: 'Pause arithmetic at the stop sign', objective: 'At each STOP wait only the chart pause time (the printed pause minus your car\'s stop/start loss for this IN/OUT pair), then call go. Bronze hands you the 1936 Packard charts and drives the Packard.', skills: ['P2', 'P12'], minutes: 6, kind: 'drive',
   tiers: tiers(), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D03, t); const r = rng(seed); const b = base('D03', 'Pause drill', seed, tier, { trafficWaitProbability: t >= 2 ? 0.25 : 0 }).start(r.pick([30, 35, 40]));
+  scenario(seed, t) { const tier = tierOf(D03, t); const r = rng(seed); const b = base('D03', 'Pause drill', seed, tier, { trafficWaitProbability: t >= 2 ? 0.25 : 0, startProcedure: 'drill' }).start(r.pick([30, 35, 40]));
     for (let i = 0; i < 6; i++) { b.advanceMiles(0.35 + r.next() * 0.4); b.stop(r.pick(['S', 'S', 'L', 'R']), r.pick([30, 35, 40]), { pause: r.pick([15, 15, 15, 20, 30]) }); if (i % 2 === 1) { b.advanceMiles(0.2 + r.next() * 0.3); b.checkpoint(); } }
     return b.advanceMiles(0.3).checkpoint().advanceFt(300).finish().build(); },
   rubric(r, sc) { return basicRubric(r, [1, 3, 6], ['Chart pause time: dwell = printed pause - stop/start loss for the entry/exit speeds on your card (for a 15 s pause it is the stop & go chart value; for any other pause keep the printed pause and scale only the chart loss).'], sc.driver.skill, sc); },
@@ -31,7 +31,7 @@ const D03: Drill = {
 const D04: Drill = {
   id: 'D04', title: 'Timed speed changes', objective: 'Hold X for N seconds then Y: count from the ghost\'s departure and call half a ramp early.', skills: ['P3'], minutes: 7, kind: 'drive',
   tiers: tiers(), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D04, t); const r = rng(seed); const b = base('D04', 'Timed changes', seed, tier).start(35);
+  scenario(seed, t) { const tier = tierOf(D04, t); const r = rng(seed); const b = base('D04', 'Timed changes', seed, tier, { startProcedure: 'drill' }).start(35);
     const specs = [{ hold: 30, sec: 15, then: 40 }, { hold: 25, sec: 18, then: 35 }, { hold: 40, sec: 45, then: 30 }, { hold: 30, sec: 36, then: 40 }];
     for (let i = 0; i < 6; i++) {
       b.advanceMiles(0.4 + r.next() * 0.4);
@@ -41,11 +41,12 @@ const D04: Drill = {
     }
     return b.advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(); },
   rubric(r, sc) {
-    const changes = sc.book.filter(i => i.timed).length || 1;
-    const perChange = r.attribution.reduce((a, x) => a + Math.abs(x.buckets.timedChange), 0) / changes;
+    // PLAY-006: graded on the navigator's call error at each timed change (the Debrief's bias row), not the net bucket where early and late calls cancel
+    const errs = callErrors(r, sc, 'timed'); const perChange = meanAbs(errs); const bias = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : 0;
     const rb = basicRubric(r, [1, 2.5, 5], ['Compound lines ("STOP P15, 25 for 40 then 45"): the 40 s starts when the ghost leaves, 15 s after arrival, not at your go.'], sc.driver.skill, sc);
-    const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.6 ? 3 : perChange <= 1.2 ? 2 : perChange <= 2.5 ? 1 : 0;
-    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · timed changes ${perChange.toFixed(1)} s off each`;
+    const k = driverScale(sc.driver.skill);
+    const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.6 * k ? 3 : perChange <= 1.2 * k ? 2 : perChange <= 2.5 * k ? 1 : 0;
+    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · timed-change calls ${perChange.toFixed(1)} s off each (average ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'})`;
     return rb;
   },
 };
@@ -54,15 +55,16 @@ const D04: Drill = {
 const D05: Drill = {
   id: 'D05', title: 'Speed changes at landmarks', objective: 'Split the change at the sign: be at the midpoint speed as the bumper passes it, which means calling the change half a ramp early.', skills: ['P4'], minutes: 6, kind: 'drive',
   tiers: tiers(), unlock: [],
-  scenario(seed, t) { const tier = tierOf(D05, t); const r = rng(seed); const b = base('D05', 'Landmark speed changes', seed, tier).start(35); let v = 35;
+  scenario(seed, t) { const tier = tierOf(D05, t); const r = rng(seed); const b = base('D05', 'Landmark speed changes', seed, tier, { startProcedure: 'drill' }).start(35); let v = 35;
     for (let i = 0; i < 8; i++) { b.advanceMiles(0.3 + r.next() * 0.4); const nv = r.pick([25, 30, 40, 45, 50].filter(x => Math.abs(x - v) >= 10)); b.speedAtSign(r.pick([`SPEED LIMIT ${nv}`, 'CURVE', 'END ROAD WORK', 'BRIDGE']), nv, { side: r.chance(0.3) ? 'L' : 'R', shape: r.chance(0.5) ? 'rect' : 'diamond' }); v = nv; if (i === 3) { b.advanceMiles(0.4); b.checkpoint(); } }
     return b.advanceMiles(0.4).checkpoint().advanceFt(300).finish().build(); },
   rubric(r, sc) {
-    const changes = sc.book.filter(i => i.speed !== undefined && !i.pause && !i.timed && !i.turn && i.section !== 'start').length || 1;
-    const perChange = r.attribution.reduce((a, x) => a + Math.abs(x.buckets.speedChange), 0) / changes;
+    // PLAY-006: graded on the call error at each sign (alternating up and down changes no longer cancel): calling at the sign is late by half a ramp
+    const errs = callErrors(r, sc, 'landmark'); const perChange = meanAbs(errs); const bias = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : 0;
     const rb = basicRubric(r, [1, 2, 4], ['Split at the sign: lead time = half the ramp time for that pair of speeds (it is on your performance card), so you cross the sign at the midpoint speed.'], sc.driver.skill, sc);
-    const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.35 ? 3 : perChange <= 0.7 ? 2 : perChange <= 1.2 ? 1 : 0;
-    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · landmark changes ${perChange.toFixed(2)} s off each`;
+    const k = driverScale(sc.driver.skill);
+    const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.8 * k ? 3 : perChange <= 1.3 * k ? 2 : perChange <= 2.0 * k ? 1 : 0;
+    rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · landmark calls ${perChange.toFixed(1)} s off each (average ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'})`;
     return rb;
   },
 };

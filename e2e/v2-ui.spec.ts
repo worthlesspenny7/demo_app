@@ -159,7 +159,7 @@ test('UI-032 the cockpit shows the restart card (base + ASP = your time), the ex
   await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.restart);
   await expect(page.locator('#holdcard')).toContainText(/base \d\d:\d\d:\d\d \+ ASP \d+ min = your time \d\d:\d\d:\d\d, leave at that second, do not pull up before your minute/);
   if (lines.transit !== null) { await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.transit); await expect(page.locator('#holdcard')).toContainText(/IN .* \+ \d+m00s = OUT|IN \(read the clock/); }
-  if (lines.promoted !== null) { await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.promoted); await expect(page.locator('#holdcard')).toContainText(/leave (by \d\d:\d\d:\d\d )?\(?\d+m00s\)? ?(prior to end of transit)/); }
+  if (lines.promoted !== null) { await page.evaluate(n => window.__rally!.act({ type: 'line.set', n }), lines.promoted); await expect(page.locator('#holdcard')).toContainText(/leave AT (\d\d:\d\d:\d\d \(not before \d\d:\d\d:\d\d - 5 min penalty window; )?\d+m00s prior to (your )?end/); }
 });
 
 test('UI-032 the exact-transit card shows the recorded IN time: IN hh:mm:ss + 20m00s = OUT hh:mm:ss (D16, resumed after the car crossed the IN sign)', async ({ page }) => {

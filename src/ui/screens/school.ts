@@ -1,6 +1,8 @@
 /** School: short lessons with one check question each. Blocks (lists, call patterns, tables, the printable driver card) render from content/lessons.ts. */
 import { LESSONS, lessonIntro, type LessonBlock } from '../../../content/lessons.js';
 import { app, el } from '../state.js';
+import { allDrills } from '../../core/drills/index.js';
+import { startPathFromProgress, currentPathStep, pathStepHash, START_PATH } from '../viewmodels/curriculum.js';
 
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
 export function renderBlock(b: LessonBlock): HTMLElement {
@@ -50,7 +52,13 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
     quiz.append(fb); box.append(quiz);
     const nav = el('div', { class: 'actions', style: 'display:flex;gap:8px;margin-top:12px' });
     const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/school'; }; nav.append(back);
-    if (LESSONS[idx + 1]) { const n = el('button', { class: 'primary' }, `Next: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
+    // PLAY-001: a lesson on the Start-here path leads to the path's next step (lesson 1 -> D01), the next lesson stays one click away
+    let onPath: ReturnType<typeof currentPathStep> = null;
+    if (START_PATH.some(s => s.kind === 'lesson' && s.id === lesson.id)) {
+      try { const steps = startPathFromProgress(allDrills(), app.progress.load(), id => id === lesson.id || app.progress.lessonDone(id)); onPath = currentPathStep(steps); } catch { onPath = null; }
+    }
+    if (onPath && onPath.kind === 'drill') { const p = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${onPath.label}`); const step = onPath; p.onclick = () => { location.hash = pathStepHash(step); }; nav.append(p); }
+    if (LESSONS[idx + 1]) { const n = el('button', { class: onPath && onPath.kind === 'drill' ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
     else { const n = el('button', { class: 'primary' }, 'To the drills'); n.onclick = () => { location.hash = '#/'; }; nav.append(n); }
     box.append(nav); page.append(box);
   }

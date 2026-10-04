@@ -26,7 +26,7 @@ export function startFeedback(r: StageResult): string[] {
   const out: string[] = [];
   for (const d of r.startDeltas ?? []) {
     if (d.actual === null || d.delta === null) { out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): never left.`); continue; }
-    out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): your time ${formatClock(d.ownTime)}, launch ${formatClock(d.launchTime)} (minus ${d.netLoss.toFixed(1)} s), left ${formatClock(d.actual)} (${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} s against the launch time${d.warned ? '' : '; no 30-second warning was given'}).`);
+    out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): your time ${formatClock(d.ownTime)}, launch ${formatClock(d.launchTime)} (minus ${Math.round(d.ownTime - d.launchTime)} s for the ${d.netLoss.toFixed(1)} s standing-start loss), left ${formatClock(d.actual)} (${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} s against the launch time${d.warned ? '' : '; no 30-second warning was given'}).`);
   }
   for (const f of r.findings ?? []) if (f.kind === 'oneMinuteMistake' || f.kind === 'lateLaunch' || f.kind === 'earlyLaunch') out.push(f.text);
   return out;

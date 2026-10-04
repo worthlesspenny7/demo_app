@@ -5,6 +5,7 @@
  *  - what the legal (aids rung <= 1) cockpit hides: digital readouts and the computed answer card
  */
 import type { Scenario, Instruction, AidsConfig } from '../../core/course.js';
+import { transitPaceMph } from '../../core/course.js';
 import { stopLoss, rampLead, accelLoss, turnLoss, buildPerfTable } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
 import { formatInterval } from '../../core/griid.js';
@@ -104,6 +105,8 @@ export interface PerfCard {
   speedChange?: { from: number; to: number; lead: number; ft: number };
   start?: { speed: number; early: number };
   restart?: { label: string; accel: number | null };
+  /** PLAY-002: a transit / warm-up line that prints no speed: the suggested pace = printed miles / printed minutes. */
+  transitPace?: { mph: number; miles: number; minutes: number; text: string };
   /** Non-stop turn loss (seconds the car loses slowing for the turn and re-accelerating), from the car's performance table. */
   turnLoss?: TurnLossBlock;
 }
@@ -147,6 +150,8 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
     card.restart = { label: rl, accel };
     return card;
   }
+  // PLAY-002: no speed printed on a transit or warm-up line: give the driver a pace (the box's miles over its minutes) so the day stage moves
+  if (ins.speed === undefined && !ins.timed) { const mph = transitPaceMph(ins.transit); if (mph !== null) { const minutes = Math.round(ins.transit!.seconds / 60); card.transitPace = { mph, miles: ins.transit!.miles!, minutes, text: `No speed printed: call about ${mph} mph (${ins.transit!.miles} mi / ${minutes} min). Nothing is timed in a transit; arrive at the end on time.` }; } }
   if (!policy.computedCard) return card;
   try {
     const sp = lineSpeeds(sc, line);
@@ -155,8 +160,8 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
     else if (node?.control === 'STOP' && sc1) card.stopNoPause = { loss: sc1.loss };
     if (ins.timed) { const lead = r1(rampLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car)); card.timed = { hold: ins.timed.holdSpeed, seconds: ins.timed.seconds, then: ins.timed.thenSpeed, lead, call: r1(ins.timed.seconds - lead) }; }
     else if (sp.vIn !== null && sp.vOut !== null && sp.vIn !== sp.vOut && !ins.pause && node?.control !== 'STOP') { const lead = r1(rampLead(sp.vIn, sp.vOut, sc.car)); card.speedChange = { from: sp.vIn, to: sp.vOut, lead, ft: Math.round(sp.vIn * 1.4667 * lead) }; }
-    if (ins.turn && ins.turn !== 'S') card.turnLoss = turnLossBlock(sc, line);
-    if (ins.section === 'start' && ins.speed) card.start = { speed: ins.speed, early: r1(stopLoss(ins.speed, ins.speed, sc.car) * 0.55) };
+    if (ins.turn && ins.turn !== 'S' && !ins.pause && node?.control !== 'STOP') card.turnLoss = turnLossBlock(sc, line);   // PLAY-008: a stop's turn-capped loss already includes the turn
+    if (ins.section === 'start' && ins.speed) card.start = { speed: ins.speed, early: Math.round(accelLoss(ins.speed, sc.car)) }; // PLAY-009: the launch lead, rounded like every launch time
   } catch { /* partial card */ }
   return card;
 }
@@ -187,7 +192,7 @@ export interface HoldCard { kind: 'restart' | 'transit' | 'promoted'; line: numb
 /**
  * The card for a time-of-day restart, an exact transit or a promoted stop on `line`, or null.
  * Restart: "base 08:55:00 + ASP 17 min = your time 09:12:00, leave at that second, do not pull up before your minute".
- * Exact transit: "IN 10:14:07 + 20m00s = OUT 10:34:07". Promoted stop: "leave by 12:10:00 (45m00s prior to end of transit)".
+ * Exact transit: "IN 10:14:07 + 20m00s = OUT 10:34:07". Promoted stop: "leave AT 12:10:00 (not before 12:05:00 - 5 min penalty window; 45m00s prior to end of transit)".
  */
 export function holdCardFor(sc: Pick<Scenario, 'book' | 'course' | 'asp'>, src: HoldSource | null, line: number, asp = sc.asp): HoldCard | null {
   const ins = sc.book[line - 1]; if (!ins) return null;
@@ -208,7 +213,9 @@ export function holdCardFor(sc: Pick<Scenario, 'book' | 'course' | 'asp'>, src: 
     const node = sc.course.nodes.find(n => n.id === ins.nodeId);
     const go = node && src ? src.holdGoTod(node) : null;
     const prior = formatInterval(ins.promotedStop.leaveBeforeEndSeconds);
-    return { kind: 'promoted', line, title: `${ins.promotedStop.kind === 'meal' ? 'Meal' : ins.promotedStop.kind === 'pit' ? 'Pit' : ins.promotedStop.kind === 'refuel' ? 'Refuel' : 'Rest'} stop, line ${line}`, goTod: go, text: go !== null ? `leave by ${formatClock(go)} (${prior} prior to end of transit)` : `leave ${prior} prior to end of transit` };
+    // PLAY-007: "leave AT", never "leave by": leaving more than 5 minutes early is a penalty (V.E.3.h)
+    const win = (sc as { rules?: { earlyDepartureMinutes?: number } }).rules?.earlyDepartureMinutes ?? 5;
+    return { kind: 'promoted', line, title: `${ins.promotedStop.kind === 'meal' ? 'Meal' : ins.promotedStop.kind === 'pit' ? 'Pit' : ins.promotedStop.kind === 'refuel' ? 'Refuel' : 'Rest'} stop, line ${line}`, goTod: go, text: go !== null ? `leave AT ${formatClock(go)} (not before ${formatClock(go - win * 60)} - ${win} min penalty window; ${prior} prior to end of transit)` : `leave AT ${prior} prior to your end-of-transit time (not more than ${win} min earlier)` };
   }
   return null;
 }

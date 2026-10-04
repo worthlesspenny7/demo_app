@@ -8,9 +8,9 @@ export const D01: Drill = {
   id: 'D01', title: 'Stopwatch on the landmark', objective: 'Start the digital stopwatch and press lap as the front bumper passes each marker. Consistency beats bias; a lap while the last split is still frozen is lost (recall first, or wait for the display to release).', skills: ['P1'], minutes: 3, kind: 'drive',
   tiers: tiers(), unlock: [],
   scenario(seed, t) {
-    const tier = tierOf(D01, t); const r = rng(seed); const b = base('D01', 'Stopwatch reaction', seed, tier).start(35);
+    const tier = tierOf(D01, t); const r = rng(seed); const b = base('D01', 'Stopwatch reaction', seed, tier, { startProcedure: 'drill' }).start(35);
     for (let i = 0; i < 8; i++) { b.advanceMiles(0.15 + r.next() * 0.25); b.instruction({ sign: { text: `MARKER ${i + 1}`, shape: 'rect', side: r.chance(0.5) ? 'L' : 'R' }, sightDistance: 400 }, { text: `Lap at "MARKER ${i + 1}"`, speed: 35 }); }
-    const sc = b.advanceMiles(0.2).checkpoint().advanceFt(300).finish().build();
+    const sc = b.advanceMiles(0.2).checkpoint().advanceFt(300).plainFinish().build(); // PLAY-005: no Observation Checkpoint in a stopwatch drill
     sc.tags = [...(sc.tags ?? []), 'd01', 'watch:digital'];
     return sc;
   },

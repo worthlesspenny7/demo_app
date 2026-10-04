@@ -12,7 +12,7 @@ import { audioCues } from '../src/ui/viewmodels/audio.js';
 import { createAnnotations } from '../src/ui/viewmodels/annotations.js';
 import { cockpitLayout, MIN_STOPWATCH_DIAL } from '../src/ui/viewmodels/layout.js';
 import { dwellFor, accelLoss } from '../src/core/perf-table.js';
-import { LEGAL_AIDS, TRAINING_AIDS, aidsForRung } from '../src/core/course.js';
+import { LEGAL_AIDS, TRAINING_AIDS, aidsForRung, transitPaceMph } from '../src/core/course.js';
 import type { Observation } from '../src/core/sim.js';
 import { createProgressStore, type StorageLike } from '../src/ui/viewmodels/progress.js';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
@@ -719,7 +719,7 @@ describe('UI-019 first-run clarity and the curriculum order', () => {
     expect(nextDrill('D11', ds, {})!.drill.id).toBe('D12');
   });
   it('UI-019 D01 gets its own objective keys and pre-read; other drills get the generic three', () => {
-    expect(drillHint('D01').preread).toMatch(/front bumper/); expect(drillHint('D01').keys.map(k => k[0])).toEqual(['D', 'Space', 'L']);
+    expect(drillHint('D01').preread).toMatch(/front bumper/); expect(drillHint('D01').keys.map(k => k[0])).toEqual(['Space', 'L', 'R']);   // PLAY-005: the car launches itself, D is not a step
     expect(drillHint('D99').preread).toBeNull(); expect(drillHint('D03').keys.length).toBe(3);
   });
 });
@@ -742,7 +742,7 @@ describe('UI-021 quizzes: distinct cards, distinct options, no printed answers',
 import { formatElapsed } from '../src/core/units.js';
 import { Stopwatch, RallyClock } from '../src/core/stopwatch.js';
 import { fmtMMSS } from '../src/ui/viewmodels/book.js';
-import { unlockStars, unlockBest, startPathFromProgress } from '../src/ui/viewmodels/curriculum.js';
+import { unlockStars, unlockBest, startPathFromProgress, currentPathStep, pathStepHash } from '../src/ui/viewmodels/curriculum.js';
 import { scenarioMinutes, drillMinutes, formatMinutes } from '../src/ui/viewmodels/estimate.js';
 import { gateFor } from '../src/ui/viewmodels/campaign-gate.js';
 import { finishPrompt, turnLossBlock } from '../src/ui/viewmodels/cockpitinfo.js';
@@ -811,12 +811,14 @@ describe('DRILL-004 unlocks count Silver or Gold stars only', () => {
 });
 
 describe('UI-028 Start-here path and pace aid polish', () => {
-  it('UI-028 Start-here marks a drill step done only on a Silver or Gold star (same rule as unlockStars); lessons use lessonDone', () => {
+  it('UI-028 PLAY-001 Start-here: a Bronze star ticks a drill step and the path moves on (no D01 loop), while unlocks still need Silver or Gold; lessons use lessonDone', () => {
     const ds = allDrills();
     const bronze = { drills: { D01: { stars: 3, tierStars: [3, 0, 0] } } };
     const afterBronze = startPathFromProgress(ds, bronze, id => id === 'ghost-car');
-    expect(afterBronze.find(x => x.step.id === 'D01')!.done).toBe(false);
-    expect(afterBronze.find(x => x.current)!.step.id).toBe('D01');
+    expect(afterBronze.find(x => x.step.id === 'D01')!.done).toBe(true);
+    expect(afterBronze.find(x => x.current)!.step.id).toBe('D03');
+    expect(pathStepHash(currentPathStep(afterBronze)!)).toBe('#/cockpit/drill/D03/0/1');   // the Next button opens D03 at Bronze
+    expect(unlockBest(ds, bronze).D01).toBe(0);                                              // Bronze still opens no content
     const silver = { drills: { D01: { stars: 2, tierStars: [0, 2, 0] }, D03: { stars: 3, tierStars: [0, 0, 3] } } };
     const afterSilver = startPathFromProgress(ds, silver, id => id === 'ghost-car');
     expect(afterSilver.find(x => x.step.id === 'D01')!.done).toBe(true);
@@ -876,8 +878,11 @@ describe('UI-026 S at the finish and the turn-loss block', () => {
   });
   it('UI-026 the perf card of a turning line carries 90 and 45 degree turn-loss rows from the performance table', () => {
     const sc = drillById('D11')!.scenario(1, 0);
-    const line = sc.book.findIndex(i => i.turn === 'L' || i.turn === 'R') + 1;
+    const line = sc.book.findIndex(i => (i.turn === 'L' || i.turn === 'R') && !i.pause && sc.course.nodes.find(n => n.id === i.nodeId)?.control !== 'STOP') + 1;
     expect(line).toBeGreaterThan(0);
+    // PLAY-008: a turning STOP has no separate turn-loss block (its turn-capped stop loss already holds the turn)
+    const stopTurn = sc.book.findIndex(i => (i.turn === 'L' || i.turn === 'R') && !!i.pause) + 1;
+    if (stopTurn > 0) expect(perfCardFor(sc, stopTurn, instrumentPolicy(aidsForRung(3)))!.turnLoss).toBeUndefined();
     const card = perfCardFor(sc, line, instrumentPolicy(aidsForRung(3)))!;
     expect(card.turnLoss).toBeDefined();
     const t = card.turnLoss!; expect(t.rows.map(r => r.angle)).toEqual([90, 45]); expect(t.rows[0]!.losses.length).toBe(t.speeds.length);
@@ -930,9 +935,13 @@ describe('LESSON-002 Team protocol', () => {
     const glossary = l.body.find((b): b is Extract<typeof b, { table: unknown }> => typeof b !== 'string' && 'table' in b)!;
     expect(glossary.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['crossroad', 'T', 'sideroad', 'Y', 'soft right curve', 'soft offset right curve', 'blinker', 'yield', 'comes quick']));
   });
-  it('LESSON-002 carries a printable card for the driver of exactly eight lines', () => {
+  it('LESSON-002 PLAY-011 carries a printable card for the driver of nine lines: who says "I see it" / "I see it too", the start routine, and rule 6 launches early by the start loss', () => {
     const card = lesson('protocol').body.find((b): b is Extract<typeof b, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
-    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(8);
+    expect(card.card.title).toMatch(/Card for the driver/); expect(card.card.lines).toHaveLength(9);
+    const all = card.card.lines.join(' ');
+    expect(all).toMatch(/Whoever sees it first says "I see it"; the other answers "I see it too"/);
+    expect(all).toMatch(/Starts and restarts: .*30 seconds.*count ends on the launch second.*go on GO/);
+    const t = lessonText(lesson('protocol')); expect(t).not.toMatch(/leave exactly on it/); expect(t).toMatch(/Rule 6: .*launch second \(your minute minus the car's standing-start loss/);
     expect(card.card.lines.join(' ')).toMatch(/GO/); expect(card.card.lines.join(' ')).toMatch(/Stopped/);
   });
 });
@@ -1286,11 +1295,12 @@ describe('UI-032 restart, exact-transit and promoted-stop cards', () => {
     expect(openTransitCard(ex, { ...src, transitIn: {} }, begin.n)).toBeNull();                      // IN not crossed yet: nothing recorded to show
     expect(openTransitCard(ex, null, begin.n)).toBeNull();
   });
-  it('UI-032 promoted-stop card: leave by HH:MM:SS (45m00s prior to end of transit); the live sim supplies the time through holdGoTod', () => {
+  it('UI-032 PLAY-007 promoted-stop card: "leave AT HH:MM:SS (not before HH:MM:SS - 5 min penalty window; 45m00s prior to end of transit)"; the live sim supplies the time through holdGoTod', () => {
     const meal = sc.book.find(i => i.promotedStop?.kind === 'meal')!;
     const src = { transitIn: {}, transitOutFor: () => null, holdGoTod: () => hms(11, 6, 40) };
-    expect(holdCardFor(sc, src, meal.n)!.text).toBe('leave by 11:06:40 (45m00s prior to end of transit)');
-    expect(holdCardFor(sc, null, meal.n)!.text).toBe('leave 45m00s prior to end of transit');
+    expect(holdCardFor(sc, src, meal.n)!.text).toBe('leave AT 11:06:40 (not before 11:01:40 - 5 min penalty window; 45m00s prior to end of transit)');
+    expect(holdCardFor(sc, src, meal.n)!.text).not.toMatch(/leave by/);
+    expect(holdCardFor(sc, null, meal.n)!.text).toBe('leave AT 45m00s prior to your end-of-transit time (not more than 5 min earlier)');
     expect(holdCardFor(sc, null, 2)).toBeNull();
     const sim = new Simulator(sc); expect(typeof sim.holdGoTod).toBe('function'); expect(holdCardFor(sc, sim, meal.n)!.kind).toBe('promoted');
   });
@@ -1421,7 +1431,7 @@ describe('LESSON-002 LESSON-003 LESSON-004 LESSON-006 and the recovery and calib
     const l = lesson('protocol'); const t = lessonText(l);
     hasAll(t, ['ICE: identify, confirm, execute', 'I see it too', '"Mark."', 'holding 35', 'rock-back', 'keep counting', '0, 1, 2', 'coming in at 20, out 35, holding for nine', '9, 8, 7, 6', 'Rally School Part 2 [15:45]', '2026 Training Session [121:20]', 'video, not in the documents']);
     const card = l.body.find((b): b is Extract<LessonBlock, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
-    expect(card.card.lines).toHaveLength(8); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);
+    expect(card.card.lines).toHaveLength(9); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);
   });
   it('LESSON-003 PREREAD-001 adds the Column D checkpoint number and arrival time, the pre-written chart losses and "page n of m" (and keeps the six notations)', () => {
     const l = lesson('markup'); const t = lessonText(l);
@@ -1456,7 +1466,9 @@ describe('UI-037 the start card: your time, launch at your time minus the start 
   it('UI-037 START-001 the plan for a generated stage start and restart comes from the car\'s standing-start net loss (chart a)', () => {
     const sc = generateStage(1, { ...PROFILES.fullStage!, asp: 17 });
     const start = startLaunchFor(sc, 1)!; const first = sc.book[0]!;
-    expect(start.yourTime).toBe(first.restartTime); expect(start.loss).toBeCloseTo(accelLoss(first.speed ?? 30, sc.car), 0); expect(start.launchTod).toBe(Math.floor(first.restartTime!) - start.minus);
+    // PLAY-009: a start line with no printed speed (the warm-up transit) launches for the box's pace, the same speed the engine uses
+    expect(start.yourTime).toBe(first.restartTime); expect(start.loss).toBeCloseTo(accelLoss(first.speed ?? transitPaceMph(first.transit) ?? 30, sc.car), 0); expect(start.launchTod).toBe(Math.floor(first.restartTime!) - start.minus);
+    expect(start.launchTod).toBe(new Simulator(sc).launchInfo(first)!.launchTime);
     const rs = sc.book.find(i => i.section === 'restart')!; const rp = startLaunchFor(sc, rs.n)!; expect(rp.yourTime).toBe(rs.restartTime); expect(rp.text).toMatch(/^your time \d\d:\d\d:\d\d, launch at \d\d:\d\d:\d\d \(minus \d+ s\)$/);
     expect(startLaunchFor(sc, 2 + sc.book.findIndex(i => i.section === 'finish'))).toBeNull();
     expect(launchPlanFromInfo({ ownTime: hms(9, 32, 0), netLoss: 3, launchTime: hms(9, 31, 57) })!.text).toBe('your time 09:32:00, launch at 09:31:57 (minus 3 s)'); expect(launchPlanFromInfo(null)).toBeNull();

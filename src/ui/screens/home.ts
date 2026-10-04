@@ -4,7 +4,7 @@ import { allDrills, isUnlocked } from '../../core/drills/index.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
 import { drillMinutes, formatMinutes } from '../viewmodels/estimate.js';
-import { startPathFromProgress, unlockBest } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, unlockBest, pathStepHash } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
 const TRACKS: { name: string; blurb: string; ids: string[] }[] = [
@@ -63,15 +63,15 @@ function startHerePanel(drills: Drill[], prog: ReturnType<typeof app.progress.lo
   for (const s of steps) {
     const li = el('li', { class: `${s.done ? 'done' : ''} ${s.current ? 'current' : ''}`, 'data-step': s.step.id }, `${s.done ? '✓ ' : ''}${s.step.label}`);
     li.style.cursor = 'pointer';
-    li.onclick = () => { location.hash = s.step.kind === 'lesson' ? `#/school/${s.step.id}` : `#/cockpit/drill/${s.step.id}/0/1`; };
+    li.onclick = () => { location.hash = pathStepHash(s.step); };
     ol.append(li);
   }
   const cur = steps.find(s => s.current);
   const go = cur ? el('button', { class: 'primary', id: 'starthere' }, `Next: ${cur.step.label}`) : null;
-  if (go && cur) go.onclick = () => { location.hash = cur.step.kind === 'lesson' ? `#/school/${cur.step.id}` : sourceHash({ kind: 'drill', drillId: cur.step.id, tier: 0, seed: 1 }); };
+  if (go && cur) go.onclick = () => { location.hash = pathStepHash(cur.step); };
   return el('section', { class: 'panel startpath', id: 'starthere-panel' },
     el('h3', {}, 'Start here'),
-    el('p', {}, 'New? Take the path in order: read the first School lesson (3 minutes), then play D01 (stopwatch), D03 (pauses) and D04 (timed changes) at Bronze. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the whole-leg drills.'),
+    el('p', {}, 'New? Take the path in order: read the first School lesson (3 minutes), then play D01 (stopwatch), D03 (pauses) and D04 (timed changes) at Bronze: one star at any tier ticks a step and moves you on. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the whole-leg drills.'),
     ol, go ? el('div', { style: 'margin-top:10px' }, go) : el('p', { class: 'ok' }, 'Path complete. Take the whole-leg drills (D11) and the full stage (D12).'));
 }
 
@@ -82,7 +82,7 @@ function resumePanel(drills: Drill[]): HTMLElement | null {
   const src = live.source as RunSource;
   const resume = el('button', { class: 'primary', id: 'resume' }, 'Resume'); resume.onclick = () => { app.resume = true; location.hash = sourceHash(src); };
   const again = el('button', { id: 'restart-seed' }, 'Restart the same seed'); again.onclick = () => { clearStored(LIVE_KEY); location.hash = sourceHash(src); };
-  const drop = el('button', { id: 'discard' }, 'Discard'); drop.onclick = () => { clearStored(LIVE_KEY); renderHome(root()); };
+  const drop = el('button', { id: 'discard' }, 'Discard'); drop.onclick = () => { if (!confirm('Discard the saved run? It cannot be resumed afterwards.')) return; clearStored(LIVE_KEY); renderHome(root()); };   // PLAY-010: Discard asks first
   const ago = Math.max(0, Math.round((Date.now() - live.savedAt) / 60000));
   return el('section', { class: 'panel resume', id: 'resume-panel' }, el('div', {}, el('b', {}, 'A run was in progress: '), `${d ? `${d.id} ${d.title}, ` : ''}${describeSource(live.source, names)} (saved ${ago} min ago, ${live.actions.length} actions).`), el('div', { style: 'display:flex;gap:8px' }, resume, again, drop));
 }

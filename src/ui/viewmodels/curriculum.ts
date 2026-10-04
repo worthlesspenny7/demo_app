@@ -58,10 +58,22 @@ export function unlockBest(drills: Pick<Drill, 'id' | 'tiers'>[], prog: { drills
   return out;
 }
 
+/** PLAY-001: stars that move the Start-here path on: the best of ANY tier, Bronze included (unlocks stay Silver/Gold only). */
+export function pathStars(prog: { drills: Record<string, { stars: number; tierStars?: number[] }> }): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, p] of Object.entries(prog.drills)) out[id] = Math.max(p.stars ?? 0, ...(Array.isArray(p.tierStars) ? p.tierStars : [0]));
+  return out;
+}
 /**
- * Start-here path state from stored progress, using the same Silver/Gold rule as unlockStars (a Bronze star does not mark a
- * drill step done). Lesson steps use `lessonDone`.
+ * Start-here path state from stored progress (PLAY-001): a drill step is done with a star at any tier, Bronze included, so the path
+ * advances as the panel says ("play D01, D03 and D04 at Bronze"); the whole-leg unlocks still need Silver or Gold (unlockStars).
+ * Lesson steps use `lessonDone`. `drills` is kept for the signature.
  */
 export function startPathFromProgress(drills: Pick<Drill, 'id' | 'tiers'>[], prog: { drills: Record<string, { stars: number; tierStars?: number[] }> }, lessonDone: (id: string) => boolean): StartPathState[] {
-  return startPathState(unlockBest(drills, prog), lessonDone);
+  void drills;
+  return startPathState(pathStars(prog), lessonDone);
 }
+/** PLAY-001: the hash the path's Next button opens for a step: the lesson, or the drill at Bronze, seed 1. */
+export function pathStepHash(step: StartStep): string { return step.kind === 'lesson' ? `#/school/${step.id}` : `#/cockpit/drill/${step.id}/0/1`; }
+/** PLAY-001: the current (first not done) step of the path, or null when the path is complete. */
+export function currentPathStep(steps: StartPathState[]): StartStep | null { return steps.find(s => s.current)?.step ?? null; }

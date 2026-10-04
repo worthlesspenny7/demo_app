@@ -8,7 +8,7 @@ import { formatClock, formatSigned } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
 import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
 import { fmtMMSS } from '../viewmodels/book.js';
-import { nextDrill, unlockBest } from '../viewmodels/curriculum.js';
+import { nextDrill, unlockBest, startPathFromProgress, currentPathStep, pathStepHash } from '../viewmodels/curriculum.js';
 import { scorecardViewModel } from '../viewmodels/scorecard.js';
 import { scorecardPanel } from './scorecard.js';
 
@@ -42,7 +42,10 @@ export function renderDebrief(root: HTMLElement): void {
   if (run.source.kind === 'drill') {
     try {
       const ds = allDrills(); const prog = app.progress.load(); const best = unlockBest(ds, prog);
-      const nd = nextDrill(run.source.drillId, ds, best);
+      // PLAY-001: while the Start-here path is open, Next opens the path's next step (a Bronze star moves it on)
+      const step = currentPathStep(startPathFromProgress(ds, prog, id => app.progress.lessonDone(id)));
+      const nd = step ? null : nextDrill(run.source.drillId, ds, best);
+      if (step && !(step.kind === 'drill' && step.id === run.source.drillId)) { const b = el('button', { id: 'nextdrill', class: 'primary' }, `Next on your path: ${step.label}`); b.onclick = () => { location.hash = pathStepHash(step); }; actions.append(b); }
       if (nd) {
         const b = el('button', { id: 'nextdrill', class: nd.locked ? 'locked-btn' : '' }, nd.locked ? `🔒 Next drill: ${nd.drill.id} (needs ${nd.needs})` : `Next drill: ${nd.drill.id}`);
         if (nd.locked) b.setAttribute('disabled', ''); else b.onclick = () => { location.hash = sourceHash({ kind: 'drill', drillId: nd.drill.id, tier: 0, seed: 1 }); };

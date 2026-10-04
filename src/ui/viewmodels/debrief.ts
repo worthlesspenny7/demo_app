@@ -9,7 +9,7 @@ import type { StageResult, Bucket, LegAttribution, SimEvent } from '../../core/s
 import type { Scenario, AidsConfig, Instruction } from '../../core/course.js';
 import { buildGhost, ghostTimeAt } from '../../core/ghost.js';
 import { stopLoss, rampLead, accelLoss } from '../../core/perf-table.js';
-import { headlineTip as engineHeadlineTip } from '../../core/drills/rubrics.js';
+import { headlineTip as engineHeadlineTip, timedAnchorTod, prevCrossTod, uncalledSpeeds } from '../../core/drills/rubrics.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { stopsFromEvents, speedsByNode, turnCap } from './counterfactual.js';
 import { restartLabel, lineSpeeds } from './cockpitinfo.js';
@@ -39,6 +39,8 @@ export interface StopRow {
   pause: number; carLoss: number | null; cardLoss: number | null; idealDwell: number | null; correctDwell: number | null;
   /** The navigator's dwell: wheels-stop to the go call (SIM-032 goDwell). Cross-traffic holds after the go call are in trafficWait. */
   yourDwell: number; goAt: number | null; net: number; delta: number;
+  /** PLAY-006: a STOP with no printed pause (its loss is made up, not saved by an earlier go); left out of the dwell bias. */
+  noPause?: boolean;
   /** Seconds the driver was held by cross traffic after the go call (ledger-eligible, not the navigator's error). */
   trafficWait: number;
   /** TOD of the driver's "Stopped" and of the release. */
@@ -64,7 +66,7 @@ export interface TurnRow {
 }
 /** Lunch / restart hold judged against the printed out-time (not a stop). */
 export interface RestartRow { legIndex: number; line: number | null; nodeId: string | null; outTod: number; idealGoTod: number; goTod: number | null; delta: number | null; accelLoss: number; text: string }
-export interface CruiseRow { legIndex: number; assigned: number | null; meanTrue: number | null; ratio: number; cruiseSeconds: number; secondsOver: number; cardCorrectionPct: number; text: string }
+export interface CruiseRow { legIndex: number; assigned: number | null; meanTrue: number | null; ratio: number; cruiseSeconds: number; secondsOver: number; cardCorrectionPct: number; text: string; /** PLAY-006: assigned speeds the navigator never called in this leg */ uncalled?: { line: number; mph: number }[] }
 
 export interface LedgerRow { tod: number; believed: number; truth: number; diff: number; legIndex: number }
 export interface LedgerVm { rows: LedgerRow[]; count: number; meanAbs: number | null; maxAbs: number | null; text: string }
@@ -145,7 +147,7 @@ export function debriefViewModel(result: StageResult | null | undefined, scenari
   const landmarks = workedLandmarks(events, scenario);
   const turns = workedTurns(events, scenario);
   const restarts = workedRestarts(events, scenario);
-  const cruise = workedCruise(attribution, scenario);
+  const cruise = workedCruise(attribution, scenario, events);
   const ledger = ledgerAccuracy(result?.ledgerLog);
   const perfectSpeedo = !!scenario && scenario.speedo.kind === 'timewise' && Math.abs(scenario.speedo.gain - 1) < 0.003 && Math.abs(scenario.speedo.offset) < 0.1;
   const bias = biasNoise({ stops, timed, landmarks, turns, cruise, restarts }, opts.history ?? null, { perfectSpeedo });
@@ -178,6 +180,9 @@ export function workedStops(events: SimEvent[] | null | undefined, scenario?: Sc
   for (const st of stops) {
     const insAt = st.nodeId ? scenario?.book.find(i => i.nodeId === st.nodeId) : undefined;
     if (insAt && restartLabel(insAt)) continue; // a restart hold is judged against the out-time, not as a stop
+    // PLAY-006: a lunch / promoted stop, an exact-transit OUT or any hold with no printed pause is not a timed stop ("+1950 s stop")
+    if (st.reason === 'hold' && (!insAt || !insAt.pause || insAt.promotedStop || insAt.transit)) continue;
+
     const ai = att.findIndex((x, i) => !used.has(i) && x.nodeId === st.nodeId && x.legIndex === st.legIndex);
     const a = ai >= 0 ? att[ai] : undefined; if (ai >= 0) used.add(ai);
     const sp = st.nodeId ? by.get(st.nodeId) : undefined;
@@ -201,12 +206,15 @@ export function workedStops(events: SimEvent[] | null | undefined, scenario?: Sc
     const formulaText = carLoss === null
       ? `dwell = ${pause} - ? ; you called go at ${yourDwell.toFixed(1)} s`
       : `dwell = ${pause} - ${carLoss.toFixed(1)} = ${idealDwell!.toFixed(1)} s; you called go at ${yourDwell.toFixed(1)} s; ${signed1(net)} s${trafficWait > 0.5 ? `; traffic held the car ${trafficWait.toFixed(1)} s (ledger)` : ''}`;
-    const text = carLoss === null
+    const noPause = pause === 0 && carLoss !== null;
+    const text = noPause
+      ? `Stop at line ${line ?? '?'}: no pause printed, so the stop and go costs the car ${carLoss!.toFixed(1)} s that no dwell can save: go as soon as it is safe and make the seconds up with the 10 % rule.${trafficNote}`
+      : carLoss === null
       ? `Stop at line ${line ?? '?'}: pause ${pause} s; you waited ${yourDwell.toFixed(1)} s; ${signed1(net)} s vs the printed pause.`
       : `Stop at line ${line ?? '?'}: entry ${vIn ?? vOut} / exit ${vOut}${turn && turn !== 'S' ? ` (turn ${turn}, capped at ${turnCap(turn, scenario!)} mph)` : ''}. Pause ${pause} s minus car loss ${carLoss.toFixed(1)} s = ideal dwell ${idealDwell!.toFixed(1)} s. You called go at ${yourDwell.toFixed(1)} s -> ${signed1(net)} s.${trafficNote}`;
     out.push({
       legIndex: st.legIndex, nodeId: st.nodeId, line, vIn, vOut, entrySpeed: vIn, exitSpeed: vOut, pause, carLoss, cardLoss: carLoss,
-      idealDwell, correctDwell: idealDwell, yourDwell, trafficWait, goAt, net, delta: net, waitTod: st.waitTod, releaseTod: st.releaseTod, text, formulaText,
+      idealDwell, correctDwell: idealDwell, yourDwell, trafficWait, goAt, net, delta: noPause ? r1(yourDwell) : net, waitTod: st.waitTod, releaseTod: st.releaseTod, text, formulaText, ...(noPause ? { noPause: true } : {}),
     });
   }
   return out;
@@ -247,8 +255,10 @@ export function workedTimed(events: SimEvent[] | null | undefined, scenario?: Sc
     const T = num(ins.timed.seconds);
     let lead = 0; try { lead = r1(rampLead(ins.timed.holdSpeed, ins.timed.thenSpeed, scenario.car)); } catch { lead = 0; }
     const correctCall = r1(T - lead);
-    const call = events.slice(ci + 1).find(e => e?.type === 'call.speed' && e.detail?.mph === ins.timed!.thenSpeed && e.tod <= cross.tod + T + 90);
-    const yourCall = call ? r1(call.tod - cross.tod) : null;
+    // PLAY-006: the count starts at the sign, or for a STOP line when the ghost leaves (the same anchor the D04 stars use)
+    let t0 = cross.tod; try { t0 = timedAnchorTod(events, scenario, ins, ci, lineSpeeds(scenario, ins.n).vIn ?? undefined); } catch { t0 = cross.tod; }
+    const call = events.slice(ci + 1).find(e => e?.type === 'call.speed' && e.detail?.mph === ins.timed!.thenSpeed && e.tod <= t0 + T + 90);
+    const yourCall = call ? r1(call.tod - t0) : null;
     const delta = yourCall === null ? null : r1(yourCall - correctCall);
     const text = yourCall === null
       ? `Timed change at line ${ins.n}: T = ${T}, ramp ${ins.timed.holdSpeed}->${ins.timed.thenSpeed} lead ${lead.toFixed(1)} s, call at ${correctCall.toFixed(1)}; you never called ${ins.timed.thenSpeed}.`
@@ -275,7 +285,8 @@ export function workedLandmarks(events: SimEvent[] | null | undefined, scenario?
     if (ci < 0) continue;
     const cross = events[ci]!;
     let lead = 0; try { lead = r1(rampLead(sp.vIn!, sp.vOut!, scenario.car)); } catch { lead = 0; }
-    const call = [...events.slice(0, ci + 1)].reverse().find(e => e?.type === 'call.speed' && e.detail?.mph === sp.vOut && e.tod >= cross.tod - 120)
+    let since = cross.tod - 120; try { since = Math.max(since, prevCrossTod(events, scenario, ins)); } catch { /* keep */ } // B16: never the call made for an earlier line
+    const call = [...events.slice(0, ci + 1)].reverse().find(e => e?.type === 'call.speed' && e.detail?.mph === sp.vOut && e.tod >= since)
       ?? events.slice(ci + 1).find(e => e?.type === 'call.speed' && e.detail?.mph === sp.vOut && e.tod <= cross.tod + 60);
     const yourCall = call ? r1(call.tod - cross.tod) : null;
     const correctCall = r1(-lead);
@@ -328,19 +339,44 @@ export function workedTurns(events: SimEvent[] | null | undefined, scenario?: Sc
   return out;
 }
 
-export function workedCruise(attribution: LegAttribution[] | null | undefined, scenario?: Scenario | null): CruiseRow[] {
+/** PLAY-006: the leg's own assigned speed (the speed the ghost holds over most of the leg's distance), or a rounded mean when no speed covers 70 %. */
+export function legAssignedSpeeds(scenario: Scenario): Map<number, { mph: number; mixed: boolean }> {
+  const out = new Map<number, { mph: number; mixed: boolean }>();
+  let g; try { g = buildGhost(scenario); } catch { return out; }
+  const bps = g.breakpoints; let s0 = 0;
+  for (const leg of g.legs) {
+    const byV = new Map<number, number>(); let tot = 0, wsum = 0;
+    for (let i = 0; i < bps.length; i++) {
+      const a = bps[i]!; const bEnd = bps[i + 1]?.s ?? scenario.course.lengthFt;
+      const lo = Math.max(a.s, s0), hi = Math.min(bEnd, leg.cpS); if (hi <= lo || !(a.v > 0)) continue;
+      const mph = Math.round(a.v / 1.4666666666666666); byV.set(mph, (byV.get(mph) ?? 0) + (hi - lo)); tot += hi - lo; wsum += mph * (hi - lo);
+    }
+    if (tot > 0) { const [top, d] = [...byV.entries()].sort((x, y) => y[1] - x[1])[0]!; out.set(leg.index, d >= 0.7 * tot ? { mph: top, mixed: false } : { mph: Math.round(wsum / tot), mixed: true }); }
+    s0 = leg.cpS;
+  }
+  return out;
+}
+
+export function workedCruise(attribution: LegAttribution[] | null | undefined, scenario?: Scenario | null, events?: SimEvent[] | null): CruiseRow[] {
   const out: CruiseRow[] = [];
   if (!Array.isArray(attribution)) return out;
-  const assigned = scenario?.book?.find(i => typeof i.speed === 'number')?.speed ?? null;
+  const fallback = scenario?.book?.find(i => typeof i.speed === 'number')?.speed ?? null;
+  const perLeg = scenario ? legAssignedSpeeds(scenario) : new Map<number, { mph: number; mixed: boolean }>();
+  const missed = scenario && events ? uncalledSpeeds(events, scenario) : [];
+  const perfectSpeedo = !!scenario && scenario.speedo.kind === 'timewise' && Math.abs(scenario.speedo.gain - 1) < 0.003 && Math.abs(scenario.speedo.offset) < 0.1;
   for (const a of attribution) {
     const ratio = num(a?.meanSpeedRatio, 1);
     const secondsOver = r1(num(a?.buckets?.cruise));
     const cruiseSeconds = r1(num(a?.cruiseSeconds));
     if (cruiseSeconds <= 0) continue;
+    const la = perLeg.get(a.legIndex); const assigned = la ? la.mph : fallback;
     const meanTrue = assigned === null ? null : r1(assigned * ratio);
     const pct = ratio > 0 ? r1((1 / ratio - 1) * 100) : 0;
-    const text = `Leg ${a.legIndex}: mean true speed ${meanTrue === null ? `${(ratio * 100).toFixed(1)} % of assigned` : `${meanTrue.toFixed(1)} for assigned ${assigned}`} -> ratio ${ratio.toFixed(3)} -> ${signed1(secondsOver)} s over ${Math.round(cruiseSeconds)} s of cruise${Math.abs(pct) >= 0.3 ? ` -> your card is ${Math.abs(pct).toFixed(1)} % ${pct > 0 ? 'low (call more)' : 'high (call less)'}` : ''}.`;
-    out.push({ legIndex: a.legIndex, assigned, meanTrue, ratio, cruiseSeconds, secondsOver, cardCorrectionPct: pct, text });
+    const miss = missed.filter(m => m.legIndex === a.legIndex);
+    const cause = miss.length ? ` -> you never called ${miss.map(m => `${m.mph} at line ${m.line}`).join(', ')}: the driver kept the old speed (call every new speed, and the out speed after every stop)`
+      : Math.abs(pct) >= 0.3 ? (perfectSpeedo ? ` -> the driver wandered ${pct > 0 ? 'under' : 'over'} the speed (the speedometer reads true): call ${pct > 0 ? '+1' : '-1'} sooner` : ` -> your card is ${Math.abs(pct).toFixed(1)} % ${pct > 0 ? 'low (call more)' : 'high (call less)'}`) : '';
+    const text = `Leg ${a.legIndex}: mean true speed ${meanTrue === null ? `${(ratio * 100).toFixed(1)} % of assigned` : `${meanTrue.toFixed(1)} for assigned ${la?.mixed ? '~' : ''}${assigned}`} -> ratio ${ratio.toFixed(3)} -> ${signed1(secondsOver)} s over ${Math.round(cruiseSeconds)} s of cruise${cause}.`;
+    out.push({ legIndex: a.legIndex, assigned, meanTrue, ratio, cruiseSeconds, secondsOver, cardCorrectionPct: pct, text, ...(miss.length ? { uncalled: miss.map(m => ({ line: m.line, mph: m.mph })) } : {}) });
   }
   return out;
 }
@@ -357,20 +393,20 @@ export function ledgerAccuracy(log: StageResult['ledgerLog'] | null | undefined)
 
 const MANEUVER_LABEL: Record<ManeuverType, string> = { stop: 'Stops (dwell)', timed: 'Timed changes', landmark: 'Landmark speed changes', turn: 'Turn callouts (late by, s)', cruise: 'Cruise (card)', restart: 'Restart (go vs out-time)' };
 const FIX: Record<ManeuverType, { bias: (m: number, o: { perfectSpeedo: boolean }) => string; noise: string }> = {
-  stop: { bias: m => (m > 0 ? `Your "go" calls average ${Math.abs(m).toFixed(1)} s late: subtract ${Math.abs(m).toFixed(0)} more from every dwell on the card, or react on "one", not "go".` : `Your "go" calls average ${Math.abs(m).toFixed(1)} s early: add ${Math.abs(m).toFixed(0)} s to every dwell on the card.`), noise: 'Your dwells scatter: count the bezel out loud ("three, two, one, go") so every stop uses the same rhythm.' },
+  stop: { bias: m => (m > 0 ? `Your "go" calls average ${Math.abs(m).toFixed(1)} s late: count down the chart pause time on the stopwatch and say GO on the last second (GO is the only signal the driver acts on).` : `Your "go" calls average ${Math.abs(m).toFixed(1)} s early: wait the whole chart pause time before GO.`), noise: 'Your dwells scatter: count the bezel out loud ("three, two, one, go") so every stop uses the same rhythm.' },
   timed: { bias: m => (m > 0 ? `Timed changes average ${Math.abs(m).toFixed(1)} s late: write T - lead on the page before the segment and call on the count.` : `Timed changes average ${Math.abs(m).toFixed(1)} s early: the count starts at the landmark, not at your call.`), noise: 'Timed-change calls scatter: lap the watch at the landmark every time and read the lap, not the sweep.' },
   landmark: { bias: m => (m > 0 ? `Speed changes average ${Math.abs(m).toFixed(1)} s late: call the new speed half a ramp before the sign.` : `Speed changes average ${Math.abs(m).toFixed(1)} s early: lead by half the ramp, not a full one.`), noise: 'Speed-change timing scatters: pick one visual cue (sign post abeam) and call on it.' },
   turn: { bias: m => `Turn callouts are late by ${Math.abs(m).toFixed(1)} s of braking on average: call turns 500-600 ft out, as soon as the driver has the landmark (braking from 45 to 12 mph alone needs about 250 ft).`, noise: 'Turn callout timing scatters: read the next line before you look up, then call it while the intersection is still 500 ft away.' },
   cruise: { bias: (m, o) => (o.perfectSpeedo
     ? (m > 0 ? `You lose ${Math.abs(m).toFixed(1)} s per leg at cruise: the driver wanders under the assigned speed (the speedometer is a perfect Timewise). Call +1 sooner.` : `You gain ${Math.abs(m).toFixed(1)} s per leg at cruise: the driver wanders over the assigned speed. Call -1 sooner.`)
     : (m > 0 ? `You lose ${Math.abs(m).toFixed(1)} s per leg at cruise: your indicated speed reads high; correct the card by about 0.5 mph.` : `You gain ${Math.abs(m).toFixed(1)} s per leg at cruise: the speedometer reads low; call half a mph less.`)),
-    noise: 'Cruise error scatters: the driver is wandering; ask for the read-back ("At 36") after every call.' },
+    noise: 'Cruise error scatters from leg to leg: check that every new speed (and the out speed after every stop) was called, then ask for the read-back ("At 36").' },
   restart: { bias: m => (m > 0 ? `You leave restarts ${Math.abs(m).toFixed(1)} s late: call go at the out-time minus the standing-start loss, on the clock, not on the stopwatch.` : `You leave restarts ${Math.abs(m).toFixed(1)} s early: hold until the out-time minus the standing-start loss.`), noise: 'Restart timing scatters: set the clock bezel to the out-time and call go on the count.' },
 };
 
 export function biasNoise(src: { stops: StopRow[]; timed: TimedRow[]; landmarks: LandmarkRow[]; turns: TurnRow[]; cruise: CruiseRow[]; restarts?: RestartRow[] }, history: Partial<Record<ManeuverType, number[]>> | null, opts: { perfectSpeedo?: boolean } = {}): BiasNoiseVm {
   const errors: Record<ManeuverType, number[]> = {
-    stop: src.stops.map(s => s.delta).filter(Number.isFinite),
+    stop: src.stops.filter(s => !s.noPause).map(s => s.delta).filter(Number.isFinite),
     timed: src.timed.map(t => t.delta).filter((x): x is number => typeof x === 'number'),
     landmark: src.landmarks.map(t => t.delta).filter((x): x is number => typeof x === 'number'),
     turn: src.turns.filter(t => !t.whileStopped).map(t => t.lateBy).filter((x): x is number => typeof x === 'number'),

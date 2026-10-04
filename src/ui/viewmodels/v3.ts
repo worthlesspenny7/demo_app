@@ -12,6 +12,7 @@
  * gracefully against an engine that does not have them yet.
  */
 import type { Scenario, Instruction } from '../../core/course.js';
+import { transitPaceMph } from '../../core/course.js';
 import { accelLoss } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
 import { formatInterval } from '../../core/griid.js';
@@ -47,7 +48,7 @@ export function launchPlan(yourTime: number, loss: number): LaunchPlan {
 export function startLaunchFor(sc: Pick<Scenario, 'book' | 'car'>, line: number): LaunchPlan | null {
   const ins = sc.book[line - 1];
   if (!ins || ins.restartTime === undefined || !(ins.section === 'start' || ins.section === 'restart' || ins.baseTime !== undefined)) return null;
-  const vOut = lineSpeeds(sc as Scenario, line).vOut ?? ins.speed ?? 30;
+  const vOut = ins.speed ?? transitPaceMph(ins.transit) ?? lineSpeeds(sc as Scenario, line).vOut ?? 30; // PLAY-009: the engine's launch speed rule
   let loss = 0; try { loss = accelLoss(vOut, sc.car); } catch { loss = 0; }
   return launchPlan(ins.restartTime, loss);
 }
@@ -349,7 +350,9 @@ export function startQueueVm(q: { carAheadAtSign?: boolean; carAheadLeavesTod?: 
 /** observe().launch (LaunchInfo): own time, net loss, launch time. The plan is shown to the whole second, as the count runs. */
 export function launchPlanFromInfo(info: { ownTime: number; netLoss: number; launchTime?: number } | null | undefined): LaunchPlan | null {
   if (!info || !isNum(info.ownTime)) return null;
-  return launchPlan(info.ownTime, isNum(info.netLoss) ? info.netLoss : isNum(info.launchTime) ? info.ownTime - info.launchTime : 0);
+  // PLAY-009: the engine's launch second is authoritative (own time minus the net loss rounded to the second)
+  if (isNum(info.launchTime)) { const p = launchPlan(info.ownTime, info.ownTime - info.launchTime); return { ...p, loss: isNum(info.netLoss) ? r1(info.netLoss) : p.loss }; }
+  return launchPlan(info.ownTime, isNum(info.netLoss) ? info.netLoss : 0);
 }
 
 export interface StartDeltaRow { line: number; kind: string; text: string; delta: number | null; flagged: boolean }

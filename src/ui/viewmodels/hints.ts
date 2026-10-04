@@ -4,7 +4,7 @@ export interface DrillHint { keys: [string, string][]; preread: string | null }
 const GENERIC: DrillHint = { keys: [['Space', 'start / stop the watch'], ['arrows (B/A/J)', 'call the turn'], ['G', 'go on the count']], preread: null };
 
 const HINTS: Record<string, DrillHint> = {
-  D01: { keys: [['D', 'depart'], ['Space', 'start the watch'], ['L', 'lap as the front bumper passes each sign']], preread: 'D01 is a reaction drill. The "book" is just signs. Depart with D, start the watch with Space, then press L the instant the front bumper passes each sign. Consistency matters more than being perfect: a steady 0.3 s late can be calibrated out.' },
+  D01: { keys: [['Space', 'start the watch as the car launches'], ['L', 'lap as the front bumper passes each sign'], ['R', 'recall: release a frozen split']], preread: 'D01 is a reaction drill. The "book" is just signs. The car launches itself on its printed second (a drill start: no queue, no count; fast-forward if you like). Start the watch with Space as it goes, then press L the instant the front bumper passes each sign. Consistency matters more than being perfect: a steady 0.3 s late can be calibrated out.' },
   D03: { keys: [['G', 'go when the bezel hits the card dwell'], ['[ ]', 'set the bezel (Shift = 0.2 s)'], ['Space', 'start the watch at "Stopped"']], preread: null },
   D04: { keys: [['L', 'lap at the landmark'], ['digits + Enter', 'call the new speed on the count'], ['Space', 'watch']], preread: null },
   D05: { keys: [['digits + Enter', 'call the speed half a ramp early'], ['L', 'lap at the sign'], ['Space', 'watch']], preread: null },

@@ -453,3 +453,19 @@ details.fold[open] > summary { margin-bottom: 8px; }
 @media (max-width: 1000px) { .ta-body { grid-template-columns: minmax(0, 1fr); } .ta-body > .ta-worksheet, .ta-body > .ta-form, .ta-body > .ta-filed, .ta-body > #ta-ack { grid-column: 1; grid-row: auto; } }
 .taweb-btnrow { display: flex; align-items: center; justify-content: center; gap: 10px; } .taweb-btnrow .taweb-btn { margin: 4px 0; }
 .tapaper label { display: inline-flex; justify-content: flex-start; gap: 6px; align-items: center; } .tapaper-types label { display: flex; }
+/* PLAY-004 (fix sprint PT-05): the restart card sits at the top of the book column (outside the road view); the pre-read folds to a strip over the road */
+.startcard.road-start.book-start { position: static; transform: none; left: auto; top: auto; width: auto; margin: 6px 8px; pointer-events: auto; }
+.book .startcard.book-start .start-count { font-size: 46px; }
+.preread .preread-top { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.preread .preread-top h2 { margin: 0; }
+.preread.collapsed { inset: auto 0 auto 0; top: 38px; bottom: auto; height: auto; max-height: calc(var(--road-h, 47%) - 40px); padding: 0 8px; background: transparent; align-items: flex-start; pointer-events: none; }
+.preread.collapsed .box { pointer-events: auto; padding: 4px 10px; max-width: 560px; max-height: 100%; background: rgba(20,26,34,0.94); color: #f2f4f7; }
+.preread.collapsed .box > :not(.keep) { display: none; }
+.preread.collapsed .box .preread-top h2 { font-size: 13px; }
+.preread.collapsed .startcard .start-count { font-size: 36px; }
+.preread.collapsed .box .big { font-size: 18px; }
+.preread.collapsed .prebtns { margin-top: 4px !important; }
+.perfcard .transitpace, #perfcard .transitpace { margin: 3px 0; }
+/* PLAY-010: the TA done button pinned in the form's header */
+.ta-panel .ta-head { position: sticky; top: -8px; z-index: 2; background: rgba(20,26,34,0.98); padding: 2px 0; }
+.ta-panel .ta-head .ta-done-pin { background: #c62828; color: #fff; border: 1px solid #ff8a80; font-weight: 700; }

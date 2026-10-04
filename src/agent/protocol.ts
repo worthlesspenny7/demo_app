@@ -1,6 +1,6 @@
 /** Request/response protocol for external agents (LLM playtesters, scripts). DESIGN §15.
  *  Time only advances on `advance`. The book is sent once in `hello`. */
-import { Simulator, type Action, type Observation, type StageResult, type SimOptions, validateAction, ACTION_LIST } from '../core/sim.js';
+import { Simulator, type Action, type Observation, type StageResult, type SimOptions, validateAction, sanitizeAction, ACTION_LIST } from '../core/sim.js';
 import type { Scenario } from '../core/course.js';
 
 export type Request =
@@ -26,6 +26,34 @@ export type Reply =
   | { type: 'cancelled'; count: number }
   | { type: 'error'; message: string };
 
+const MAX_SCHEDULED = 100;
+/** ENG-016: a `when` must name one finite, non-negative trigger or a known event. */
+function validateWhen(w: unknown): string | null {
+  if (!w || typeof w !== 'object') return 'when must be an object';
+  const x = w as Record<string, unknown>;
+  const fin = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+  if (x.elapsed !== undefined) return fin(x.elapsed) ? null : 'when.elapsed must be a finite number of seconds >= 0';
+  if (x.watchReads !== undefined) return fin(x.watchReads) ? null : 'when.watchReads must be a finite number of seconds >= 0';
+  if (x.event !== undefined) { if (!['featureVisible', 'carStopped', 'carStarted'].includes(x.event as string)) return 'when.event must be featureVisible, carStopped or carStarted'; return x.label === undefined || (typeof x.label === 'string' && x.label.length <= 80) ? null : 'when.label must be a string'; }
+  return 'when must carry elapsed, watchReads or event';
+}
+/**
+ * ENG-018: what an agent sees at aids rung <= 1 is what the navigator could see: whole-second time of day, no launch arithmetic (UI-037 shows it at rung >= 2),
+ * no hand angle finer than the visible minute while the minute is ambiguous, and no hidden ghost errors / car-ahead departure times until the stage has finished.
+ */
+export function redactForAgent(o: Omit<Observation, 'book'>, rung: number, finished: boolean): Omit<Observation, 'book'> {
+  const out = { ...o };
+  if (!finished) {
+    out.paceCars = { ahead: o.paceCars.ahead ? { ...o.paceCars.ahead, errorSeconds: undefined as unknown as number } : null, behind: o.paceCars.behind ? { ...o.paceCars.behind, errorSeconds: undefined as unknown as number } : null };
+    if (o.startQueue) out.startQueue = { ...o.startQueue, carAheadLeavesTod: null, cars: o.startQueue.cars.map(c => ({ ...c, leavesTod: undefined as unknown as number, sitting: undefined as unknown as boolean })) };
+  }
+  if (rung <= 1) {
+    out.tod = Math.floor(o.tod); out.secondsToStart = Math.round(o.secondsToStart);
+    out.launch = null;
+    if (o.clock.minuteAmbiguous) out.clock = { ...o.clock, hourAngle: Math.floor(o.clock.hourAngle / 2.5) * 2.5 }; // the hour hand read by eye (to 5 minutes): it must not settle the ambiguous minute
+  }
+  return out;
+}
 const PARAMS: Record<string, string> = { 'watch.bezel': '{seconds}', 'bezel.set': '{seconds}', 'ledger.set': '{seconds?, entries?: [{seconds, source}]} (entries = the make-up list; seconds defaults to their total)', 'clock.read': '{source?: clock|stopwatch} (stopwatch = the digital watch in TOD mode)', 'pullUp': '' , 'call.warn': '{seconds?} (the "about 30 seconds" warning before a start / restart)', 'call.identify': '{text} (ICE: the driver answers "I see it too" and says "mark" at the sign)', 'count': '{n} (one number of the stop count; he echoes it)', 'call.speed': '{mph}', 'call.turn': '{dir:L|R|S|BL|BR|AL|AR|JL|JR}', 'line.set': '{n}', 'line.annotate': '{n,text}', note: '{text}', 'ta.declare': '{seconds, legIndex?} (deprecated alias of ta.request for the current leg)', 'ta.request': '{legIndex, seconds (multiple of 10, max 1770), fromLine, toLine, note?, carNumber?, password? (4 digits), phone?, stage?, cause?, witnesses?: {ahead?, behind?}} only inside a TA point window (rules.taMode paper: at a red checkpoint stop)', 'speed.emergency': '{mph}', 'watch.mode': '{mode?: chrono|tod}', 'watch.reset': '{force?}', 'scorecard.ack': '', 'speedo.setFactor': '{k}', 'card.set': '{card:{assigned:indicated}}', skipPreread: '{secondsBefore?}' };
 const ACTIONS = ACTION_LIST.map(t => t + (PARAMS[t] ?? ''));
 
@@ -45,7 +73,7 @@ export class Session {
       const w = sch.when; let due = false;
       if (w.elapsed !== undefined) due = this.sim.tod >= sch.armedTod + w.elapsed - 1e-9;
       else if (w.watchReads !== undefined) due = this.sim.watch.elapsed(this.sim.tod) >= w.watchReads - 1e-9;
-      else if (w.event === 'carStopped') due = o.carStopped;
+      else if (w.event === 'carStopped') due = o.carStopped && this.sim.phase === 'running'; // ENG-016: the car standing at the start in the pre-read is not "stopped"
       else if (w.event === 'carStarted') due = !o.carStopped && this.sim.phase === 'running';
       else if (w.event === 'featureVisible') due = o.ahead.some(f => !w.label || (f.label ?? f.kind).toLowerCase().includes(w.label.toLowerCase()) || (f.sign?.text ?? '').toLowerCase().includes(w.label.toLowerCase()) || (f.control ?? '').toLowerCase() === w.label.toLowerCase());
       if (due) { this.sim.act(sch.action); fired.push(sch.action.type); } else keep.push(sch);
@@ -60,7 +88,7 @@ export class Session {
     const { book: _b, ...rest } = this.sim.observe({ peek: true }); void _b;
     const messages = this.sim.driverMsgs.filter(m => m.id > this.lastMsgId);
     if (messages.length) this.lastMsgId = messages[messages.length - 1]!.id;
-    return { ...rest, driver: { ...rest.driver, messages } };
+    return redactForAgent({ ...rest, driver: { ...rest.driver, messages } }, this.scenario.aids.rung, this.sim.phase === 'finished');
   }
   private peek(): Omit<Observation, 'book'> { const { book: _b, ...rest } = this.sim.observe({ peek: true }); void _b; return rest; }
 
@@ -73,14 +101,19 @@ export class Session {
         }
         case 'act':
           { const bad = validateAction(req.action); if (bad) return { type: 'error', message: bad }; }
-          if (req.when) { if (!req.when || typeof req.when !== 'object' || (req.when.elapsed === undefined && req.when.watchReads === undefined && !req.when.event)) return { type: 'error', message: 'when must carry elapsed, watchReads or event' }; this.scheduled.push({ action: req.action, when: req.when, armedTod: this.sim.tod }); return { type: 'ack', ok: true, scheduled: true, observation: this.obs() }; }
+          if (req.when !== undefined) {
+            const bad = validateWhen(req.when); if (bad) return { type: 'error', message: bad };
+            if (this.scheduled.length >= MAX_SCHEDULED) return { type: 'error', message: `at most ${MAX_SCHEDULED} scheduled actions (cancel some first)` };
+            this.scheduled.push({ action: sanitizeAction(req.action), when: req.when, armedTod: this.sim.tod }); return { type: 'ack', ok: true, scheduled: true, observation: this.obs() };
+          }
           this.sim.act(req.action); return { type: 'ack', ok: true, observation: this.obs() };
         case 'observe': return { type: 'observation', observation: this.obs() };
         case 'result': return { type: 'result', result: this.sim.result() };
         case 'cancel': { const n = this.scheduled.length; this.scheduled = []; return { type: 'cancelled', count: n }; }
         case 'truth': return { type: 'truth', pace: this.sim.pace(), carS: this.sim.car.s, carMph: this.sim.car.mph() };
         case 'advance': {
-          const want = req.untilEvent ? (req.maxSeconds ?? 120) : (req.seconds ?? 1);
+          // ENG-015: with untilEvent, `seconds` (when given) also bounds the advance
+          const want = req.untilEvent ? Math.min(req.maxSeconds ?? 120, req.seconds ?? Infinity) : (req.seconds ?? 1);
           if (typeof want !== 'number' || !Number.isFinite(want) || want < 0) return { type: 'error', message: 'advance seconds must be a finite non-negative number' };
           const max = Math.min(3600, want);
           let t = 0; let stoppedOn: string | null = null; const scheduledFired: string[] = [];
@@ -88,11 +121,17 @@ export class Session {
           const interesting = new Set(['driver', 'wait', 'release', 'finished', 'traffic', ...(rung >= 2 ? ['checkpoint', 'offCourse', 'rejoin'] : [])]);
           let prevVisible = new Set(this.peek().ahead.map(f => f.nodeId ?? f.label ?? f.kind));
           let prevStopped = this.peek().carStopped;
+          // ENG-015: only events that happen during this advance stop it (an act's own depart / release are in its ack)
+          const scanFrom = this.sim.events.length;
+          // ENG-003: in the pre-read (or holding at a restart) an untilEvent advance wakes 30 s before the launch second and never runs past it
+          const launch0 = this.sim.launchInfo(); const wasAbove30 = !!launch0 && launch0.secondsToLaunch > 30;
           while (t < max - 1e-9 && this.sim.phase !== 'finished') {
             this.sim.step(0.1); t += 0.1;
             scheduledFired.push(...this.fireScheduled(null));
             if (req.untilEvent) {
-              const ev = this.sim.events.slice(this.eventCount).find(e => interesting.has(e.type) && !(e.type === 'driver' && e.detail?.kind === 'readback'));
+              const ev = this.sim.events.slice(scanFrom).find(e => interesting.has(e.type) && !(e.type === 'driver' && e.detail?.kind === 'readback'));
+              const li = this.sim.launchInfo();
+              if (li && ((wasAbove30 && li.secondsToLaunch <= 30) || li.secondsToLaunch <= 0)) { stoppedOn = 'launch'; break; }
               const o = this.peek();
               const nowVisible = new Set(o.ahead.map(f => f.nodeId ?? f.label ?? f.kind));
               const newFeature = [...nowVisible].find(k => !prevVisible.has(k));

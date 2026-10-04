@@ -3,7 +3,7 @@
 ## HANDOFF (keep this block current; it is the resume point)
 - Branch: claude/rally-simulator-j3kqzq (remote demo_app, renamed TSD-simulator on GitHub; push works).
 - Verify: `npm install && npx tsc -p tsconfig.json && npm test && npm run build && npm run spec:check && npm run test:e2e`
-  (last known, after the Phase VI frames fix sprint, NOT committed: tsc clean, 489 unit, 56 e2e, 271/271 specs, ENGINE_VERSION 3.0.0).
+  (last known, after the PT-05/PT-06 fix sprint, NOT committed: tsc clean, 523 unit, 62 e2e, 300/300 specs, ENGINE_VERSION 3.1.0).
 - Standing rules from Josh: the organizers' documents and videos override his preferences and ours; digital
   lap/split stopwatch with TOD mode is the default (HB p.5, REG II.H.1.d(3)); the dash clock has no digital
   readout (REG II.H.1.d(1)); mark simulator conventions as such in lessons; keep STATUS/LOG current; commit and
@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): Phase VI fix sprint (agent) = renderer/charts/TA form/clock/signs from the frames (11a/b/c).
-  Queued next (do NOT start until Phase VI lands, same files): fix sprint for PT-05 (docs/playtest/PT-05-playability-v3.md,
-  34.5/55, four High bugs: Start-here loop, day stage never moves, restart count clipped, holds at 1x) and PT-06
-  (docs/playtest/PT-06-engine-bughunt-v3.md, 8 medium engine bugs with repro scripts playtest-scripts/pt06-*.ts).
-  Then re-verify, commit, push, and run another playability pass.
+- In flight (2026-10-04): nothing. The PT-05/PT-06 fix sprint is done and verified, NOT committed (see LOG "Fix sprint PT-05/PT-06"; SPECS
+  "FIX SPRINT" PLAY-001..011, ENG-001..019 without 014; ENGINE_VERSION 3.1.0, golden regenerated; tsc clean, 523 unit, 62 e2e, 300/300 specs).
+  Not done: PT-06 LOW 14 (unprinted YIELD/BLINKER and slow zones inside timed intervals, generator), 20-27 (CLI defaults, quit, observe clock
+  replay, lap memory cap, oracle laps at timed anchors, stopLoss(0, x)); PT-05 "skip to 1 minute before my time" button, "~N min at 4x" on drill
+  cards, campaign tier names, School index minutes. Next: review the diff, commit, push, then another playability pass (PT-07).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

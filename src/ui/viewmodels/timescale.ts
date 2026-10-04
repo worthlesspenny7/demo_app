@@ -12,6 +12,8 @@ export interface ScaleInputs {
   /** Seconds to the next countdown / bezel target, null when none is armed. */
   countdownSeconds: number | null;
   bezelRemaining: number | null;
+  /** PLAY-003: seconds until the out time of the hold the car is waiting at (restart launch second, exact-transit OUT, promoted-stop departure); null when not at a hold. */
+  holdSecondsLeft?: number | null;
   /** Drills D01 / D03 lock the scale to 1x. */
   lockedTo1x?: boolean;
   maxScale?: number;
@@ -20,6 +22,8 @@ export interface ScaleInputs {
 export const SCALE_STEPS = [1, 2, 4, 8];
 export const NEAR_FEATURE_FT = 800;
 export const NEAR_TARGET_S = 15;
+/** PLAY-003: a hold runs at the chosen scale until this many seconds before its out time, then at 1x. */
+export const HOLD_FF_MARGIN_S = 60;
 
 /** 0 while paused; 1 when anything needs reaction time; otherwise the requested scale clamped to maxScale. */
 export function effectiveScale(i: ScaleInputs): number {
@@ -29,6 +33,7 @@ export function effectiveScale(i: ScaleInputs): number {
   if (i.lockedTo1x) return 1;
   if (i.phase === 'preread') return Math.min(req, max);          // nothing to react to before the start
   if (i.phase !== 'running') return 1;
+  if (i.waitingForGo && typeof i.holdSecondsLeft === 'number' && i.holdSecondsLeft > HOLD_FF_MARGIN_S) return Math.min(req, max);   // PLAY-003: fast-forward a long hold
   if (i.carStopped || i.waitingForGo) return 1;
   if (i.nearestFeatureFt !== null && i.nearestFeatureFt <= NEAR_FEATURE_FT) return 1;
   if (i.hazardActive) return 1;
