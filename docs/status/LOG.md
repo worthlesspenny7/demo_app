@@ -103,3 +103,9 @@ Files: content/lessons.ts, content/reference-data.ts, src/ui/viewmodels/v3.ts (n
 - Debrief: the scorecard panel has `#start-findings` with `#finding-oneMinuteMistake / timedIntervalDisturbed / lateLaunch / earlyLaunch` listed separately (read from `result().findings`, also `instrumentDiscipline` kinds) and `#start-deltas` (each start against its launch time); the WATCH-009 block no longer counts them.
 - Tests: ui-viewmodels 143 tests (was 108; +35: LESSON-008 x5, the updated lessons x5, UI-037 x24 covering START-001, TAF-001/002, MAKEUP-001, INST-001/002, PROTO-001, CAL-006, START-002), e2e 51 (was 38; new e2e/v3-ui.spec.ts 13 cases: start card and queue, the count ending on the launch second, restart card, TA form fields and paper toggle, make-up ledger, ambiguous clock and TOD mode, schedule correction, debrief findings clean and with a late launch, the lesson, the Reference panel, the protocol lessons, the count echo and ICE). Changed existing tests: LESSON-006 wording (director's method), UI-030 (chart speeds now start below 15, SPEED-001), UI-031 unit and e2e (the generated stage's numbers moved with the engine; the test reads taAdvice instead).
 - Phase V verified on the combined tree: tsc clean, 447 unit, 51 e2e, build clean, 262/262 specs. Committed.
+
+## 2026-10-04 Phase VI + playtest cycle 2 (in flight)
+- Josh: "playtest some more; keep a clean handoff; downgrade to Opus if near limits". HANDOFF block added to STATUS.
+- Frames 11b/11c analysed (Hacking = lost recovery via start order; Sawtooth clock described; time delay form
+  transcribed; Classen/Croker = 2015 lecture camera, no slides). 11a (training pages) running.
+- Launched PT-05 playability pass (Opus, first two hours as Josh) and PT-06 engine bug hunt (Sonnet).
