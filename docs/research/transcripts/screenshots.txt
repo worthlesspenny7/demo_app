@@ -1,0 +1,88 @@
+# video-key | mm:ss | what is shown | why useful
+# video-key must match a line in urls.txt (key = URL). Timestamps are inferred from speech; grab a few seconds either side.
+2026 | 73:54 | five-column instruction page, footer "page 1 of 26" | real GRIID layout to copy
+2026 | 74:40 | same page, CAMEO rows | CAMEO styling
+2026 | 78:30 | calibration table with 7m19.7s and Column D writing | interval/cumulative box format
+2026 | 83:42 | end of calibration, total 28m43.2s | official total row
+2026 | 85:45 | lunch transit with (10) and (6) | transit box and advisory times
+2026 | 86:40 | clock restart row | restart notation
+2026 | 89:22 | highlighted blinker pause | pause row and highlighting
+2026 | 90:30 | speed written at page top; split sign | pre-read markings
+2026 | 92:30 | blank Column C box; "comes quick" | what blank means; remark style
+2026 | 96:32 | delayed change row | delayed timed change format
+2026 | 97:10 | pencilled "-2.3" beside a turn | chart loss annotation
+2026 | 99:40 | transit with bathroom icon, 10 mi / 30 min | transit symbols
+2026 | 103:48 | camera with slash around a signal | free-zone symbol in use
+2026 | 105:22 | clock with slash, gas pump, info boxes | end-of-timed-portion symbols
+2026 | 107:30 | red observation sign | checkpoint sign art
+2026 | 110:28 | TA web form fields | exact 2026 TA form
+2026 | 111:10 | red "done" button | scorecard acknowledgement
+2026 | 13:56 | lapboard and bezel rally clock | lapboard layout
+2026 | 25:27 | Timewise rear face with factor holes | calibration switches
+2026 | 32:09 | chart method slide | chart builder
+2026 | 35:30 | Brandon's chart tool | D06 tool model
+2026 | 40:58 | old vs new chart with the 55 row | chart range
+2024 | 83:09 | first page: tire warm-up and calibration icons | Column B symbols
+2024 | 85:14 | calibration page, interval 4m03.4s / cumulative | cumulative-box format
+2024 | 89:56 | hourglass, official 26 min | end-of-calibration comparison
+2024 | 91:29 | lunch with (10); clock "1:40" start | restart arithmetic
+2024 | 94:32 | hand-written "10.2" at a stop | pre-annotation
+2024 | 97:04 | blinker with "0 MPH / 0m15s" | pause format
+2024 | 100:08 | empty box; "comes quick"; pencilled "20" | pre-read marks
+2024 | 105:52 | full hourglass and next-page restart | transit arithmetic
+2024 | 112:02 | camera with slash; clock with slash; info boxes | end symbols
+2024 | 26:39 | lapboard photo | lapboard layout
+2024 | 28:41 | instruction page with CAMEO | CAMEO styling
+2024 | 29:42 | road-sign vocabulary slide | sign art and names
+2024 | 30:30 | road-sign vocabulary slide, continued | sign art and names
+2024 | 42:34 | "Speedometer adjustments" slide | calibration formula wording
+2024 | 47:11 | chart course slide | chart-builder method
+2024 | 50:00 | stop-and-go and turn slides | chart method
+2024 | 54:51 | simple chart vs 25-year chart | "a simple chart is enough"
+2024 | 11:29 | Timewise unit, rear with the four factor holes | rear-face UI
+2024 | 38:27 | Timewise mount, "UP" sticker | setup
+classen1 | 02:40 | red Observation sign | checkpoint sign art
+classen1 | 04:30 | green Timing sign | checkpoint sign art
+classen1 | 10:30 | board: 11:30 + 112 min | ASP arithmetic
+classen1 | 12:30 | board: leg 1 early 4, leg 2 late 5, total 9 | scoring example
+classen1 | 19:50 | instructions page 1, five columns | book layout (older era)
+classen1 | 21:00 | #1 and #2 CAMEOs with hint | CAMEO grammar, hint style
+classen1 | 26:40 | #24 dashed-road CAMEO | dashed-road symbol
+classen1 | 27:10 | #27 curve sign with 35 plate; #28 speed limit AHEAD | warning vs speed sign art
+classen1 | 27:58 | emergency instructions sheet | emergency sheet appearance
+classen1 | 28:29 | stop-ahead sign and slanted stop intersection | sign art
+classen1 | 37:40 | Columns B/C for #1 and #5 | Column B symbols
+classen1 | 39:20 | calibration blocks 2m35.5s / 5m03.8s | calibration box
+classen1 | 41:10 | #17 lunch transit | hourglass and transit time
+classen1 | 42:20 | #26 digital-clock icon restart | restart symbol
+classen1 | 45:30 | #27 delayed change, #33 pause, #38 triple change | Column C stacks
+classen1 | 50:46 | #61 clock with slash | end-of-timed-portion icon
+croker2 | 09:30 | page 6 with speed at the top | pre-read example
+croker2 | 10:50 | #34 "comes quick" highlighted | highlighting technique
+croker2 | 15:00 | hard left 25 / snake left 20 signs | vocabulary sign pictures
+croker2 | 22:10 | stop chart with 8.6 example | chart in use
+croker2 | 25:00 | corner chart | turn chart reading
+croker2 | 31:30 | annotated #39/#45 (dashes, +25) | transit annotation
+croker2 | 34:40 | time allowance sheets (older paper form) | historical form
+clock | 00:10 | the 9-inch Sawtooth clock | dash clock art
+clock | 00:40 | close-up of the clock hands | minute-hand lag
+clock | 01:10 | 3-button digital stopwatch | button layout
+clock | 02:45 | analog wristwatch | allowed wristwatch
+start | 01:07 | start sign scene | start line
+start | 02:30 | two-poles demo | mini chart set-up
+delay | 03:00 | filled time delay form | form fields (older paper form)
+delay | 04:20 | form, other cars section | witnesses section
+makeup | 02:00 | make-up numbers (if a board is shown) | 10 % and 20 % table
+reading | 00:34 | instruction page, columns A to D | book layout
+reading | 01:35 | handwritten annotations | tutorial hints vs real sheet
+reading | 03:41 | #7 CAMEO with dot and arrow, 4m03.4s | calibration row
+reading | 05:20 | #26 and #27 rows | start and pause rows
+prepcharts | 02:37 | sample 1936 Packard charts | chart layout
+xcupcharts | 01:46 | telephone poles and the car | test-course scene
+xcupcharts | 05:33 | chart-creation tool with yellow help boxes | D06 tool model
+xcupcharts | 07:04 | averages grid with -2.7 outlier | outlier example
+timewise | 00:30 | kit contents | parts
+timewise | 01:30 | transducer and popsicle-stick gap | install gap
+timewise | 02:30 | magnets epoxied on the rim | placement
+timewise | 05:00 | cabin mount | mount
+hacking | every30 | unknown, no speech | find out what the video shows

@@ -1,0 +1,14 @@
+# key = YouTube URL (fill in; keys are referenced by screenshots.txt)
+2026 =
+2024 =
+classen1 =
+croker2 =
+clock =
+start =
+delay =
+makeup =
+reading =
+prepcharts =
+xcupcharts =
+timewise =
+hacking =
