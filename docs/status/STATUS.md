@@ -14,8 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): Phase VI = fold the 267 video frames (docs/research/frames) into the renderer, charts,
-  TA form, clock and sign library; then playtest cycles (playability, education, bug hunt) on the V3 build.
+- In flight (2026-10-04): Phase VI fix sprint (agent) = renderer/charts/TA form/clock/signs from the frames (11a/b/c).
+  Queued next (do NOT start until Phase VI lands, same files): fix sprint for PT-05 (docs/playtest/PT-05-playability-v3.md,
+  34.5/55, four High bugs: Start-here loop, day stage never moves, restart count clipped, holds at 1x) and PT-06
+  (docs/playtest/PT-06-engine-bughunt-v3.md, 8 medium engine bugs with repro scripts playtest-scripts/pt06-*.ts).
+  Then re-verify, commit, push, and run another playability pass.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
