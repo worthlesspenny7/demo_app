@@ -29,7 +29,7 @@ export function trapCards(seed: number): Card[] {
     const all = [right, ...wrong];
     for (let i = all.length - 1; i > 0; i--) { const j = r.int(0, i); [all[i], all[j]] = [all[j]!, all[i]!]; }
     const turn = (t.turn ?? 'S') as TurnDir;
-    out.push({ prompt: `Line reads: "${t.instructionText}". ${t.visual} Which statement is right?`, svg: t.exits.length ? cameoSvg(t.exits as never, t.control, turn, 120) : undefined, options: all, answer: all.indexOf(right), tip: `${t.tip} (${t.name})`, category: t.category });
+    out.push({ prompt: `Line reads: "${t.instructionText}". ${t.visual} Which statement is right?`, svg: t.exits.length ? cameoSvg(t.exits as never, t.control, turn, 120, { sign: t.sign ?? null }) : undefined, options: all, answer: all.indexOf(right), tip: `${t.tip} (${t.name})`, category: t.category });
   }
   return out;
 }
@@ -91,7 +91,7 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
     }
     sub.textContent = `Card ${i + 1} of 20 · ${correct} correct · keys 1-${c.options.length} answer, Enter / Space next`;
     box.replaceChildren();
-    if (c.svg) box.append(el('div', { html: c.svg, style: 'color:var(--text);margin-bottom:8px' }));
+    if (c.svg) box.append(el('div', { html: c.svg, style: 'color:#111;background:#fff;border-radius:4px;padding:2px;display:inline-block;margin-bottom:8px' }));   // the CAMEO is printed ink on paper
     box.append(el('p', { style: 'font-size:17px' }, c.prompt));
     const fb = el('p', {});
     const answer = (k: number): void => {

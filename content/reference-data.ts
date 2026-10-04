@@ -141,7 +141,7 @@ export const TA_FORM_NOTE = 'The 2026 web form takes the first six fields; the p
 export interface CheckpointFact { fact: string; cite: string; doc: string | null }
 export const CHECKPOINT_FACTS: CheckpointFact[] = [
   { fact: 'Green sign = timing checkpoint. Do nothing: "the minimum that you need to do at a green sign is nothing." You are not told your score.', cite: 'Rally School Part 1 [04:08], [05:39]', doc: 'REG V.A.1.a' },
-  { fact: 'Red sign = observation checkpoint (a STOP sign held on the ground). Stop and talk to the worker: equipment inspection, collecting Time Allowances, the finish.', cite: 'Rally School Part 1 [02:37], [03:07]', doc: 'REG V.A.1.b' },
+  { fact: 'Red sign = observation checkpoint (a red board reading GREAT RACE STOP, hung on a wire stand). Stop and talk to the worker: equipment inspection, collecting Time Allowances, the finish.', cite: 'Rally School Part 1 [02:37], [03:07]', doc: 'REG V.A.1.b' },
   { fact: 'Never stop within sight of a green checkpoint and never go slower than 5 mph (30 s).', cite: 'Rally School Part 2 [35:33]', doc: 'REG V.E.3.a' },
   { fact: 'Wave, smile, honk, run your headlights; do not talk to the crew.', cite: '2026 Training Session [64:10]', doc: 'REG V.A.1.a(2)' },
   { fact: 'Write the checkpoint number and your arrival time of day to the second in Column D.', cite: 'Rally School Part 1 [06:11]; 2026 Training Session [105:53]', doc: null },

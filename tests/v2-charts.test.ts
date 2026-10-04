@@ -19,7 +19,7 @@ const SP = [15, 20, 25, 30, 35, 40, 45, 50];
 describe('performance charts (HB p.7-9, Appendix B)', () => {
   it('CHART-001 buildPerfTable gives the three handbook charts, IN rows x OUT columns, tenths of a second, with the old accessors kept', () => {
     const t = buildPerfTable(FORD_1939);
-    expect(t.accel.speeds).toEqual([0, ...CHART_SPEEDS]); expect(t.stopGo.speeds).toEqual(CHART_SPEEDS); expect(t.turns.speeds).toEqual(CHART_SPEEDS); expect(CHART_SPEEDS).toEqual([10, 15, 20, 25, 30, 35, 40, 45, 50, 55]); expect(t.speeds).toEqual(CHART_SPEEDS); expect(t.extrapolated).toEqual([]); // SPEED-001
+    expect(t.accel.speeds).toEqual([0, ...CHART_SPEEDS]); expect(t.stopGo.speeds).toEqual(CHART_SPEEDS); expect(t.turns.speeds).toEqual(CHART_SPEEDS); expect(CHART_SPEEDS).toEqual([10, 12, 15, 20, 25, 30, 35, 40, 45, 50, 55]); expect(t.speeds).toEqual(CHART_SPEEDS); expect(t.extrapolated).toEqual([]); // SPEED-001
     for (const m of [t.accel, t.stopGo, t.turns]) for (const r of m.speeds) for (const c of m.speeds) { const v = m.rows[r]![c]!; expect(Number.isFinite(v)).toBe(true); expect(Math.abs(v * 10 - Math.round(v * 10))).toBeLessThan(1e-9); }
     expect(t.accel.rows[0]![40]!).toBeCloseTo(accelLoss(40, FORD_1939), 1); expect(t.accel.rows[35]![0]!).toBeGreaterThan(0); expect(t.accel.rows[40]![40]).toBe(0);
     expect(t.accel.rows[30]![50]!).toBeGreaterThan(t.accel.rows[30]![40]!); // accelerating further loses more

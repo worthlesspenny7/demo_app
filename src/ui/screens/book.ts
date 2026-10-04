@@ -1,8 +1,10 @@
-/** Printable full-page book (UI-029): `#/book/<runId>`. Seven rows a page (7 or 8 on request; a hand-laid-out drill book keeps its own), each page headed by the stage title and footed "Page n of m". */
+/**
+ * Printable full-page book (UI-029, GRIID-014): `#/book/<runId>`. Pages are laid out by content (row heights from the rows, 5 to 10 rows a page; 6, 7 or 8 fixed on request,
+ * a hand-laid-out drill book keeps its own), no page header, and the real sheet's three-block footer: "(c) year, Great Race" | "Hemmings Motor News Great Race / Page n of N" | "stage / date".
+ */
 import type { Scenario } from '../../core/course.js';
-import { bookPages, signBox, landmarkLabel, ROWS_PER_PAGE, PAGE_ROW_CHOICES } from '../viewmodels/book.js';
-import { cameoSvg } from '../viewmodels/cameo.js';
-import { griidRowHtml, esc } from '../render/griid.js';
+import { bookPages, rowCameo, PAGE_ROW_CHOICES } from '../viewmodels/book.js';
+import { griidRowHtml, sheetFootHtml, esc } from '../render/griid.js';
 import { app, buildScenario, parseSource, el, restoreLastRun } from '../state.js';
 import { allDrills } from '../../core/drills/index.js';
 
@@ -19,18 +21,17 @@ export function scenarioForRunId(parts: string[]): { scenario: Scenario; title: 
   return { scenario: built.scenario, title: built.drill ? `${built.drill.id} ${built.drill.title}` : built.scenario.name };
 }
 
-/** The whole book as printable page markup (also used by tests). */
-export function bookSheetsHtml(sc: Scenario, title: string, perPage: number = sc.rowsPerPage ?? ROWS_PER_PAGE): string {
+/** The whole book as printable page markup (also used by tests). `perPage` undefined = laid out by content (or the scenario's own `rowsPerPage`). */
+export function bookSheetsHtml(sc: Scenario, title: string, perPage?: number): string {
   const nodes = new Map(sc.course.nodes.map(n => [n.id, n] as const));
-  return bookPages(sc.book, title, { timeZone: sc.timeZone, style: sc.bookStyle, perPage }).map(pg => {
+  return bookPages(sc.book, title, { timeZone: sc.timeZone, style: sc.bookStyle, scenario: sc, ...(perPage !== undefined ? { perPage } : {}) }).map(pg => {
     const rows = pg.rows.map(r => {
       const ins = sc.book[r.n - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined;
-      const svg = node?.exits ? cameoSvg(node.exits, node.control, ins?.turn ?? null, 64) : node?.sign || (node?.control && node.control !== 'none') ? cameoSvg([{ angle: 0, kind: 'road', isRoute: true }], node!.control, 'S', 64) : '';
-      return griidRowHtml(r, { svg, sign: signBox(node), landmark: landmarkLabel(node) });
+      return griidRowHtml(r, { svg: rowCameo(node, ins) });
     }).join('');
-    return `<section class="book-sheet" data-page="${pg.page}"><div class="sheet-head"><span>${esc(pg.title)}</span><span>Course Instructions · ${esc(sc.timeZone)} · ASP ${sc.asp}</span></div>`
+    return `<section class="book-sheet" data-page="${pg.page}">`
       + `<div class="colheads"><span></span><span>A</span><span>B</span><span>C</span><span>D</span></div>${rows}`
-      + `<div class="sheet-foot"><span>Rally Trainer</span><span class="pageno">${esc(pg.footer)}</span><span>${esc(pg.title)}</span></div></section>`;
+      + `${sheetFootHtml(pg.foot)}</section>`;
   }).join('');
 }
 
@@ -42,10 +43,11 @@ export function renderBookPage(root: HTMLElement, parts: string[]): void {
   const wrap = el('div', { class: 'book-page-wrap', id: 'book-pages' },
     el('div', { class: 'book-toolbar' }, el('h1', { style: 'margin:0' }, title), el('span', { class: 'muted' }, `${scenario.book.length} lines, ${scenario.bookStyle === 'race' ? 'race style (remarks only in Column D)' : 'example style (sentences in Column D)'}`), print));
   const sheets = el('div', { id: 'book-sheets', html: bookSheetsHtml(scenario, title) });
-  if (scenario.rowsPerPage === undefined) {   // 7-8 rows a page (real sheets carry 6-9)
+  if (scenario.rowsPerPage === undefined) {   // laid out by content (5 to 10 rows a page on the real sheets), or a fixed 6 / 7 / 8
     const sel = el('select', { id: 'rows-per-page', title: 'rows per printed page' }) as HTMLSelectElement;
-    for (const n of PAGE_ROW_CHOICES) sel.append(el('option', { value: String(n), selected: n === ROWS_PER_PAGE ? true : null }, `${n} rows a page`));
-    sel.onchange = () => { sheets.innerHTML = bookSheetsHtml(scenario, title, Number(sel.value) || ROWS_PER_PAGE); };
+    sel.append(el('option', { value: 'auto', selected: true }, 'laid out by content'));
+    for (const n of PAGE_ROW_CHOICES) sel.append(el('option', { value: String(n) }, `${n} rows a page`));
+    sel.onchange = () => { sheets.innerHTML = bookSheetsHtml(scenario, title, sel.value === 'auto' ? undefined : Number(sel.value)); };
     wrap.querySelector('.book-toolbar')!.append(sel);
   }
   wrap.append(sheets);

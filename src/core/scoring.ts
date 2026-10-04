@@ -57,6 +57,8 @@ export interface StageScore {
   dnfReason?: string;
   /** Every discardable item of the stage (one per leg, plus each separate V.E.3 penalty): the pool of I.F.3. */
   penaltyItems: number[];
+  /** TAF-003: 30 s per Formal Problem Resolution Request (VI.A.2), added to the total stage score after the age factor. */
+  formalProblemPenalty?: number;
 }
 
 /** REG-002: the printed age-factor table (V.D). Never interpolated. 1954+ 1.000, 1953 0.915, -0.005/yr to 1930 = 0.800, -0.010/yr to 1900 = 0.500. */
@@ -130,7 +132,7 @@ const THIRD_OFFENCE_PENALTY = 120;
 
 export function scoreStage(
   legs: LegScore[], year: number, rules: RulesConfig,
-  extra: { observationMissed: boolean; /** the final Observation Checkpoint was never reached in time (V.E.2.d) */ observationNeverReached?: boolean; /** minutes early for each promoted-stop departure (V.E.3.h) */ earlyDepartureMinutes?: number[] },
+  extra: { observationMissed: boolean; /** Formal Problem Resolution Requests filed (VI.A.2): each consents to 30 s added to the total stage score */ formalProblems?: number; /** the final Observation Checkpoint was never reached in time (V.E.2.d) */ observationNeverReached?: boolean; /** minutes early for each promoted-stop departure (V.E.3.h) */ earlyDepartureMinutes?: number[] },
 ): StageScore {
   const penaltyItems: number[] = legs.map(l => l.penalty);
   let raw = penaltyItems.reduce((a, b) => a + b, 0);
@@ -151,7 +153,8 @@ export function scoreStage(
   if (lastLeg?.extras.missed) { dnf = true; dnfReason = 'The final Timing Checkpoint was missed (V.E.2.b)'; }
   else if (extra.observationNeverReached) { dnf = true; dnfReason = 'The final Observation Checkpoint was missed (V.E.2.d)'; }
   const f = ageFactor(year);
-  return { legs, benchmark: benchmarkLabel(raw), raw, ageFactor: f, score: Math.round(raw * f * 100) / 100, aces: legs.filter(l => l.ace).length, earlyRestartPenalty: earlyDeparturePenalty, earlyDeparturePenalty, earlyDepartures, observationPenalty, dnf, dnfReason, penaltyItems };
+  const formalProblemPenalty = 30 * Math.max(0, Math.floor(extra.formalProblems ?? 0));
+  return { legs, benchmark: benchmarkLabel(raw), raw, ageFactor: f, formalProblemPenalty, score: Math.round(raw * f * 100) / 100 + formalProblemPenalty, aces: legs.filter(l => l.ace).length, earlyRestartPenalty: earlyDeparturePenalty, earlyDeparturePenalty, earlyDepartures, observationPenalty, dnf, dnfReason, penaltyItems };
 }
 
 // ---------- championship (REG-003, REG-004) ----------

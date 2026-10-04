@@ -12,7 +12,7 @@
  */
 import { ScenarioBuilder, EXITS, PERFECT_TIMEWISE, type NodeSpec, type InsSpec } from '../builder.js';
 import {
-  type Scenario, type CarSpec, type SpeedoSpec, type DriverSpec, type AidsConfig, type Exit, type Control, type TurnDir, type Section, type TimeZoneLabel,
+  type Scenario, type CarSpec, type SpeedoSpec, type DriverSpec, type AidsConfig, type Exit, type Control, type TurnDir, type Section, type TimeZoneLabel, type SignShape,
   FORD_1939, DRIVER_EXPERT, TRAINING_AIDS, validateScenario, nodeById,
 } from '../course.js';
 import { buildGhost, ghostTimeAt, annotatePerfectTimes } from '../ghost.js';
@@ -127,10 +127,16 @@ export const PROFILES: Record<'pauseDrill' | 'timedDrill' | 'landmarkDrill' | 'c
   fullStage: { name: 'fullStage', skeleton: 'day', pauseOnStopProbability: 0.85, freeZoneProbability: 0.5, endTimed: true, legs: 0, lineDensity: 'normal', trapDensity: 0.3, signals: true, trains: true, slowTraffic: true, calibration: true, lunchRestart: true, trafficWaitProbability: 0.15 },
 };
 
-const LANDMARKS = ['bridge', 'church on R', 'water tower on L', 'cattle guard', 'county line sign', 'grain elevator on R', 'cemetery on L', 'overpass', 'fire station on R', 'creek bridge'];
-const SIGN_TEXTS: { text: string; shape: 'rect' | 'diamond' | 'shield' | 'blade' }[] = [
-  { text: 'SPEED LIMIT 35', shape: 'rect' }, { text: 'SPEED LIMIT 45', shape: 'rect' }, { text: 'REDUCED SPEED AHEAD', shape: 'rect' }, { text: 'PASS WITH CARE', shape: 'rect' },
+const LANDMARKS = ['bridge', 'church on R', 'water tower on L', 'cattle guard', 'county line sign', 'grain elevator on R', 'cemetery on L', 'overpass', 'fire station on R', 'creek bridge', 'toll booth'];
+/** Road names printed beside the CAMEO roads (11a: "Beach St", "Shore Rd", "Bridges Dr", "Franks Ferry"). */
+const ROAD_NAMES = ['Beach St', 'Shore Rd', 'Bridges Dr', 'Beech Ridge', 'Franks Ferry', 'Old Kentucky', 'Knowles', 'Main St', 'Mill Rd', 'Church St', 'Elm St', 'River Rd'];
+/** Business sign legends (white on black) and the advisory speeds on warning plaques; both are independent of the assigned speed. */
+const BUSINESS_SIGNS = ['Cumberland Farms', 'Tim Hortons', 'Shell', 'Subway', 'Dunkin'];
+const PLAQUE_SPEEDS = [15, 20, 25, 30, 35, 40, 45];
+const SIGN_TEXTS: { text: string; shape: SignShape }[] = [
+  { text: 'SPEED LIMIT 35', shape: 'speedlimit' }, { text: 'SPEED LIMIT 45', shape: 'speedlimit' }, { text: 'REDUCED SPEED AHEAD', shape: 'rect' }, { text: 'PASS WITH CARE', shape: 'rect' },
   { text: 'NO PASSING ZONE', shape: 'rect' }, { text: 'SCHOOL', shape: 'rect' }, { text: 'JCT 12', shape: 'shield' }, { text: 'CITY LIMIT', shape: 'rect' }, { text: 'HILL', shape: 'diamond' }, { text: 'DEER CROSSING', shape: 'diamond' },
+  { text: 'REVERSE CURVE', shape: 'reverse-curve' }, { text: 'STOP AHEAD', shape: 'stop-ahead' }, { text: 'CROSSROAD', shape: 'crossroad' }, { text: 'SPEED LIMIT 45 AHEAD', shape: 'speed-ahead' }, { text: 'Tim Hortons', shape: 'business' },
 ];
 const TOWN_NAMES = ['MILLBROOK', 'ELDORA', 'CENTERVILLE', 'FAIRFIELD', 'OSAGE', 'NEW HAMPTON', 'DECORAH', 'TIPTON', 'WAVERLY', 'CLARION'];
 
@@ -140,6 +146,8 @@ class Generator {
   private readonly omitRng: Rng;
   /** Own stream for the V3 choices (calibration speed 55, delay causes) so the layout of a seed stays what the rest of the draws make it. */
   private readonly v3Rng: Rng;
+  /** Own stream for the cosmetic Phase VI choices (no-host meals, sign faces, plaques, the Information Box sign), so the layout draws of a seed never move. */
+  private readonly cosRng: Rng;
   private readonly b: ScenarioBuilder;
   private readonly tags: string[];
   private speed = 35;
@@ -169,6 +177,7 @@ class Generator {
     this.r = rng(`gen:${kind}:${seed}`);
     this.omitRng = rng(`gen-omit:${kind}:${seed}`);
     this.v3Rng = rng(`gen-v3:${kind}:${seed}`);
+    this.cosRng = rng(`gen-cos:${kind}:${seed}`);
     const wanted = profile.cpCount ?? profile.legs;
     this.legs = kind === 'leg' ? 1 : wanted > 0 ? wanted : Math.min(6, this.r.int(4, 7));   // CPX-001: 4-6 timing checkpoints a day
     this.tags = [`gen:${profile.name ?? kind}`, `seed:${seed}`];
@@ -333,7 +342,7 @@ class Generator {
     b.advanceMiles(m1 * 0.5);
     this.instruction({ sign: { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect', side: 'R' }, sightDistance: 500 }, {});
     b.advanceMiles(m1 * 0.5);
-    b.promotedStop('meal', leadMeal);
+    b.promotedStop('meal', leadMeal, { noHost: this.cosRng.chance(0.25) });
     const restMiles = withRest ? 0.4 : 0;
     b.advanceMiles(m2 * 0.5);
     this.instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 600, label: 'side road R' }, { turn: 'R' });
@@ -353,10 +362,19 @@ class Generator {
     b.advanceFt(milesToFt(0.25 + 0.3 * r.next()));
     const miles = r.int(80, 160) / 10; const secs = Math.ceil(miles / 30 * 3600 / 60) * 60;
     b.endTimedPortion({ endOfStage: true, transit: { exact: false, plain: true, seconds: secs, miles } });   // HB p.11 / Example #34: the transit to the finish is a guide, printed plain, not "take exactly"
-    b.advanceMiles(miles * 0.45);
     const d = r.pick(['L', 'R'] as const);
-    this.instruction({ exits: EXITS.tee(d), sightDistance: 600, label: 'T' }, { turn: d });
-    b.advanceMiles(miles * 0.55 - 0.05);
+    if (this.profile.skeleton === 'day') {
+      // GRIID-016: the Information Box row of the end of the day (host dinner, parc ferme, parking), ahead of the last turn and the finish
+      b.advanceMiles(miles * 0.25);
+      b.informationBox('Reception and awards this evening at the host hotel, from 6:30:00 to 8:00:00. There is no parking at the hotel: walk or take the shuttle. Overnight race car parking is at the hotels.', { business: this.cosRng.pick(['Cumberland Farms', 'Tim Hortons', 'Shell']), list: 'Gas: Shell, Mobil, Sunoco. Do not go to your hotel until after you have been to the Observation Checkpoint at the finish line.' });
+      b.advanceMiles(miles * 0.2);
+      this.instruction({ exits: EXITS.tee(d), sightDistance: 600, label: 'T' }, { turn: d });
+      b.advanceMiles(miles * 0.55 - 0.05);
+    } else {
+      b.advanceMiles(miles * 0.45);
+      this.instruction({ exits: EXITS.tee(d), sightDistance: 600, label: 'T' }, { turn: d });
+      b.advanceMiles(miles * 0.55 - 0.05);
+    }
     b.observationFinish();
   }
 
@@ -530,7 +548,7 @@ class Generator {
         if (dir !== 'S') gap = Math.max(gap, 720);
         speedAfter = r.chance(0.6) ? this.pickSpeed(town, false) : this.speed;
         const useTee = dir !== 'S' && r.chance(0.4);
-        const exits = useTee ? EXITS.tee(dir as 'L' | 'R') : EXITS.crossroads(dir);
+        const exits = this.nameExits(useTee ? EXITS.tee(dir as 'L' | 'R') : EXITS.crossroads(dir));
         const node: NodeSpec = { control: 'STOP', exits, sightDistance: 700, sign: { text: 'STOP', shape: 'octagon', side: 'R' }, label: useTee ? 'T' : undefined };
         // REG-006: the book prints the 15 s pause on most STOPs (profile.pauseOnStopProbability), not all; the driver stops either way
         // at most two unprinted pauses per leg: the missing seconds are uncompensated by anyone who trusts the ghost, and the checkpoint chooser must be able to find recovery road
@@ -543,13 +561,13 @@ class Generator {
         const dir = r.pick(['S', 'S', 'L', 'R'] as const);
         if (dir !== 'S') gap = Math.max(gap, 720);
         speedAfter = r.chance(0.7) ? this.pickSpeed(town, false) : this.speed;
-        const node: NodeSpec = { control: 'SIGNAL', exits: EXITS.crossroads(dir), sightDistance: 800 };
+        const node: NodeSpec = { control: 'SIGNAL', exits: this.nameExits(EXITS.crossroads(dir)), sightDistance: 800, ...(this.cosRng.chance(0.15) ? { ramp: true } : {}) };   // multi-lane approach: lane ticks on the stem (11a row 4)
         const ins: InsSpec = { turn: dir, speed: speedAfter, pause: r.chance(this.profile.pauseOnSignalProbability ?? 0) ? 15 : undefined, hint: this.hintFor(gap, 'signal', undefined) };
         return { item: { node, ins, kind: 'signal', costAfter: AFTER.control, needBefore: BEFORE.control, cost: COST.signalRed, signal: this.signalSpec() }, gap, speedAfter, minNextGap };
       }
       case 'rr': {
         speedAfter = r.chance(0.5) ? this.pickSpeed(town, false) : this.speed;
-        const node: NodeSpec = { kind: 'landmark', control: 'RR', sign: { text: 'RR', shape: 'rr', side: 'R' }, sightDistance: 700, label: 'RR crossing' };
+        const node: NodeSpec = { kind: 'landmark', control: 'RR', sign: { text: 'RR', shape: 'rr-advance', side: 'R' }, sightDistance: 700, label: 'RR crossing' };
         const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'rr', undefined) };
         const train = this.makeTrain();
         return { item: { node, ins, kind: 'rr', costAfter: AFTER.control, needBefore: BEFORE.control, cost: train?.hit ? COST.trainHit : COST.speed, train }, gap, speedAfter, minNextGap };
@@ -563,6 +581,7 @@ class Generator {
         else if (kind === 'side') { const d = r.pick(['L', 'R'] as const); exits = EXITS.sideRoad(d, { route: 'turn' }); turn = d; label = `side road ${d}`; }
         else { const d = r.pick(['L', 'R'] as const); exits = EXITS.crossroads(d); turn = d; label = 'crossroads'; }
         speedAfter = r.chance(0.5) ? this.pickSpeed(town, false) : this.speed;
+        exits = this.nameExits(exits);
         const node: NodeSpec = { exits, sightDistance: 600, label };
         const ins: InsSpec = { turn, speed: speedAfter, hint: this.hintFor(gap, 'turn', undefined) };
         const ang = Math.abs(routeExit(exits)!.angle);
@@ -571,14 +590,17 @@ class Generator {
       case 'speedSign': {
         speedAfter = this.pickSpeed(town, true);
         const s0 = town && r.chance(0.5) ? { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect' as const } : r.pick(SIGN_TEXTS);
-        const s = s0.text.startsWith('SPEED LIMIT') ? { text: `SPEED LIMIT ${speedAfter}`, shape: s0.shape } : s0; // a posted limit is never below the assigned speed
+        // GRIID-017: a "Speed Limit NN" sign posts the road's limit, which is NOT the assigned speed (the 2014 sheet shows Speed Limit 65 over an assigned 50): it is never below the
+        // assigned speed, and is drawn from the cosmetic stream so the layout of the seed does not move. "Speed Limit NN AHEAD" warns of the same kind of limit.
+        const limit = Math.min(65, speedAfter + this.cosRng.pick([5, 10, 15]));
+        const s = s0.shape === 'speedlimit' ? { text: `SPEED LIMIT ${limit}`, shape: s0.shape } : s0.shape === 'speed-ahead' ? { text: `SPEED LIMIT ${limit} AHEAD`, shape: s0.shape } : s0.shape === 'business' ? { text: this.cosRng.pick(BUSINESS_SIGNS), shape: s0.shape } : s0;
         const node: NodeSpec = { sign: { text: s.text, shape: s.shape, side: r.chance(0.8) ? 'R' : 'L' }, sightDistance: 500 };
         const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'speedSign', undefined) };
         return { item: { node, ins, kind: 'speedSign', costAfter: AFTER.speed, needBefore: BEFORE.plain, cost: COST.speed }, gap, speedAfter, minNextGap };
       }
       case 'curveSign': {
         speedAfter = this.pickSpeed(town, true);
-        const node: NodeSpec = { sign: { text: 'CURVE', shape: 'diamond', side: 'R' }, sightDistance: r.chance(0.3) ? 200 : 500 };
+        const node: NodeSpec = { sign: { text: 'CURVE', shape: 'curve', side: 'R', plaque: this.cosRng.pick(PLAQUE_SPEEDS) }, sightDistance: r.chance(0.3) ? 200 : 500 };
         const ins: InsSpec = { speed: speedAfter, hint: r.chance(0.6) ? 'Follow this Curve Warning Sign' : this.hintFor(gap, 'curveSign', undefined) };
         return { item: { node, ins, kind: 'curveSign', costAfter: AFTER.speed, needBefore: BEFORE.plain, cost: COST.speed }, gap, speedAfter, minNextGap };
       }
@@ -612,6 +634,22 @@ class Generator {
       }
     }
     return null;
+  }
+
+  /**
+   * GRIID-015: real CAMEOs print road names beside the roads ("Beach St", "Shore Rd") and an unposted name in parentheses "(US 1 North)". Roughly 60 % of intersections get
+   * names, drawn from the cosmetic stream; the route road is bracketed now and then.
+   */
+  private nameExits(exits: Exit[]): Exit[] {
+    if (!this.cosRng.chance(0.6)) return exits;
+    const pool = [...ROAD_NAMES]; const out = exits.map(e => ({ ...e }));
+    for (const e of out) {
+      if (e.kind !== 'road' || e.name) continue;
+      if (!e.isRoute && !this.cosRng.chance(0.5)) continue;
+      e.name = pool.splice(this.cosRng.int(0, pool.length - 1), 1)[0];
+      if (e.isRoute && this.cosRng.chance(0.15)) e.bracketed = true;
+    }
+    return out;
   }
 
   private pickSpeedExcept(town: boolean, except: number): number {

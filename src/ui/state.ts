@@ -10,8 +10,12 @@ import { allDrills } from '../core/drills/index.js';
 import { scenarioMinutes } from './viewmodels/estimate.js';
 import { loadStored, replayFinished, LAST_KEY, type StoredSource } from './viewmodels/resume.js';
 
-export interface Settings { watch: 'analog' | 'digital'; /** UI-033: the stopwatch defaults to digital (HB p.5, REG II.H.1.d(3)); analog stays selectable. The dash clock is always analog (REG II.H.1.d(1): no digital readout), so there is no clock setting. */ timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean }
-export const DEFAULT_SETTINGS: Settings = { watch: 'digital', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false };
+export interface Settings { watch: 'analog' | 'digital'; /** UI-033: the stopwatch defaults to digital (HB p.5, REG II.H.1.d(3)); analog stays selectable. The dash clock is always analog (REG II.H.1.d(1): no digital readout), so there is no clock setting. */ timeScale: number; driverSkill: DriverSkill | 'scenario'; theme: 'dusk' | 'light'; muted: boolean; speech: boolean; showHelp: boolean;
+  /** INST-003: the dash clock face: the Sawtooth-style white dial (default, 11a/10c) or the bezel rally clock (the 2026 school shows one). Both are analog with no digital readout. */
+  clockFace: 'sawtooth' | 'bezel';
+  /** CHART-007: the performance card shows the simple chart (default) or points to the three matrices behind the Charts overlay. */
+  chartView: 'simple' | 'matrices' }
+export const DEFAULT_SETTINGS: Settings = { watch: 'digital', timeScale: 1, driverSkill: 'scenario', theme: 'dusk', muted: false, speech: true, showHelp: false, clockFace: 'sawtooth', chartView: 'simple' };
 const SETTINGS_KEY = 'rally-trainer.settings.v1';
 
 export function loadSettings(): Settings {

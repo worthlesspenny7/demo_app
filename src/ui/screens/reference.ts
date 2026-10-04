@@ -84,7 +84,7 @@ export function renderReference(root: HTMLElement): void {
   pa.append(answerSheet);
   // CAMEO legend
   const cam = el('div', { class: 'panel' }, el('h3', {}, 'CAMEO legend'));
-  const legend = el('div', { style: 'display:grid;grid-template-columns:72px 1fr;gap:6px 10px;align-items:center;color:var(--text)' });
+  const legend = el('div', { style: 'display:grid;grid-template-columns:120px 1fr;gap:6px 10px;align-items:center;color:var(--text)' });
   const items: [string, string][] = [
     [cameoSvg(EXITS.crossroads('R'), 'STOP', 'R'), 'Dot = road you arrive on. Arrow = road you leave on. Bold = route. Thin = roads not taken. The octagon is the control on your approach.'],
     [cameoSvg(EXITS.tee('L'), 'none', 'L'), 'T: your road ends. Without a callout the driver stops and asks.'],
@@ -92,8 +92,14 @@ export function renderReference(root: HTMLElement): void {
     [cameoSvg(EXITS.sideRoad('R', { kind: 'driveway' }), 'none', 'S'), 'Dashed = driveway, lot, dead end, private, unpaved: not a road. Continue straight.'],
     [cameoSvg([{ angle: 0, surface: 'paved', kind: 'road', isRoute: false }, { angle: 150, surface: 'paved', kind: 'road', isRoute: true }], 'YIELD', 'AR'), 'Acute right (more than 120 degrees) at a YIELD. (Simulator convention, not in the documents.)'],
     [cameoSvg(EXITS.crossroads('S'), 'SIGNAL', 'S'), 'Straight through a signal. A traffic light is not one of the delays V.H.1 names for a Time Allowance (a train blocking the route, assisting at an accident).'],
+    // SIGN-001 / GRIID-015: the sign faces as the 2014 and 2019 sheets draw them (11a section 3), inside the box, on the side of the road they stand
+    [cameoSvg(EXITS.straightRoad(), 'none', 'S', 64, { sign: { text: 'SPEED LIMIT 65', shape: 'speedlimit', side: 'R' } }), '"Speed Limit 65": the posted limit, NOT your assigned speed (the sheet shows Speed Limit 65 over an assigned 50 MPH). A sign to the right of the arrow stands on the right.'],
+    [cameoSvg(EXITS.straightRoad(), 'none', 'S', 64, { sign: { text: 'CURVE', shape: 'curve', side: 'L', plaque: 35 } }), 'A white warning diamond with a pictogram (curve, reverse curve, stop ahead, speed limit ahead, crossroad) and a plaque under it: the advisory speed, large number over MPH.'],
+    [cameoSvg(EXITS.straightRoad(), 'none', 'S', 64, { sign: { text: 'LEAVING ELDORA CITY LIMIT', shape: 'rect', side: 'O' } }), 'A box centred on the arrow is an overhead sign. Sign legends are printed in mixed case; a white-on-black box is a business sign.'],
+    [cameoSvg(EXITS.straightRoad(), 'RR', 'S', 64, { sign: { text: 'RR', shape: 'rr-advance', side: 'R' } }), 'Railroad: the round RR sign, then the tracks (two rails with ties) with a yield triangle. A train is a Time Allowance delay.'],
   ];
   for (const [svg, text] of items) legend.append(el('div', { html: svg }), el('div', { style: 'font-size:13px' }, text));
+  legend.querySelectorAll('svg.cameo').forEach(v => { (v as SVGElement).setAttribute('style', 'width:112px;height:auto;background:#fff;color:#111;border-radius:3px'); });
   cam.append(legend);
   // GI definitions
   const gi = el('div', { class: 'panel' }, el('h3', {}, 'General Instructions: definitions'));

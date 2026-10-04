@@ -27,7 +27,9 @@ export type Action =
   | { type: 'line.set'; n: number } | { type: 'line.annotate'; n: number; text: string } | { type: 'note'; text: string } | { type: 'abort' }
   | { type: 'ta.request'; legIndex: number; seconds: number; fromLine: number; toLine: number; note?: string;
       /** TAF-001 web-form fields (all optional; a missing one is listed in the record's `missingFields`). */
-      carNumber?: number; password?: string; phone?: string; stage?: number | string; cause?: string; witnesses?: { ahead?: string | number; behind?: string | number } }
+      carNumber?: number; password?: string; phone?: string; stage?: number | string; cause?: string; witnesses?: { ahead?: string | number; behind?: string | number };
+      /** TAF-003 paper sheet: the request kind (Time Allowance V.H.1, Emergency Reduced Speed V.H.2, Formal Problem Resolution VI.A.2 = +30 s), the contestant's status, the circumstances, the "Witnessed by" rows. */
+      requestType?: TaRequestType; contestantStatus?: 'driver' | 'navigator'; circumstances?: string; witnessedBy?: TaWitness[] }
   /** Deprecated alias of ta.request for the current leg at a TA point (kept for older scripts). */
   | { type: 'ta.declare'; seconds: number; legIndex?: number }
   | { type: 'scorecard.ack' }
@@ -60,6 +62,10 @@ export interface VisibleFeature {
 
 export interface DriverMessage { id: number; tod: number; text: string; kind: 'readback' | 'question' | 'info' }
 
+/** TAF-003: the three requests the paper sheet serves. */
+export type TaRequestType = 'time-allowance' | 'emergency-reduced-speed' | 'formal-problem';
+/** One "Witnessed by (for V.H.1)" row of the paper sheet: car number, name or description, contestant or official. */
+export interface TaWitness { car?: string | number; description?: string; role?: 'contestant' | 'official' }
 /** One Time Allowance request as filed (TA-001) and what happened to it. */
 export interface TaRequestRecord {
   tod: number; legIndex: number; /** as typed */ requested: number; /** after rounding to a multiple of 10 s against the team (V.H.6) */ adjusted: number;
@@ -68,6 +74,8 @@ export interface TaRequestRecord {
   carNumber?: number; password?: string; phone?: string; stage?: number | string; cause?: string; witnesses?: { ahead?: string | number; behind?: string | number };
   /** TAF-001: form fields left blank (carNumber, password, phone, stage, cause). Informational: the request is still filed. */
   missingFields?: string[];
+  /** TAF-003 paper sheet fields. */
+  requestType?: TaRequestType; contestantStatus?: 'driver' | 'navigator'; circumstances?: string; witnessedBy?: TaWitness[];
 }
 /** TA-002 / UI-031: what the navigator can see about the Time Allowance procedure. */
 export interface TaState {
@@ -247,6 +255,10 @@ export function validateAction(a: unknown): string | null {
       if (x.carNumber !== undefined && !num(x.carNumber, 0, 9999)) return 'ta.request.carNumber must be a number';
       if (x.stage !== undefined && !((typeof x.stage === 'number' && num(x.stage, 0, 20)) || (typeof x.stage === 'string' && x.stage.length <= 12))) return 'ta.request.stage must be a stage number';
       if (x.cause !== undefined && !(typeof x.cause === 'string' && x.cause.length <= 40)) return 'ta.request.cause must be a string (<= 40 chars)';
+      if (x.requestType !== undefined && !['time-allowance', 'emergency-reduced-speed', 'formal-problem'].includes(x.requestType as string)) return 'ta.request.requestType must be time-allowance, emergency-reduced-speed or formal-problem';
+      if (x.contestantStatus !== undefined && x.contestantStatus !== 'driver' && x.contestantStatus !== 'navigator') return 'ta.request.contestantStatus must be driver or navigator';
+      if (x.circumstances !== undefined && !(typeof x.circumstances === 'string' && x.circumstances.length <= 600)) return 'ta.request.circumstances must be a string (<= 600 chars)';
+      if (x.witnessedBy !== undefined && !(Array.isArray(x.witnessedBy) && x.witnessedBy.length <= 4)) return 'ta.request.witnessedBy must be a list of at most 4 rows';
       if (x.witnesses !== undefined) { const w = x.witnesses as Record<string, unknown> | null; if (!w || typeof w !== 'object' || !['ahead', 'behind'].every(k => w[k] === undefined || typeof w[k] === 'number' || (typeof w[k] === 'string' && (w[k] as string).length <= 40))) return 'ta.request.witnesses must be {ahead?, behind?} (cars ahead / behind)'; }
       return null;
     }
@@ -682,7 +694,7 @@ export class Simulator {
     const hasObs = this.sc.checkpoints.some(c => c.kind === 'observation');
     const observationMissed = hasObs && !(obsRec && obsRec.stopped);
     const observationNeverReached = hasObs && !(obsRec && obsRec.actualTod !== null);
-    const score = scoreStage(legs, this.sc.car.year, this.sc.rules, { observationMissed, observationNeverReached, earlyDepartureMinutes: this.earlyDepartureMinutes });
+    const score = scoreStage(legs, this.sc.car.year, this.sc.rules, { observationMissed, observationNeverReached, earlyDepartureMinutes: this.earlyDepartureMinutes, formalProblems: this.taRequests.filter(r => r.requestType === 'formal-problem' && r.status === 'filed').length });
     const hasEndTa = this.sc.book.some(i => i.taPoint?.endOfStage);
     return {
       scenarioId: this.sc.id, score, records: [...this.records], attribution,
@@ -1046,7 +1058,7 @@ export class Simulator {
   private fileTa(legIndex: number, seconds: number, fromLine: number, toLine: number, note: string | undefined, lenient: boolean, form?: Extract<Action, { type: 'ta.request' }>): void {
     const rec: TaRequestRecord = { tod: this.tod, legIndex, requested: seconds, adjusted: seconds, fromLine, toLine, note, status: 'filed' };
     if (form) {
-      for (const k of ['carNumber', 'password', 'phone', 'stage', 'cause', 'witnesses'] as const) if (form[k] !== undefined) (rec as unknown as Record<string, unknown>)[k] = form[k];
+      for (const k of ['carNumber', 'password', 'phone', 'stage', 'cause', 'witnesses', 'requestType', 'contestantStatus', 'circumstances', 'witnessedBy'] as const) if (form[k] !== undefined) (rec as unknown as Record<string, unknown>)[k] = form[k];
       rec.missingFields = (['carNumber', 'password', 'phone', 'stage', 'cause'] as const).filter(k => form[k] === undefined || form[k] === '');
     }
     const paper = this.sc.rules.taMode === 'paper';
@@ -1061,6 +1073,10 @@ export class Simulator {
       if (this.tod > this.taWindow.endTod) return refuse(`The ${Math.round((this.taWindow.endTod - this.taWindow.startTod) / 60)}-minute window after the TA point has closed.`);
       if (!(legIndex > this.taWindow.legBase && legIndex <= this.taWindow.legBase + Math.max(0, this.taEligibleCount()))) return refuse(`Leg ${legIndex} is not one of the legs of the portion that just ended.`);
     } else if (legIndex < 1 || legIndex > nLegs) return refuse(`There is no leg ${legIndex}.`);
+    if (form?.requestType === 'formal-problem') {
+      // TAF-003: a Formal Problem Resolution Request (VI.A.2) asks no allowance: the contestant consents to 30 s added to the total stage score
+      rec.requested = 0; rec.adjusted = 0; this.taRequests.push(rec); this.say('Scoring crew: Formal Problem Resolution Request received (30 s will be added to the stage score).', 'info'); this.log('ta.formal', { legIndex }); return;
+    }
     if (!(seconds > 0)) return refuse('A request must be at least 0m10s.');
     if (seconds > this.sc.rules.taMaxRequestSeconds) return refuse(`A request may not exceed ${Math.floor(this.sc.rules.taMaxRequestSeconds / 60)}m${this.sc.rules.taMaxRequestSeconds % 60}s.`);
     if (fromLine > toLine || toLine > this.sc.book.length) return refuse('Name the instruction numbers on or between which the delay occurred.');
@@ -1609,7 +1625,7 @@ export class Simulator {
     for (let i = this.nextCpIdx; i < this.sc.checkpoints.length; i++) {
       const cp = this.sc.checkpoints[i]!; const d = cp.s - s;
       if (d > cp.sightDistance) break;
-      out.push({ kind: 'checkpoint', approxDistanceFt: r50(d), label: cp.kind === 'timing' ? 'CHECKPOINT (green sign)' : 'OBSERVATION CHECKPOINT' });
+      out.push({ kind: 'checkpoint', approxDistanceFt: r50(d), label: cp.kind === 'timing' ? 'CHECKPOINT (green sign)' : 'OBSERVATION CHECKPOINT (red GREAT RACE STOP board)' });
     }
     for (const h of this.sc.hazards) {
       if ((h.kind === 'slow' || h.kind === 'construction' || h.kind === 'accident' || h.kind === 'tractor' || h.kind === 'combine') && h.s - s <= 400 && h.s + h.lengthFt > s) out.push({ kind: h.kind, approxDistanceFt: r50(Math.max(0, h.s - s)), label: h.kind === 'slow' ? `Slow vehicle ahead (~${h.speedMph} mph)` : h.kind === 'accident' ? `Accident scene ahead (${h.speedMph} mph)` : h.kind === 'tractor' ? `Tractor ahead (~${h.speedMph} mph)` : h.kind === 'combine' ? `Combine ahead (~${h.speedMph} mph)` : `Construction zone ${h.speedMph} mph` });

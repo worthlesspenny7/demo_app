@@ -94,11 +94,12 @@ describe('UI-004 cameoSvg', () => {
     const svg = cameoSvg(exits, 'STOP', 'R');
     expect(svg.startsWith('<svg')).toBe(true);
     expect(svg).toContain('class="cameo-dot"');
-    expect(svg).toContain('marker-end="url(#cameo-arrow)"');
+    expect(svg).toContain('class="cameo-arrowhead"');                    // a solid arrowhead at the end of the bold route
     expect((svg.match(/cameo-exit/g) ?? []).length).toBe(1);             // exactly one bold exit
-    expect((svg.match(/cameo-thin/g) ?? []).length).toBe(3);             // left, straight, driveway
-    expect((svg.match(/stroke-dasharray/g) ?? []).length).toBe(1);        // only the driveway is dashed
-    expect(svg).toContain('cameo-stop');                                 // octagon glyph
+    expect((svg.match(/class="cameo-thin"/g) ?? []).length).toBe(2);     // the cross road runs the full width in ONE thin line, plus the straight road ahead
+    expect((svg.match(/cameo-thin cameo-dashed/g) ?? []).length).toBe(1); // only the driveway is dashed
+    expect(svg).toContain('cameo-stop');                                 // octagon glyph, a small outlined octagon (no red)
+    expect(svg).not.toContain('#c8312b');
     expect(cameoSvg(EXITS.tee('L'), 'YIELD', 'L')).toContain('cameo-yield');
     expect(cameoSvg(EXITS.crossroads('S'), 'SIGNAL')).toContain('cameo-signal');
   });
@@ -128,7 +129,8 @@ describe('UI-005 bookRows', () => {
     expect(rows.map(r => r.colC)).toEqual(['CDT 8:00:00 / 35 MPH', '0 MPH / 0m15s', '30 MPH / 0m36s / 40 MPH', '0 MPH / 0m15s / 35 MPH', '']);   // GRIID-002 stacked lines, never "P15" or "30 for 0:36 then 40"
     expect(rows.map(r => r.state)).toEqual(['past', 'prev', 'current', 'next', 'next']);
     expect(rows[4]!.b).toEqual(['finish']);
-    expect(rows[3]!.colD).toBe('Left at STOP. Pause 15. Speed 35 Comes quick');
+    expect(rows[3]!.colD).toBe('Comes quick');   // GRIID-009: real sheets print no sentence
+    expect(bookRows(book, 3, { style: 'example' })[3]!.colD).toBe('Left at STOP. Pause 15. Speed 35 Comes quick');   // the rung-3 training aid
   });
   it('UI-005 clamps out-of-range current lines and tolerates empty books', () => {
     expect(bookRows(book, 99).filter(r => r.isCurrent).map(r => r.n)).toEqual([5]);
@@ -1069,13 +1071,13 @@ describe('LESSON-006 Which timer, when', () => {
 // ---------- UI V2: GRIID book, charts, TA point, restart cards, scorecard, digital watch ----------
 import { generateStage, PROFILES } from '../src/core/generator/generate.js';
 import { columnCLines, columnBSymbols, columnD, odometerBox, formatInterval, type ColumnBSymbol } from '../src/core/griid.js';
-import { bookPages, griidRow, calibrationBoxRange, pageOfLine, signBox, ROWS_PER_PAGE, PAGE_ROW_CHOICES } from '../src/ui/viewmodels/book.js';
+import { bookPages, bookLayout, griidRow, calibrationBoxRange, pageOfLine, signBox, ROWS_PER_PAGE, PAGE_ROW_CHOICES, MIN_ROWS_PER_PAGE, MAX_ROWS_PER_PAGE } from '../src/ui/viewmodels/book.js';
 import { griidIcon, odometerHtml, SYMBOL_LABEL } from '../src/ui/render/griid-icons.js';
 import { columnAHtml, columnBHtml, columnCHtml, griidRowHtml, taBannerHtml, esc } from '../src/ui/render/griid.js';
 import { bookSheetsHtml } from '../src/ui/screens/book.js';
 import { chartGrids, stopChartReading, chartStopLoss, tenPercentRule } from '../src/ui/viewmodels/charts.js';
 import { holdCardFor, openTransitCard } from '../src/ui/viewmodels/cockpitinfo.js';
-import { taFormVm, taRounding, taNoteText, windowClock } from '../src/ui/viewmodels/ta.js';
+import { taFormVm, taRounding, taNoteText, windowClock, TA_WEB } from '../src/ui/viewmodels/ta.js';
 import { scorecardViewModel, taRequestRows } from '../src/ui/viewmodels/scorecard.js';
 import { digitalWatchViewModel, SplitTracker, chronoText, todText } from '../src/ui/viewmodels/digitalwatch.js';
 import { PACKARD_1936, FORD_1939 } from '../src/core/course.js';
@@ -1083,7 +1085,7 @@ import { buildPerfTable } from '../src/core/perf-table.js';
 import { builtinScenario } from '../src/agent/scenarios.js';
 import { hms, formatClock } from '../src/core/units.js';
 
-const ALL_SYMBOLS: ColumnBSymbol[] = ['warmup', 'calibration', 'transit-begin', 'transit-end', 'freezone-begin', 'freezone-end', 'pit', 'meal', 'refuel', 'rest', 'ta', 'finish'];
+const ALL_SYMBOLS: ColumnBSymbol[] = ['warmup', 'calibration', 'transit-begin', 'transit-end', 'freezone-begin', 'freezone-end', 'pit', 'meal', 'refuel', 'rest', 'finish'];
 
 /** The oracle drives a generated stage to the first open TA window (seed 6 has a qualifying delay on leg 3). */
 function stageAtTaWindow(seed: number): Simulator {
@@ -1115,15 +1117,15 @@ describe('UI-029 the book as the five-column GRIID row', () => {
     expect(r.c.slice(r.cBox![0], r.cBox![1] + 1)).toEqual([expect.stringMatching(/^\d+m\d\d\.\ds$/), expect.stringMatching(/^\d+m\d\d\.\ds$/)]);
     const ins: Instruction = { n: 7, nodeId: 'x', text: 'cal', section: 'calibration', perfectInterval: 332, perfectCumulative: 441.3 };
     expect(calibrationBoxRange(ins, columnCLines(ins))).toEqual([0, 1]);
-    const html = columnCHtml(griidRow(ins)); expect(html).toContain('class="cbox"'); expect(html).toContain('5m32.0s'); expect(html).toContain('7m21.3s');
-    expect(columnCHtml(griidRow(stage.book.find(i => i.calibrationStart)!))).toContain('class="asterisk"');
+    const html = columnCHtml(griidRow(ins)); expect(html).toContain('class="cbox"'); expect(html).toContain('<span class="iv">5m32.0s</span>'); expect(html).toContain('<span class="cum">7m21.3s</span>');   // interval at the left over the cumulative at the right
+    const start = columnCHtml(griidRow(stage.book.find(i => i.calibrationStart)!)); expect(start).toContain('class="cdot asterisk"'); expect(start).toContain('class="cbox cstart"'); expect(start).toMatch(/class="cl speed">\d+ MPH<.*class="cl time">\d+m\d\ds<.*cstart/);   // "50 MPH" / "29m00s" / the box with its dot and 0m00.0s
   });
   it('UI-029 every Column B symbol id has a small inline SVG icon with its label, and the odometer box has four digit boxes with a black tenths box', () => {
     for (const sym of ALL_SYMBOLS) { const svg = griidIcon(sym); expect(svg).toContain(`data-sym="${sym}"`); expect(svg.startsWith('<svg')).toBe(true); expect(svg).toContain(SYMBOL_LABEL[sym]); expect(svg.length).toBeGreaterThan(150); }
     expect(new Set(ALL_SYMBOLS.map(s => griidIcon(s))).size).toBe(ALL_SYMBOLS.length);                       // all distinct
     expect(griidIcon('transit-begin')).not.toBe(griidIcon('transit-end'));                                   // full vs empty hourglass
-    expect(griidIcon('freezone-begin')).toContain('#d6453d'); expect(griidIcon('freezone-end')).not.toContain('#d6453d');   // crossed camera vs camera
-    expect(griidIcon('ta')).toContain('#f5d90a');                                                             // yellow box
+    expect(griidIcon('freezone-begin')).toContain('M6.2 6.2L25.8 25.8'); expect(griidIcon('freezone-end')).not.toContain('M6.2 6.2L25.8 25.8');   // camcorder in a slashed circle vs the plain camcorder
+    expect(griidIcon('freezone-begin')).not.toContain('#d6453d');                                              // monochrome line art: no red
     const odo = odometerHtml('0045'); expect(odo).toContain('data-odo="0045"'); expect((odo.match(/<i/g) ?? []).length).toBe(4); expect(odo).toContain('class="tenths">5');
     const b = columnBHtml({ b: ['warmup', 'transit-begin'], odometer: '0080' }); expect(b).toContain('data-sym="warmup"'); expect(b).toContain('data-odo="0080"'); expect((b.match(/data-odo/g) ?? []).length).toBe(1);
   });
@@ -1132,47 +1134,55 @@ describe('UI-029 the book as the five-column GRIID row', () => {
     expect(griidRow(ins, { style: 'example' }).d).toBe('Turn right at a crossroad at a Traffic Light. Comes quick');
     expect(griidRow(ins, { style: 'race' }).d).toBe('Comes quick');
     expect(griidRow({ ...ins, remark: undefined }, { style: 'race' }).d).toBe('');
-    expect(columnAHtml({ svg: '<svg/>', sign: signBox({ id: 'n', s: 0, kind: 'sign', control: 'none', sightDistance: 300, sign: { text: 'LEAVING ELDORA CITY LIMIT', shape: 'rect', side: 'R' } }), landmark: 'bridge' })).toMatch(/sign-box side-R[^>]*>LEAVING ELDORA CITY LIMIT.*landmark">bridge/);
+    // the sign face and the landmark are drawn INSIDE the CAMEO now (GRIID-015); Column A is just the drawing
+    expect(columnAHtml({ svg: '<svg/>' })).toBe('<span class="cameo-svg"><svg/></span>');
+    expect(signBox({ id: 'n', s: 0, kind: 'sign', control: 'none', sightDistance: 300, sign: { text: 'Leaving Eldora City Limit', shape: 'rect', side: 'O' } })).toMatchObject({ side: 'O', shape: 'rect' });
   });
-  it('UI-029 page breaks every 7 rows (8 on request) with "Page n of m" and the stage title; the printable view prints the same pages', () => {
-    const pages = bookPages(stage.book, 'D18 Full day', { timeZone: stage.timeZone, style: stage.bookStyle });
-    expect(ROWS_PER_PAGE).toBe(7); expect(pages.length).toBe(Math.ceil(stage.book.length / 7));
+  it('UI-029 GRIID-014 pages are laid out by content, 5 to 10 rows a page, with "Page n of m" in the three-block footer and no page header; a fixed 6, 7 or 8 can be asked for; the printable view prints the same pages', () => {
+    const lay = bookLayout(stage); const pages = bookPages(stage.book, 'D18 Full day', { timeZone: stage.timeZone, style: stage.bookStyle, scenario: stage });
+    expect(pages.length).toBe(lay.pages); expect(pages.slice(0, -1).every(p => p.rows.length >= MIN_ROWS_PER_PAGE && p.rows.length <= MAX_ROWS_PER_PAGE)).toBe(true);
+    expect(new Set(pages.map(p => p.rows.length)).size).toBeGreaterThan(1);   // row heights come from the content: the pages do not all carry the same count
     expect(pages[0]!.footer).toBe(`Page 1 of ${pages.length}`); expect(pages[1]!.footer).toBe(`Page 2 of ${pages.length}`); expect(pages[0]!.title).toBe('D18 Full day');
-    expect(pages.slice(0, -1).every(p => p.rows.length === 7)).toBe(true); expect(pages.flatMap(p => p.rows).map(r => r.n)).toEqual(stage.book.map(i => i.n));
-    expect(pageOfLine(1)).toBe(1); expect(pageOfLine(7)).toBe(1); expect(pageOfLine(8)).toBe(2);
+    expect(pages[0]!.foot.left).toMatch(/^\u00a9 \d{4}, Great Race$/); expect(pages[0]!.foot.center).toEqual(['Hemmings Motor News Great Race', `Page 1 of ${pages.length}`]); expect(pages[0]!.foot.right[0]).toBe('D18 Full day');
+    expect(pages.flatMap(p => p.rows).map(r => r.n)).toEqual(stage.book.map(i => i.n));
+    expect(pageOfLine(stage.book.length, stage)).toBe(pages.length); expect(pageOfLine(1, stage)).toBe(1);
+    expect(pageOfLine(1)).toBe(1); expect(pageOfLine(7)).toBe(1); expect(pageOfLine(8)).toBe(2); expect(ROWS_PER_PAGE).toBe(7);   // the fixed-count helper keeps its meaning
     const html = bookSheetsHtml(stage, 'D18 Full day'); expect((html.match(/class="book-sheet"/g) ?? []).length).toBe(pages.length);
     expect(html).toContain(`Page 1 of ${pages.length}`); expect(html).toContain('D18 Full day'); expect(html).toContain('data-sym="transit-begin"'); expect(html).toContain('class="cbox"');
+    expect(html).not.toContain('sheet-head'); expect(html).toContain('class="sheet-foot"'); expect(html).toContain('Hemmings Motor News Great Race');
     expect(griidRowHtml(pages[0]!.rows[0]!, { svg: '' })).toMatch(/class="gn">1<.*class="gb".*class="gc".*class="gd"/);
-    expect(bookPages(stage.book, 'x', { perPage: 8 }).length).toBe(Math.ceil(stage.book.length / 8)); expect(bookPages(stage.book, 'x', { perPage: 8 })[0]!.rows.length).toBe(8);   // 7 or 8 rows a page
+    expect(bookPages(stage.book, 'x', { perPage: 8 }).length).toBe(Math.ceil(stage.book.length / 8)); expect(bookPages(stage.book, 'x', { perPage: 8 })[0]!.rows.length).toBe(8);   // a fixed count
   });
   it('GRIID-010 the watch faces are drawn in Column C: the restart watch over its time and speed, the crossed-out watch of End timed portion; neither is a Column B symbol', () => {
     const restart = bookRows(stage.book, 1, { timeZone: stage.timeZone, style: stage.bookStyle }).find(r => r.cIcons.includes('restart'))!;
-    const html = columnCHtml(restart); expect(html).toContain('class="cicons"'); expect(html).toContain('data-sym="restart"'); expect(html.indexOf('cicons')).toBeLessThan(html.indexOf('CDT'));
+    const html = columnCHtml(restart); expect(html).toContain('class="cicons"'); expect(html).toContain('data-sym="restart"'); expect(html).toContain('class="zone">CDT<'); expect(html.indexOf('class="zone"')).toBeLessThan(html.indexOf('data-sym="restart"'));   // the zone label above the watch
+    expect(html).toMatch(/<text[^>]*>\d+:\d\d:\d\d<\/text>/);                                        // the time of day is inside the watch
     expect(columnBHtml(restart)).not.toContain('data-sym="restart"');
     const et = bookRows(stage.book, 1, { timeZone: stage.timeZone, style: stage.bookStyle }).find(r => r.cIcons.includes('end-timed'))!;
     expect(columnCHtml(et)).toContain('data-sym="end-timed"'); expect(columnBHtml(et)).not.toContain('data-sym="end-timed"'); expect(columnBHtml(et)).toContain('data-sym="transit-begin"');
-    expect(griidIcon('restart')).toContain(SYMBOL_LABEL['restart']); expect(griidIcon('restart')).not.toBe(griidIcon('end-timed')); expect(griidIcon('end-timed')).toContain('#d6453d');   // crossed out
-    const sheet = bookSheetsHtml(stage, 'D18 Full day'); expect(sheet).toMatch(/class="gc"><div class="cicons">.*data-sym="restart"/); expect(sheet).toMatch(/class="gc"><div class="cicons">.*data-sym="end-timed"/);
+    expect(griidIcon('restart')).toContain(SYMBOL_LABEL['restart']); expect(griidIcon('restart')).not.toBe(griidIcon('end-timed')); expect(griidIcon('end-timed')).toContain('M23.6 9.6L60.4 46.4');   // the circle-slash
+    const sheet = bookSheetsHtml(stage, 'D18 Full day'); expect(sheet).toMatch(/class="gc"><div class="cicons"><b class="zone">.*data-sym="restart"/); expect(sheet).toMatch(/class="gc"><div class="cicons">.*data-sym="end-timed"/);
     expect(columnCHtml({ c: ['30 MPH'], cBox: null })).not.toContain('cicons');
   });
   it('GRIID-013 the Time Allowance row is one full-width yellow banner with the written sentence (REG Example #18), in both book styles, in the printable view and the cockpit builder', () => {
     for (const style of ['example', 'race'] as const) {
       const sc = { ...generateStage(1), bookStyle: style }; const ta = bookRows(sc.book, 1, { timeZone: sc.timeZone, style }).filter(r => r.ta); expect(ta.length).toBe(2);
       for (const r of ta) {
-        const h = griidRowHtml(r, { svg: '' }); expect(h).toContain('class="grow ta-row'); expect(h).toContain('class="tabanner"'); expect(h).toContain('data-sym="ta"'); expect(h).toContain('Within 15m00s');
+        const h = griidRowHtml(r, { svg: '' }); expect(h).toContain('class="grow ta-row'); expect(h).toContain('class="tabanner"'); expect(h).not.toContain('data-sym="ta"'); expect(h).toContain('Within 15m00s');   // no Column B symbol, no icon: a rounded yellow box
         for (const cls of ['class="gb"', 'class="gc"', 'class="ga"', 'class="gd"']) expect(h).not.toContain(cls);          // not five cells
         expect(h).toContain(esc(r.text));
       }
       expect(griidRowHtml(bookRows(sc.book, 1, { style }).find(r => !r.ta && r.n > 1)!, { svg: '' })).not.toContain('tabanner');
     }
     const sheet = bookSheetsHtml(generateStage(1), 'D18 Full day'); expect((sheet.match(/class="tabanner"/g) ?? []).length).toBe(2);
-    expect(taBannerHtml({ text: 'Within 15m00s, go there.' })).toMatch(/^<div class="tabanner" role="note"><span class="tab-icon"><svg/);
+    expect(taBannerHtml({ text: 'Within 15m00s, go there.' })).toBe('<div class="tabanner" role="note"><span class="tab-text">Within 15m00s, go there.</span></div>');
   });
-  it('GRIID-014 a hand-laid-out drill book keeps its own page size (D15: 6 rows), everything else prints 7 rows a page and can print 8', () => {
+  it('GRIID-014 a hand-laid-out drill book keeps its own page size (D15: 6 rows); everything else is laid out by content and can print a fixed 6, 7 or 8', () => {
     const d15 = drillById('D15')!.scenario(1, 0); expect(d15.rowsPerPage).toBe(6);
     expect((bookSheetsHtml(d15, 'D15').match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(d15.book.length / 6));
-    const stage8 = bookSheetsHtml(stage, 'x', 8); expect((stage8.match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(stage.book.length / 8)); expect((bookSheetsHtml(stage, 'x').match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(stage.book.length / 7));
-    expect(PAGE_ROW_CHOICES).toEqual([7, 8]); expect(stage.rowsPerPage).toBeUndefined();
+    const stage8 = bookSheetsHtml(stage, 'x', 8); expect((stage8.match(/class="book-sheet"/g) ?? []).length).toBe(Math.ceil(stage.book.length / 8));
+    expect((bookSheetsHtml(stage, 'x').match(/class="book-sheet"/g) ?? []).length).toBe(bookLayout(stage).pages);
+    expect(PAGE_ROW_CHOICES).toEqual([6, 7, 8]); expect(stage.rowsPerPage).toBeUndefined();
   });
   it('UI-029 lettered lines print their letter and omitted lines are marked (GRIID-005)', () => {
     const r = griidRow({ n: 4, nodeId: 'n', text: 'x', printed: '3a', omitted: true });
@@ -1475,14 +1485,18 @@ describe('UI-037 the start card: your time, launch at your time minus the start 
 });
 
 describe('UI-037 the TA form uses the TAF-001 fields and the TAF-002 arithmetic helper', () => {
-  it('UI-037 TAF-001 the web form: car, password, phone, stage, leg (auto-filled), instructions from/to, time in 10 s steps, cause, witnesses ahead and behind', () => {
+  it('UI-037 TAF-001 the web form is the 2026 page word for word: Car Number, Password, Phone Number, Stage, Leg Number, Between Instructions a & b, Allowance m s, Reason; no witness field', () => {
     const web = taFormFields('web').map(f => f.id);
-    expect(web).toEqual(['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-request', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind']);
-    expect(taFormFields('web').find(f => f.id === 'ta-leg')!.hint).toContain('filled in for you'); expect(taFormFields('web').find(f => f.id === 'ta-request')!.hint).toBe('in 10 s steps'); expect(TA_STEP).toBe(10);
+    expect(web).toEqual(['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-min', 'ta-sec', 'ta-cause']);
+    expect(web.some(id => /witness|ta-w\d/.test(id))).toBe(false);
+    expect(taFormFields('web').find(f => f.id === 'ta-leg')!.hint).toContain('filled in for you'); expect(taFormFields('web').find(f => f.id === 'ta-sec')!.hint).toContain('10 s steps'); expect(TA_STEP).toBe(10);
+    expect(taFormFields('web').map(f => f.label).slice(0, 5)).toEqual(['Car Number', 'Password', 'Phone Number', 'Stage', 'Leg Number']);
+    expect(TA_WEB.loginTitle).toEqual(['Great Race', 'Time Allowance', 'Login']); expect(TA_WEB.login.button).toBe('Login');
+    expect(TA_WEB.entry).toMatchObject({ between: 'Between Instructions', allowance: 'Allowance', reason: 'Reason', submit: 'Submit', seeSubmitted: 'CLICK to see Time Allowances Submitted', done: 'CLICK this after submitting ALL Time Allowances for the ENTIRE stage' });
   });
   it('UI-037 TAF-001 the classic paper toggle drops the password and the phone and adds a signature', () => {
     const paper = taFormFields('paper').map(f => f.id);
-    expect(paper).not.toContain('ta-password'); expect(paper).not.toContain('ta-phone'); expect(paper).toContain('ta-signature'); expect(paper).toEqual(expect.arrayContaining(['ta-car', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-request', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind']));
+    expect(paper).not.toContain('ta-password'); expect(paper).not.toContain('ta-phone'); expect(paper).toContain('ta-signature'); expect(paper).toEqual(expect.arrayContaining(['ta-car', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-min', 'ta-sec', 'ta-circumstances', 'ta-type', 'ta-status', 'ta-w1-car', 'ta-w2-name']));
   });
   it('UI-037 TAF-002 the helper says measured = stopped + chart loss and to make up the odd seconds: delayed 3:47, make up 7, claim 3:40', () => {
     const h = taHelper({ measuredDelay: 227, stoppedSeconds: 221, chartLoss: 6 });

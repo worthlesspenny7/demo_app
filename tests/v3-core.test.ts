@@ -427,7 +427,7 @@ describe('PROTO-001 the callout protocol in the driver model', () => {
 
 describe('SPEED-001 speeds 10-55 in charts and the generator', () => {
   it('SPEED-001 buildPerfTable covers 10..55 mph for a model car; the Packard keeps its printed 15-50 exactly and has 55 extrapolated and flagged', () => {
-    expect(CHART_SPEEDS).toEqual([10, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
+    expect(CHART_SPEEDS).toEqual([10, 12, 15, 20, 25, 30, 35, 40, 45, 50, 55]);
     const f = buildPerfTable(FORD_1939); expect(f.speeds).toEqual(CHART_SPEEDS); expect(f.extrapolated).toEqual([]);
     for (const m of [f.accel, f.stopGo, f.turns]) for (const r of m.speeds) for (const c of m.speeds) { expect(Number.isFinite(m.rows[r]![c]!)).toBe(true); expect(m.rows[r]![c]!).toBeGreaterThanOrEqual(0); }
     expect(f.accel.rows[0]![10]!).toBeGreaterThan(0); expect(f.accel.rows[0]![10]!).toBeLessThan(f.accel.rows[0]![55]!); expect(f.stopGo.rows[10]![10]!).toBeGreaterThan(f.stopGo.rows[55]![55]!);

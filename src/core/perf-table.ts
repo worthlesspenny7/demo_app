@@ -143,8 +143,8 @@ export interface PerfTable {
   turn: Record<string, number>;
 }
 /** Speeds of the model-driven charts (IN rows / OUT columns). */
-/** SPEED-001: 10 to 55 mph in steps of 5. */
-export const CHART_SPEEDS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+/** SPEED-001: 10 to 55 mph in steps of 5, plus the 12 mph row the real charts carry (11a: the rows run 55 ... 15, 12, 10). */
+export const CHART_SPEEDS = [10, 12, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 /** Speeds used by the older reference tables. */
 export const SPEEDS = [20, 25, 30, 35, 40, 45, 50];
 

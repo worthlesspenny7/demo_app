@@ -2,6 +2,7 @@
 import { ScenarioBuilder, PERFECT_TIMEWISE } from '../builder.js';
 import { aidsForRung, DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE, FORD_1939, PACKARD_1936, type Scenario, type DriverSpec, type AidsConfig } from '../course.js';
 import { hms } from '../units.js';
+import { bookStyleForRung } from '../griid.js';
 import { rng } from '../rng.js';
 import * as generator from '../generator/generate.js';
 import type { Drill, DrillTier } from './types.js';
@@ -32,7 +33,7 @@ export function legalTiers(): DrillTier[] {
 export function tierOf(d: Pick<Drill, 'tiers'>, t: number): DrillTier { return d.tiers[Math.max(0, Math.min(d.tiers.length - 1, t))]!; }
 
 /** GRIID-009: the race-style book (remarks only) from aids rung 1 down, the Example Rally wording above. */
-export function bookStyleFor(aids: AidsConfig): 'race' | 'example' { return aids.rung <= 1 ? 'race' : 'example'; }
+export function bookStyleFor(aids: AidsConfig): 'race' | 'example' { return bookStyleForRung(aids.rung); }
 
 /** Which drills hand the player the Packard (CHART-002) at Bronze, and which hide the Ford's own numbers. */
 const PACKARD_BRONZE = new Set(['D03', 'D06']);

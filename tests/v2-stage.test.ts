@@ -21,7 +21,7 @@ describe('stage structure (STAGE-001..008)', () => {
     for (const seed of [1, 2, 3, 4]) {
       const sc = day(seed); expect(validateScenario(sc)).toEqual([]);
       const idx = (f: (i: Scenario['book'][number]) => boolean, from = 0) => { const k = sc.book.findIndex((i, j) => j >= from && f(i)); expect(k, `seed ${seed}`).toBeGreaterThanOrEqual(0); return k; };
-      const start = idx(i => i.section === 'start'); expect(columnBSymbols(sc.book[start])).toEqual(['warmup', 'transit-begin']);
+      const start = idx(i => i.section === 'start'); expect(columnBSymbols(sc.book[start])).toEqual(['warmup']);
       const cal = idx(i => !!i.calibrationStart, start); const r1 = idx(i => i.section === 'restart', cal); const e1 = idx(i => !!i.endTimed, r1); const ta1 = idx(i => !!i.taPoint, e1);
       const meal = idx(i => i.promotedStop?.kind === 'meal', ta1); const r2 = idx(i => i.section === 'restart', meal); const e2 = idx(i => !!i.endTimed, r2); const ta2 = idx(i => !!i.taPoint, e2); const fin = idx(i => i.section === 'finish', ta2);
       expect(sc.book[ta1]!.taPoint!.endOfStage).toBe(false); expect(sc.book[ta2]!.taPoint!.endOfStage).toBe(true); expect(fin).toBe(sc.book.length - 1);
@@ -125,7 +125,7 @@ describe('stage structure (STAGE-001..008)', () => {
       let prev = 0; for (const p of pts) { expect(Math.round(p.perfectCumulative! * 10)).toBeCloseTo(p.perfectCumulative! * 10, 6); expect(p.perfectInterval!).toBeCloseTo(p.perfectCumulative! - prev, 6); prev = p.perfectCumulative!; }
       const official = Math.ceil(prev / 60) * 60; const allowance = begin.transit!.seconds;
       expect(allowance - official).toBeGreaterThanOrEqual(120); expect(allowance - official).toBeLessThanOrEqual(300); expect(allowance % 60).toBe(0);
-      const calSpeed = Number((sc.tags ?? []).find(t => t.startsWith('calibration:speed:'))!.split(':')[2]); expect([50, 55]).toContain(calSpeed); expect(columnCLines(begin)).toEqual([formatInterval(allowance), `${calSpeed} MPH`, '* 0m00.0s']); expect(columnCLines(pts[0]!)[0]).toMatch(/^\d+m\d\d\.\ds$/);
+      const calSpeed = Number((sc.tags ?? []).find(t => t.startsWith('calibration:speed:'))!.split(':')[2]); expect([50, 55]).toContain(calSpeed); expect(columnCLines(begin)).toEqual([`${calSpeed} MPH`, formatInterval(allowance), '* 0m00.0s']); expect(columnCLines(pts[0]!)[0]).toMatch(/^\d+m\d\d\.\ds$/);
       const g = buildGhost(sc); expect(ghostTimeAt(g, nodeById(sc.course, cal[cal.length - 1]!.nodeId).s) - ghostTimeAt(g, nodeById(sc.course, begin.nodeId).s)).toBeCloseTo(miles * 3600 / calSpeed, 0);
       expect(sc.checkpoints.some(c => c.kind === 'timing' && c.s <= nodeById(sc.course, cal[cal.length - 1]!.nodeId).s)).toBe(false); // free zone: nothing scored
     }

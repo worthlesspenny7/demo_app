@@ -51,6 +51,71 @@ export function parseChartRuns(notes: string[], driver?: 'A' | 'B'): Map<string,
   }
   return out;
 }
+// ---------- CHART-006: raw run times, as the X-Cup chart tool takes them ----------
+
+/** The three run types of the chart tool: a flying pass at constant speed, a start from a standstill, braking to a standstill. */
+export type RawKind = 'const' | 'acc' | 'brk';
+const RAW_WORDS: Record<string, RawKind> = { const: 'const', constant: 'const', flying: 'const', acc: 'acc', accel: 'acc', accelerating: 'acc', start: 'acc', brk: 'brk', brake: 'brk', braking: 'brk' };
+const RAW = /\b(const(?:ant)?|flying|acc(?:el(?:erating)?)?|start|brk|brake|braking)\s+(\d+)\s*(?:mph)?\s*runs?\b\s*[:=]?\s*/gi;
+/**
+ * Raw course times in seconds between the same two fixed marks: "const 25 runs 19.8 19.9 19.1 19.8", "acc 25 runs 18.0 ...", "brk 25 runs 17.0 ..." (three run types, four runs
+ * per speed, per driver). The map key is `${kind}:${speed}`. A leading "A:" / "B:" tags the note for one driver as elsewhere.
+ */
+export function parseRawRuns(notes: string[], driver?: 'A' | 'B'): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  for (const text0 of notes) {
+    let text = text0;
+    const dm = /^\s*(?:driver\s*)?([AB])\b\s*[:\-]?\s*(?=(?:const|flying|acc|start|brk|brake))/i.exec(text);
+    if (dm) { const tag = dm[1]!.toUpperCase(); text = text.slice(dm[0].length); if (driver && tag !== driver) continue; }
+    RAW.lastIndex = 0; let m: RegExpExecArray | null;
+    while ((m = RAW.exec(text))) {
+      const kind = RAW_WORDS[m[1]!.toLowerCase()]!; let rest = text.slice(RAW.lastIndex); const runs: number[] = [];
+      for (;;) { const nm = NUM.exec(rest); if (!nm) break; runs.push(Number(nm[0])); rest = rest.slice(nm[0].length).replace(/^[\s,;/]+/, ''); }
+      if (runs.length) out.set(`${kind}:${m[2]}`, runs);
+    }
+  }
+  return out;
+}
+const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
+const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b); const h = s.length >> 1; return s.length % 2 ? s[h]! : (s[h - 1]! + s[h]!) / 2; };
+const r2 = (x: number): number => Math.round(x * 100) / 100;
+
+/** A run that sits far from the others of its kind (19.1 among 19.8 / 19.9 / 19.8): named so the player re-runs that one. */
+export interface DiscrepantRun { kind: RawKind; speed: number; run: number; others: number[] }
+export interface DerivedFromRaw {
+  /** net loss of a start from a standstill to `speed`, and of braking from `speed` to a standstill: average of the runs minus the constant-speed average */
+  acc: Record<number, number>; dec: Record<number, number>;
+  /** the stop-and-go pause for IN > OUT: 15 - dec(IN) - acc(OUT) (the sheet's footnote "(START/STOP TIME)-(accel IN + accel OUT)") */
+  pause: Record<string, number>;
+  /** every derived cell that came out negative: an impossible loss, "re-run and re-average" */
+  negatives: { cell: string; value: number }[];
+  /** the run furthest from the rest of its kind, when it is more than 0.5 s off */
+  discrepant: DiscrepantRun[];
+  /** pause cells above 15 s: the symptom of a negative loss (sitting longer than the printed pause) */
+  pauseOver15: string[];
+}
+/** CHART-006: derive the chart cells from raw runs, as the chart tool does, and flag what is impossible (11c section 3.3-3.4). */
+export function deriveFromRaw(raw: Map<string, number[]>): DerivedFromRaw {
+  const out: DerivedFromRaw = { acc: {}, dec: {}, pause: {}, negatives: [], discrepant: [], pauseOver15: [] };
+  const speeds = new Set<number>(); for (const k of raw.keys()) speeds.add(Number(k.split(':')[1]));
+  for (const v of [...speeds].sort((a, b) => a - b)) {
+    const c = raw.get(`const:${v}`), a = raw.get(`acc:${v}`), b = raw.get(`brk:${v}`);
+    for (const [kind, runs] of [['const', c], ['acc', a], ['brk', b]] as const) {
+      if (!runs || runs.length < 3) continue;
+      const med = median(runs); const far = runs.reduce((w, x) => (Math.abs(x - med) > Math.abs(w - med) ? x : w), runs[0]!);
+      if (Math.abs(far - med) > 0.5) out.discrepant.push({ kind, speed: v, run: far, others: runs.filter(x => x !== far) });
+    }
+    if (!c) continue;
+    const cm = mean(c);
+    if (a) { out.acc[v] = r2(mean(a) - cm); if (out.acc[v]! < 0) out.negatives.push({ cell: `accel 0>${v}`, value: out.acc[v]! }); }
+    if (b) { out.dec[v] = r2(mean(b) - cm); if (out.dec[v]! < 0) out.negatives.push({ cell: `brake ${v}>0`, value: out.dec[v]! }); }
+  }
+  for (const i of Object.keys(out.dec).map(Number)) for (const o of Object.keys(out.acc).map(Number)) {
+    const p = r2(15 - out.dec[i]! - out.acc[o]!); out.pause[`${i}>${o}`] = p; if (p > 15) out.pauseOver15.push(`${i}>${o}`);
+  }
+  return out;
+}
+
 /** The single value per pair (the average of the runs without outliers); an older, simpler view of parseChartRuns. */
 export function parseChartNotes(notes: string[], driver?: 'A' | 'B'): Map<string, number> {
   const out = new Map<string, number>();
@@ -72,7 +137,7 @@ function pick3(r: Rng, speeds: number[], minGap: number, firstFromZero = false):
 }
 
 export const D06: Drill = {
-  id: 'D06', title: 'Build your charts', objective: 'Measure the car: three stop-and-go pauses, three acceleration/deceleration losses and three turn losses for the IN > OUT pairs on the marker lines. Note each as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; the debrief compares with the car\'s true charts.', skills: ['P12'], minutes: 16, kind: 'drive',
+  id: 'D06', title: 'Build your charts', objective: 'Measure the car: three stop-and-go pauses, three acceleration/deceleration losses and three turn losses for the IN > OUT pairs on the marker lines. Note each as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; the debrief compares with the car\'s true charts. The real chart tool takes raw run times instead ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ..."; three run types, four runs per speed) and derives the net losses: that works here too.', skills: ['P12'], minutes: 16, kind: 'drive',
   tiers: tiers([3, 3, 2]), unlock: [],
   scenario(seed, t) {
     const tier = tierOf(D06, t); const r = rng(seed * 6007 + 6);
@@ -127,11 +192,14 @@ export const D06: Drill = {
   rubric(r, sc) {
     const pairs = chartPairs(sc.tags); const notes = r.actions.filter(a => a.action.type === 'note').map(a => (a.action as { text: string }).text);
     const driver = driverOf(sc.tags); const parsed = parseChartRuns(notes, driver); const perf = buildPerfTable(sc.car);
+    const raw = parseRawRuns(notes, driver); const derived = deriveFromRaw(raw);   // CHART-006: raw run times -> net losses, as the chart tool computes them
+    const fromRaw = (p: ChartPair): number | null => p.kind === 'stopGo' ? (derived.pause[`${p.vIn}>${p.vOut}`] ?? null) : p.kind === 'accel' && p.vIn === 0 ? (derived.acc[p.vOut] ?? null) : p.kind === 'accel' && p.vOut === 0 ? (derived.dec[p.vIn] ?? null) : null;
     const truth = (p: ChartPair): number => p.kind === 'stopMid' ? Math.round(stopLoss(p.vIn, p.vOut, sc.car) * 10) / 10 : Math.round(matrixAt(p.kind === 'stopGo' ? perf.stopGo : p.kind === 'accel' ? perf.accel : perf.turns, p.vIn, p.vOut) * 10) / 10;
     let good = 0; const lines: string[] = []; const per: Record<ChartKind, number> = { stopGo: 0, accel: 0, turn: 0, stopMid: 0 };
     const extrap = new Set(perf.extrapolated);
     for (const p of pairs) {
-      const tv = truth(p); const e = parsed.get(pairKey(p.kind, p.vIn, p.vOut)); const lab = `${KIND_LABEL[p.kind]} ${p.vIn}>${p.vOut}`;
+      const tv = truth(p); let e = parsed.get(pairKey(p.kind, p.vIn, p.vOut)); const lab = `${KIND_LABEL[p.kind]} ${p.vIn}>${p.vOut}`;
+      if (!e) { const dv = fromRaw(p); if (dv !== null && dv >= 0) e = { runs: [dv], outliers: [], value: dv, driver: null }; }
       const flagged = extrap.has(p.vIn) || extrap.has(p.vOut) ? ' (extrapolated: the handbook prints 15-50)' : '';
       if (e?.outliers.length) lines.push(`${lab}: a run of ${e.outliers.join(', ')} s is a negative net loss, an outlier: delete it or re-run.`);
       if (!e || e.value === null) { lines.push(`${lab}: not noted (chart ${tv.toFixed(1)} s)${flagged}`); continue; }
@@ -139,6 +207,10 @@ export const D06: Drill = {
       if (err <= 1) { good++; per[p.kind]++; }
       lines.push(`${lab}: you noted ${e.value}${e.runs.length > 1 ? ` (average of ${e.runs.length - e.outliers.length} runs)` : ''}, chart ${tv.toFixed(1)} s (${err <= 1 ? 'within 1 s' : `off by ${err.toFixed(1)} s`})${flagged}`);
     }
+    // CHART-006: a negative derived cell is impossible (a start or a stop cannot beat a flying run): name it, name the run that disagrees, say what to do
+    for (const n of derived.negatives) lines.push(`Your chart cell ${n.cell} = ${n.value.toFixed(2)} s is NEGATIVE: Double-check there are no negative numbers in the completed chart. If negative numbers are present, check for large discrepancies in each speed run, then re-run and re-average (do not delete the run).`);
+    for (const d of derived.discrepant) lines.push(`${d.kind === 'const' ? 'Constant-speed' : d.kind === 'acc' ? 'Start-from-a-standstill' : 'Braking'} run at ${d.speed}: ${d.run} s disagrees with ${d.others.join(' / ')}: re-run it and re-average.`);
+    for (const k of derived.pauseOver15) lines.push(`Stop & go ${k} comes out above 15 s (${derived.pause[k]!.toFixed(1)} s): you would sit longer than the printed pause, which is the symptom of a negative loss. Re-run and re-average.`);
     const total = pairs.length || 1; const ratio = good / total;
     const stars: 0 | 1 | 2 | 3 = ratio >= 0.88 ? 3 : ratio >= 0.66 ? 2 : ratio >= 0.33 ? 1 : 0;
     const packard = (sc.tags ?? []).includes('charts:packard');
@@ -150,6 +222,7 @@ export const D06: Drill = {
         `Charts are per driver: this run is driver ${driver}${other ? `; ${other} note(s) tagged for the other driver were ignored` : ' (tag a note "A:" or "B:" to chart both drivers)'}.`,
         'Chart (b): the pause time to sit for a 15 s stop at this IN/OUT. Chart (a): net seconds lost changing speed (the 0 row is a start from a stop). Chart (c): seconds lost in a 90 degree turn. Stop in the middle: the same stop with no pause, whose net loss is 15 s minus chart (b).',
         'A simple chart is enough (10a 2024 54:51): a few speeds measured well beat a 25-year chart you do not trust.',
+        'The chart tool takes RAW course times in seconds: "const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs 18.0 ...", "brk 25 runs 17.0 ..." (three run types, four runs per speed); the net loss is the average minus the constant-speed average, and the stop & go pause is 15 - brake loss(IN) - accel loss(OUT). The distance between the marks does not matter provided it is the same on every run; use things that never move; the front wheels are the point that counts.',
         ...lines,
       ],
     };

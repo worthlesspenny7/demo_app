@@ -302,7 +302,8 @@ describe('DRILL-025 D18/D11/D12/D13 use the STAGE-001 skeleton and print pauses 
       expect(sc.book.filter(i => i.endTimed).length).toBe(1); expect(sc.book.some(i => i.taPoint)).toBe(false); expect(sc.book.filter(i => i.section === 'restart' && i.n > 1).length).toBe(0);
       expect(sc.checkpoints.filter(c => c.kind === 'timing').length).toBe(1);
     }
-    expect(drillById('D18')!.scenario(1, 0).bookStyle).toBe('example'); expect(drillById('D18')!.scenario(1, 1).bookStyle).toBe('race'); expect(drillById('D18')!.scenario(1, 2).bookStyle).toBe('race');
+    expect(drillById('D18')!.scenario(1, 0).bookStyle).toBe(drillById('D18')!.scenario(1, 0).aids.rung >= 3 ? 'example' : 'race');   // GRIID-009: the sentence in Column D is a rung-3 training aid only
+     expect(drillById('D18')!.scenario(1, 1).bookStyle).toBe('race'); expect(drillById('D18')!.scenario(1, 2).bookStyle).toBe('race');
   });
   it('DRILL-025 D11 is one timed portion: an advisory transit in, the restart at base + ASP, one checkpoint, End timed portion and its TA point (and the oracle finishes it on course)', () => {
     for (let seed = 1; seed <= 4; seed++) {
@@ -311,7 +312,7 @@ describe('DRILL-025 D18/D11/D12/D13 use the STAGE-001 skeleton and print pauses 
         const tin = sc.book.filter(i => i.transit && !i.transit.end && !i.transit.exact && i.section !== 'start'); expect(tin.length).toBeGreaterThanOrEqual(1);
         const rs = sc.book.filter(i => i.n > 1 && i.section === 'restart'); expect(rs.length).toBe(1); expect(rs[0]!.restartTime).toBe(rs[0]!.baseTime! + sc.asp * 60); expect(sc.asp).toBeGreaterThanOrEqual(1);
         expect(sc.book.filter(i => i.endTimed).length).toBe(1); expect(sc.book.filter(i => i.taPoint).length).toBe(1); expect(sc.checkpoints.filter(c => c.kind === 'timing').length).toBe(1);
-        expect(sc.bookStyle).toBe(sc.aids.rung <= 1 ? 'race' : 'example'); expect(tin[0]!.transit!.seconds).toBeGreaterThan(0);
+        expect(sc.bookStyle).toBe(sc.aids.rung >= 3 ? 'example' : 'race'); expect(tin[0]!.transit!.seconds).toBeGreaterThan(0);
       }
     }
     const d = drillById('D11')!; const sc = d.scenario(1, 0); const o = runOracle(sc); expect(o.sim.phase).toBe('finished'); expect(o.r.offCourseCount).toBe(0); expect(o.r.ta.scorecardAcked === null || o.r.ta.scorecardAcked === true).toBe(true);

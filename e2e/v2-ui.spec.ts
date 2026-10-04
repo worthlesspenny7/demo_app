@@ -41,30 +41,37 @@ test('UI-029 a GRIID row shows 0 MPH / 0m15s stacked and an hourglass with odome
   expect(await hour.locator('.odo').getAttribute('data-odo')).toMatch(/^\d{4}$/);     // the 4-digit tenths-of-a-mile box
   expect(await hour.locator('.odo i').count()).toBe(4);
   // the other Column B pictograms and the calibration box / asterisk exist on this stage
-  for (const sym of ['warmup', 'calibration', 'transit-end', 'end-timed', 'ta', 'finish']) expect(await page.locator(`#book svg[data-sym="${sym}"]`).count()).toBeGreaterThan(0);
+  for (const sym of ['warmup', 'calibration', 'transit-end', 'end-timed', 'finish']) expect(await page.locator(`#book svg[data-sym="${sym}"]`).count()).toBeGreaterThan(0);
   expect(await page.locator('#book .gc .cbox').count()).toBeGreaterThan(0);
-  expect(await page.locator('#book .gc .asterisk').count()).toBeGreaterThan(0);
-  // page breaks every 7 rows; the Time Allowance row is one full-width yellow banner and the watch faces sit in Column C
-  await expect(page.locator('#book .page-break').first()).toContainText(/Page 2 of 29/);
+  expect(await page.locator('#book .gc .cbox.cstart .asterisk').count()).toBeGreaterThan(0);   // the calibration start: the box with its dot (GRIID-002)
+  expect(await page.locator('#book svg[data-sym="ta"]').count()).toBe(0);                      // no Column B symbol for the TA row (GRIID-013)
+  // page breaks laid out by content (GRIID-014); the Time Allowance row is one rounded yellow box and the watch faces sit in Column C
+  await expect(page.locator('#book .page-break').first()).toContainText(/Page 2 of \d+/);
   await expect(page.locator('#book .row.ta-row .tabanner').first()).toContainText(/Within 15m00s/);
   expect(await page.locator('#book .row.ta-row .gb').count()).toBe(0);
   expect(await page.locator('#book .gc .cicons svg[data-sym="restart"]').count()).toBeGreaterThan(0); expect(await page.locator('#book .gc .cicons svg[data-sym="end-timed"]').count()).toBeGreaterThan(0);
   expect(await page.locator('#book .gb svg[data-sym="end-timed"]').count()).toBe(0);
 });
 
-test('UI-029 GRIID-014 the printable book route shows seven rows a page (eight on request) with "Page n of m" and the stage title', async ({ page }) => {
+test('UI-029 GRIID-014 GRIID-018 the printable book route lays pages out by content (5 to 10 rows), 6 / 7 / 8 on request, with the three-block footer and no page header', async ({ page }) => {
   await page.goto('/#/book/builtin/stage/1');
   await expect(page.locator('.book-sheet').first()).toBeVisible();
-  expect(await page.locator('.book-sheet').count()).toBe(29);
-  expect(await page.locator('.book-sheet').first().locator('.grow').count()).toBe(7);
-  await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText('Page 1 of 29');
+  const sheets = await page.locator('.book-sheet').count(); const total = await page.locator('.book-sheet .grow').count();
+  const counts = await page.locator('.book-sheet').evaluateAll(els => els.map(e => e.querySelectorAll('.grow').length));
+  expect(counts.slice(0, -1).every(n => n >= 5 && n <= 10)).toBe(true); expect(new Set(counts).size).toBeGreaterThan(1);     // content-driven: the pages do not all carry the same count
+  await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText(`Page 1 of ${sheets}`);
+  await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText('Hemmings Motor News Great Race');
+  await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText(/\u00a9 \d{4}, Great Race/);
+  expect(await page.locator('.sheet-head').count()).toBe(0);                                                                // no page header
+  await page.locator('#rows-per-page').selectOption('7');
+  expect(await page.locator('.book-sheet').count()).toBe(Math.ceil(total / 7)); expect(await page.locator('.book-sheet').first().locator('.grow').count()).toBe(7);
   await page.locator('#rows-per-page').selectOption('8');
-  expect(await page.locator('.book-sheet').count()).toBe(25); expect(await page.locator('.book-sheet').first().locator('.grow').count()).toBe(8);
-  await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText('Page 1 of 25');
-  await expect(page.locator('.book-sheet .grow.ta-row .tabanner').first()).toBeVisible();   // GRIID-013: one full-width yellow banner
-  await expect(page.locator('.book-sheet').nth(1).locator('.sheet-head')).toContainText('fullStage #1');
-  const colC = await page.locator('.book-sheet .grow .gc').first().innerText();
-  expect(colC).toMatch(/CDT 8:00:00/);
+  expect(await page.locator('.book-sheet').count()).toBe(Math.ceil(total / 8)); expect(await page.locator('.book-sheet').first().locator('.grow').count()).toBe(8);
+  await expect(page.locator('.book-sheet').first().locator('.sheet-foot')).toContainText(`Page 1 of ${Math.ceil(total / 8)}`);
+  await expect(page.locator('.book-sheet .grow.ta-row .tabanner').first()).toBeVisible();   // GRIID-013: one rounded yellow box
+  await expect(page.locator('.book-sheet').nth(1).locator('.sheet-foot')).toContainText('fullStage #1');
+  await expect(page.locator('.book-sheet .grow .gc').first()).toContainText('CDT');         // the zone label over the watch (GRIID-010)
+  expect(await page.locator('.book-sheet .grow .gc svg[data-sym="restart"] text').first().textContent()).toBe('8:00:00');   // the time inside the watch
 });
 
 test('UI-030 the charts overlay shows the three IN x OUT grids (accel includes 0) with the current pair highlighted; the stop card reads chart (b)', async ({ page }) => {
@@ -77,7 +84,11 @@ test('UI-030 the charts overlay shows the three IN x OUT grids (accel includes 0
   await page.keyboard.press('c');
   await expect(page.locator('#charts-overlay')).toBeVisible();
   for (const id of ['accel', 'stopGo', 'turns']) await expect(page.locator(`#chart-${id} table`)).toBeVisible();
-  expect(await page.locator('#chart-accel tbody tr th').first().innerText()).toBe('0');            // acceleration chart includes the 0 row
+  expect(await page.locator('#chart-accel tbody tr:first-child th').nth(1).innerText()).toBe('0');   // acceleration chart includes the 0 row
+  await expect(page.locator('#chart-accel th.axis-side')).toHaveText('BRAKING'); await expect(page.locator('#chart-accel th.axis-top')).toHaveText('ACCELERATION');   // CHART-001: the printed axis labels
+  await expect(page.locator('#chart-stopGo th.axis-side')).toHaveText('IN speed'); await expect(page.locator('#chart-stopGo th.axis-top')).toHaveText('OUT speed');
+  expect(await page.locator('#chart-accel td.blank').count()).toBeGreaterThanOrEqual(10);        // the grey blank diagonal
+  await expect(page.locator('#chart-stopGo')).toContainText('(START/STOP TIME)-(accel IN + accel OUT)');   // the sheet\'s footnote, verbatim
   expect(await page.locator('#chart-stopGo td.cur').count()).toBe(1);                                // the current pair
   await page.keyboard.press('Escape');
   await expect(page.locator('#charts-overlay')).toBeHidden();
@@ -98,13 +109,17 @@ test('UI-031 the TA form appears at a TA point on a generated day stage and the 
   const mmss = (x: number): string => `${Math.floor(Math.round(x) / 60)}m${String(Math.round(x) % 60).padStart(2, '0')}s`;
   expect(adv.suggested).toBeGreaterThan(0);
   await expect(page.locator('#ta-leg')).toHaveValue('3');
-  await expect(page.locator('#ta-request')).toHaveValue(String(adv.suggested));
-  await page.locator('#ta-request').fill(String(adv.suggested + 7));
+  // TAF-001: the web form is the 2026 page: the login first (Car Number, Password, Phone Number), then Stage, Leg Number, Between Instructions a & b, Allowance m s, Reason
+  await page.locator('#ta-car').fill('99'); await page.locator('#ta-password').fill('1234'); await page.locator('#ta-phone').fill('555-0100'); await page.locator('#ta-login').click();
+  await expect(page.locator('#ta-entry-screen')).toBeVisible();
+  await expect(page.locator('#ta-min')).toHaveValue(String(Math.floor(adv.suggested / 60))); await expect(page.locator('#ta-sec')).toHaveValue(String(adv.suggested % 60));
+  await page.locator('#ta-min').fill(String(Math.floor((adv.suggested + 7) / 60))); await page.locator('#ta-sec').fill(String((adv.suggested + 7) % 60));
   await expect(page.locator('#ta-round')).toContainText(new RegExp(`${mmss(adv.suggested + 7)} adjusted to \\d+m\\d0s`));
-  await page.locator('#ta-request').fill(String(adv.suggested));
-  await page.locator('#ta-cause').fill('a farm tractor');
+  await page.locator('#ta-min').fill(String(Math.floor(adv.suggested / 60))); await page.locator('#ta-sec').fill(String(adv.suggested % 60));
+  await page.locator('#ta-cause').fill('Delayed by a farm tractor');
   await expect(page.locator('#ta-pattern')).toContainText(`Delayed ${mmss(adv.measured)} by a farm tractor. Made up ${mmss(adv.recoverable)}. Request ${mmss(adv.suggested)}.`);
   await page.locator('#ta-submit').click();
+  await page.locator('#ta-see').click();                                                              // the yellow "CLICK to see Time Allowances Submitted"
   await expect(page.locator('#ta-filed')).toContainText(`Leg 3: ${mmss(adv.suggested)}`);
   const filed = await page.evaluate(() => window.__rally!.observe().ta.requests);
   expect(filed.length).toBe(1); expect(filed[0]!.adjusted).toBe(adv.suggested); expect(filed[0]!.status).toBe('filed');
@@ -234,7 +249,7 @@ test('WATCH-008 the digital stopwatch: 1/100 s display, CHRONO / TOD chip, lap b
 
 test('UI-033 REG-007 the cockpit honours Settings.watch (digital by default, analog on request); the dash clock is always analog with no digital readout (REG II.H.1.d(1))', async ({ page }) => {
   await page.goto('/#/settings');
-  await expect(page.locator('select')).toHaveCount(4);                  // stopwatch, time scale, driver, theme: no clock choice
+  await expect(page.locator('select')).toHaveCount(6);                  // stopwatch, time scale, driver, theme, dash clock face (Sawtooth / bezel, INST-003), performance card (CHART-007): the clock is never digital
   await expect(page.locator('#clock-note')).toContainText('II.H.1.d(1)');
   await expect(page.locator('body')).not.toContainText('Digital readout');
   await openStage(page, 1);

@@ -5,7 +5,7 @@ import {
   DEFAULT_RULES, TRAINING_AIDS, FORD_1939, DRIVER_EXPERT,
 } from './course.js';
 import { annotatePerfectTimes } from './ghost.js';
-import { formatClockFace, formatInterval } from './griid.js';
+import { formatClockFace, formatInterval, bookStyleForRung } from './griid.js';
 import { milesToFt, mphToFps } from './units.js';
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
@@ -21,6 +21,7 @@ export interface NodeSpec {
   sightDistance?: number;
   stopLineOffset?: number;
   label?: string;
+  ramp?: boolean;
 }
 export interface InsSpec {
   text?: string;
@@ -39,7 +40,8 @@ export interface InsSpec {
   freeZone?: 'begin' | 'end';
   endTimed?: boolean;
   taPoint?: { windowSeconds: number; endOfStage: boolean };
-  promotedStop?: { kind: 'pit' | 'meal' | 'refuel' | 'rest'; leaveBeforeEndSeconds: number };
+  promotedStop?: { kind: 'pit' | 'meal' | 'refuel' | 'rest'; leaveBeforeEndSeconds: number; noHost?: boolean };
+  infoBox?: string;
   calibrationStart?: boolean;
   /** GRIID-005: lettered row label ("3a") and omitted rows (kept in the numbering, never executed). */
   printed?: string;
@@ -159,12 +161,13 @@ export function describeInstruction(spec: InsSpec, node: NodeSpec, ctx: Describe
   if (spec.taPoint) {
     const w = formatInterval(spec.taPoint.windowSeconds);
     parts.push(spec.taPoint.endOfStage
-      ? `Within ${w}, submit your Time Allowance request(s) for this afternoon's run, if any. Then, whether or not you submitted any Time Allowances today, acknowledge your scorecard so that it can be printed.`
-      : `Within ${w}, submit your Time Allowance request(s) for this morning's run, if any. If you have no Time Allowances, no action is required at this time.`);
+      ? `Within ${w}, go to https://www.grscores.com/timeallowance. Submit your Time Allowance(s) for this afternoon's run, if any. Then, whether or not you submitted any Time Allowances today, click the red button at the bottom of the Time Allowance web page, so we can print your scorecard.`
+      : `Within ${w}, go to https://www.grscores.com/timeallowance. Submit your Time Allowance(s) for this morning's run, if any. If you have no Time Allowances, no action is required at this time.`);
   }
+  if (spec.infoBox !== undefined) parts.push(`Information Box: ${spec.infoBox}`);
   if (spec.section === 'finish') parts.push('Finish Line. End Stage. Stop at Observation Checkpoint.');
   // route / reference sentence
-  if (!spec.promotedStop && !spec.taPoint && spec.section !== 'finish' && !spec.calibrationStart && spec.section !== 'calibration' && !spec.endTimed && !spec.transit && spec.section !== 'restart' && !(isStart && !spec.turn)) {
+  if (!spec.promotedStop && !spec.taPoint && spec.infoBox === undefined && spec.section !== 'finish' && !spec.calibrationStart && spec.section !== 'calibration' && !spec.endTimed && !spec.transit && spec.section !== 'restart' && !(isStart && !spec.turn)) {
     if (spec.turn) {
       const bearAtY = (spec.turn === 'BL' || spec.turn === 'BR') && shape === 'Y'; // "Bear right onto Interstate 75 North." (Example Rally #8)
       const at = `${shape && !bearAtY ? ` at a ${shape}` : ''}${ctrl ? ` at a ${ctrl}` : ''}`;
@@ -227,7 +230,7 @@ export class ScenarioBuilder {
       id: o.id ?? 'scenario', name: o.name ?? 'Scenario', seed: o.seed ?? 1, startTime: o.startTime ?? 8 * 3600,
       car: o.car ?? FORD_1939, speedo: o.speedo ?? PERFECT_TIMEWISE, driver: o.driver ?? DRIVER_EXPERT,
       rules: { ...DEFAULT_RULES, ...(o.rules ?? {}) }, aids, prereadSeconds: o.prereadSeconds ?? 30,
-      excursionFt: o.excursionFt ?? 2640, tags: o.tags ?? [], asp: o.asp ?? 0, timeZone: o.timeZone ?? 'CDT', bookStyle: o.bookStyle ?? (aids.rung >= 2 ? 'example' : 'race'),
+      excursionFt: o.excursionFt ?? 2640, tags: o.tags ?? [], asp: o.asp ?? 0, timeZone: o.timeZone ?? 'CDT', bookStyle: o.bookStyle ?? bookStyleForRung(aids.rung),
     };
     this.trafficWaitProbability = o.trafficWaitProbability ?? 0;
   }
@@ -253,7 +256,7 @@ export class ScenarioBuilder {
 
   node(spec: NodeSpec): string {
     const id = `n${++this.nid}`;
-    this.nodes.push({ id, s: this.s, kind: spec.kind ?? (spec.exits ? 'intersection' : spec.sign ? 'sign' : 'landmark'), control: spec.control ?? 'none', exits: spec.exits, sign: spec.sign, sightDistance: spec.sightDistance ?? 600, stopLineOffset: spec.stopLineOffset, label: spec.label });
+    this.nodes.push({ id, s: this.s, kind: spec.kind ?? (spec.exits ? 'intersection' : spec.sign ? 'sign' : 'landmark'), control: spec.control ?? 'none', exits: spec.exits, sign: spec.sign, sightDistance: spec.sightDistance ?? 600, stopLineOffset: spec.stopLineOffset, label: spec.label, ...(spec.ramp ? { ramp: true } : {}) });
     return id;
   }
 
@@ -270,7 +273,7 @@ export class ScenarioBuilder {
     const text = ins.text ?? describeInstruction(spec, node, ctx);
     this.book.push({
       n, nodeId: id, text, section, turn: ins.turn, speed: ins.speed, pause: ins.pause, timed: ins.timed, hint: remark, remark, restartTime: ins.restartTime, baseTime: ins.baseTime,
-      transit: ins.transit, ...(ins.transitGuide !== undefined ? { transitGuide: ins.transitGuide } : {}), freeZone: ins.freeZone, endTimed: ins.endTimed, taPoint: ins.taPoint, promotedStop: ins.promotedStop, calibrationStart: ins.calibrationStart,
+      transit: ins.transit, ...(ins.transitGuide !== undefined ? { transitGuide: ins.transitGuide } : {}), freeZone: ins.freeZone, endTimed: ins.endTimed, taPoint: ins.taPoint, promotedStop: ins.promotedStop, calibrationStart: ins.calibrationStart, ...(ins.infoBox !== undefined ? { infoBox: ins.infoBox } : {}),
       ...(ins.printed ? { printed: ins.printed } : {}), ...(ins.omitted ? { omitted: true } : {}),
     });
     this.meta.push({ spec, node, ctx, customText: ins.text !== undefined });
@@ -309,10 +312,36 @@ export class ScenarioBuilder {
   private markTransitGuide(endS: number): void {
     const o = this.openTransit; if (!o) return;
     const begin = this.book[o.idx]!; const t = begin.transit; if (!t || t.exact || t.end || !(t.seconds > 0)) return;
+    this.markTransitCountdown(o.idx, o.s, t.seconds, endS);
     const prev = this.book[this.book.length - 1]!; if (!prev || prev.n <= begin.n || prev.transitGuide !== undefined || prev.restartTime !== undefined || prev.promotedStop) return;
     const prevS = this.nodes.find(n => n.id === prev.nodeId)?.s; if (prevS === undefined || !(endS > prevS) || !(endS > o.s)) return;
     const left = Math.round(t.seconds * (endS - prevS) / (endS - o.s) / 5) * 5;
     if (left >= 5 && left < t.seconds) prev.transitGuide = left;
+  }
+
+  /**
+   * GRIID-011: the advisory countdown rows of a long transit, "(10m00s)", "(8m00s)", "(3m00s)" (11a: the time left to the end of the transit, in whole minutes, on rows
+   * that carry no timing of their own). A target is used only when the transit is long enough for it; the row nearest to it (within 25 %) takes it.
+   */
+  private markTransitCountdown(beginIdx: number, beginS: number, seconds: number, endS: number): void {
+    if (!(endS > beginS)) return;
+    const used = new Set<number>();
+    for (const target of [600, 480, 180]) {
+      if (seconds < target + 180) continue;
+      let best: { i: number; left: number; err: number } | null = null;
+      for (let i = beginIdx + 1; i < this.book.length; i++) {
+        const ins = this.book[i]!;
+        if (ins.transitGuide !== undefined || ins.transitCountdown !== undefined || ins.promotedStop || ins.restartTime !== undefined || ins.freeZone || ins.taPoint || ins.endTimed || ins.section === 'calibration' || ins.omitted || ins.infoBox !== undefined || ins.pause || ins.timed || ins.transit) continue;
+        const s = this.nodes.find(n => n.id === ins.nodeId)?.s; if (s === undefined || !(s < endS)) continue;
+        const left = seconds * (endS - s) / (endS - beginS);
+        const err = Math.abs(left - target) / target;
+        if (err <= 0.25 && (!best || err < best.err)) best = { i, left, err };
+      }
+      if (!best || used.has(best.i)) continue;
+      used.add(best.i);
+      const printed = Math.round(best.left / 60) * 60;
+      if (printed >= 120 && printed < seconds && !this.book.some((x, k) => k > beginIdx && x.transitCountdown === printed)) this.book[best.i]!.transitCountdown = printed;
+    }
   }
 
   /** Close the open transit: record its approximate length on the begin line (the odometer box) and refresh its sentence. */
@@ -424,9 +453,17 @@ export class ScenarioBuilder {
   }
 
   /** Hosted pit / meal / refuel / rest stop inside a transit: leave `leaveBeforeEndSeconds` prior to the end-of-transit time (STAGE-005). */
-  promotedStop(kind: 'pit' | 'meal' | 'refuel' | 'rest', leaveBeforeEndSeconds: number): this {
+  promotedStop(kind: 'pit' | 'meal' | 'refuel' | 'rest', leaveBeforeEndSeconds: number, opts: { noHost?: boolean } = {}): this {
     const section: Section = kind === 'meal' ? 'lunch' : kind === 'rest' ? 'transit' : kind;
-    return this.instruction({ kind: 'landmark', control: 'none', sightDistance: 400, label: kind === 'meal' ? 'Lunch stop' : kind === 'refuel' ? 'Fuel stop' : kind === 'pit' ? 'Pit stop' : 'Rest stop' }, { section, promotedStop: { kind, leaveBeforeEndSeconds } });
+    return this.instruction({ kind: 'landmark', control: 'none', sightDistance: 400, label: kind === 'meal' ? 'Lunch stop' : kind === 'refuel' ? 'Fuel stop' : kind === 'pit' ? 'Pit stop' : 'Rest stop' }, { section, promotedStop: { kind, leaveBeforeEndSeconds, ...(opts.noHost ? { noHost: true } : {}) } });
+  }
+
+  /**
+   * Information Box row (GRIID-016, 11a section 3): a numbered row at the end of the day (host dinner, parc ferme, parking) with a business sign in Column A,
+   * the body text in the rounded box over Columns B and C and a list in Column D. It is not an action: the line is complete when the car passes it.
+   */
+  informationBox(text: string, o: { business?: string; list?: string } = {}): this {
+    return this.instruction({ sign: { text: o.business ?? 'Cumberland Farms', shape: 'business', side: 'R' }, sightDistance: 500, label: 'Information Box' }, { infoBox: text, remark: o.list });
   }
 
   /** Finish line with the Observation Checkpoint stop (STAGE-001). */

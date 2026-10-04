@@ -39,7 +39,7 @@ describe('GRIID format (REG VII.B.3, VII.F; HB Appendix D/E)', () => {
     expect(columnCLines(ins({ transit: { exact: false, seconds: 3 * 3600 + 25 * 60 } }))).toEqual(['(3h25m00s)']);
     expect(columnCLines(ins({ section: 'start', restartTime: hms(8, 0, 0), transit: { exact: true, seconds: 1200 } }))).toEqual(['CDT 8:00:00', '20m00s']);
     expect(columnCLines(ins({ section: 'calibration', perfectInterval: 332, perfectCumulative: 441.3 }))).toEqual(['5m32.0s', '7m21.3s']);
-    expect(columnCLines(ins({ section: 'calibration', calibrationStart: true, speed: 50, transit: { exact: true, seconds: 1560 }, perfectInterval: 0, perfectCumulative: 0 }))).toEqual(['26m00s', '50 MPH', '* 0m00.0s']);
+    expect(columnCLines(ins({ section: 'calibration', calibrationStart: true, speed: 50, transit: { exact: true, seconds: 1560 }, perfectInterval: 0, perfectCumulative: 0 }))).toEqual(['50 MPH', '26m00s', '* 0m00.0s']);   // the race sheet prints the speed first (11a: 50 MPH / 29m00s / box)
     expect(columnCLines(ins({ section: 'calibration', perfectInterval: 555.8, perfectCumulative: 1517.8, transit: { exact: true, seconds: 540 } }))).toEqual(['9m15.8s', '25m17.8s', '9m00s']);
     expect(columnCLines(ins({ promotedStop: { kind: 'meal', leaveBeforeEndSeconds: 2700 } }))).toEqual(['(45m00s)']);
     expect(columnCLines(ins({}))).toEqual([]); expect(columnCLines(null)).toEqual([]);
@@ -60,14 +60,15 @@ describe('GRIID format (REG VII.B.3, VII.F; HB Appendix D/E)', () => {
     b.endTimedPortion({ transit: { exact: false, seconds: 12300, miles: 75 } }); b.advanceMiles(5); b.promotedStop('refuel', 11400); b.advanceMiles(5).promotedStop('pit', 7800); b.advanceMiles(5).promotedStop('meal', 2700); b.advanceMiles(5).promotedStop('rest', 180);
     b.advanceMiles(5).restart(30, hms(14, 55, 0)).advanceMiles(6).checkpoint(); b.endTimedPortion({ endOfStage: true, transit: { exact: true, seconds: 1800, miles: 20 } }).advanceMiles(20).observationFinish();
     const sc = b.build(); const syms = (n: number) => columnBSymbols(sc.book[n - 1]);
-    expect(syms(1)).toEqual(['warmup', 'transit-begin']); expect(odometerBox(sc.book[0])).toBe('0080'); expect(transitMiles(sc.book[0])).toBe(8);
-    const cal = sc.book.find(i => i.calibrationStart)!; expect(columnBSymbols(cal)).toEqual(['calibration', 'transit-begin']); expect(odometerBox(cal)).toBe('0210');
+    expect(syms(1)).toEqual(['warmup']);   // the tire stands for the transit it begins (11a: no hourglass on the warm-up row)
+     expect(odometerBox(sc.book[0])).toBe('0080'); expect(transitMiles(sc.book[0])).toBe(8);
+    const cal = sc.book.find(i => i.calibrationStart)!; expect(columnBSymbols(cal)).toEqual(['calibration']); expect(odometerBox(cal)).toBe('0210');
     const calEnd = sc.book.filter(i => i.section === 'calibration').pop()!; expect(columnBSymbols(calEnd)).toEqual(['transit-begin']); expect(odometerBox(calEnd)).toBe('0045');
     expect(columnBSymbols(sc.book.find(i => i.section === 'restart')!)).toEqual(['transit-end']);
     expect(columnBSymbols(sc.book.find(i => i.freeZone === 'begin'))).toEqual(['freezone-begin']); expect(columnBSymbols(sc.book.find(i => i.freeZone === 'end'))).toEqual(['freezone-end']);
     const et = sc.book.filter(i => i.endTimed); expect(columnBSymbols(et[0])).toEqual(['transit-begin']); expect(columnCIcons(et[0])).toEqual(['end-timed']);   // the crossed-out watch is a Column C pictogram (HB p.27, Example #17)
      expect(odometerBox(et[0])).toBe('0750'); expect(odometerBox(et[1])).toBe('0200');
-    expect(columnBSymbols(sc.book.find(i => i.taPoint))).toEqual(['ta']);
+    expect(columnBSymbols(sc.book.find(i => i.taPoint))).toEqual([]);   // the Time Allowance row has no Column B symbol: one yellow box across A-D (GRIID-013)
     expect(['refuel', 'pit', 'meal', 'rest'].map(k => columnBSymbols(sc.book.find(i => i.promotedStop?.kind === k)))).toEqual([['refuel'], ['pit'], ['meal'], ['rest']]);
     expect(columnBSymbols(sc.book[sc.book.length - 1])).toEqual(['finish']); expect(odometerBox(sc.book.find(i => i.section === 'restart'))).toBeNull();
   });
@@ -150,10 +151,10 @@ describe('GRIID format (REG VII.B.3, VII.F; HB Appendix D/E)', () => {
     expect(ghostTimeAt(g, a2 + mphToFps(45) * 72 + mphToFps(40) * 10) - ghostTimeAt(g, a2 + mphToFps(45) * 72)).toBeCloseTo(10, 6);
   });
 
-  it('GRIID-009 book verbosity: example style prints the sentence in Column D, race style only the remarks; rung >= 2 and the training aids default to example, rung <= 1 to race', () => {
+  it('GRIID-009 book verbosity: example style prints the sentence in Column D, race style only the remarks; real sheets print no sentence: only the rung-3 training aid defaults to example, every other rung to race', () => {
     const mk = (rung: 0 | 1 | 2 | 3, style?: 'example' | 'race') => new ScenarioBuilder({ startTime: T0, aids: aidsForRung(rung), bookStyle: style }).start(35).advanceMiles(0.5).stop('R', 35, { hint: 'Look sharp' }).advanceMiles(0.2).stop('S', 40).build();
-    expect(mk(3).bookStyle).toBe('example'); expect(mk(2).bookStyle).toBe('example'); expect(mk(1).bookStyle).toBe('race'); expect(mk(0).bookStyle).toBe('race'); expect(mk(0, 'example').bookStyle).toBe('example');
-    const sc = mk(2); expect(columnD(sc.book[1], sc.bookStyle)).toMatch(/Turn right.*Stop Sign\. Pause 15 seconds.* Look sharp$/);
+    expect(mk(3).bookStyle).toBe('example'); expect(mk(2).bookStyle).toBe('race'); expect(mk(1).bookStyle).toBe('race'); expect(mk(0).bookStyle).toBe('race'); expect(mk(0, 'example').bookStyle).toBe('example');
+    const sc = mk(3); expect(columnD(sc.book[1], sc.bookStyle)).toMatch(/Turn right.*Stop Sign\. Pause 15 seconds.* Look sharp$/);
     const race = mk(0); expect(columnD(race.book[1], race.bookStyle)).toBe('Look sharp'); expect(columnD(race.book[2], race.bookStyle)).toBe(''); expect(race.book[1]!.text).toMatch(/Turn right/); // the sentence still exists for the logic, the book just does not print it
     expect(generateStage(1, { ...PROFILES.fullStage!, bookStyle: 'race' }).bookStyle).toBe('race');
   });
@@ -175,7 +176,7 @@ describe('V2 fix sprint: transit exactness, Column C icons, guide rows and speed
     for (const seed of [1, 2, 3, 4]) {
       const sc = generateStage(seed);
       expect(sc.book.filter(i => i.transit && !i.transit.end && i.transit.exact === true), `seed ${seed}`).toEqual([]);   // no generated line says "take exactly": calibration, warm-up, finish transit are plain
-      const cal = sc.book.find(i => i.calibrationStart)!; expect(cal.transit).toMatchObject({ exact: false, plain: true }); expect(columnCLines(cal)[0]).toMatch(/^\d+m\d\ds$/);
+      const cal = sc.book.find(i => i.calibrationStart)!; expect(cal.transit).toMatchObject({ exact: false, plain: true }); expect(columnCLines(cal)[1]).toMatch(/^\d+m\d\ds$/); expect(columnCLines(cal)[0]).toMatch(/^\d+ MPH$/);
       expect(columnCLines(sc.book[0]!)[columnCLines(sc.book[0]!).length - 1]).toBe('20m00s'); expect(sc.book[0]!.transit!.exact).toBe(false);
       const fin = sc.book.filter(i => i.endTimed).pop()!; expect(fin.transit).toMatchObject({ exact: false, plain: true });
     }

@@ -3,7 +3,16 @@ export type Surface = 'paved' | 'gravel';
 export type ExitKind = 'road' | 'driveway' | 'lot' | 'deadend' | 'private';
 export type Control = 'STOP' | 'YIELD' | 'SIGNAL' | 'BLINKER' | 'RR' | 'none';
 export type TurnDir = 'L' | 'R' | 'S' | 'BL' | 'BR' | 'AL' | 'AR' | 'JL' | 'JR';
-export type SignShape = 'octagon' | 'triangle' | 'rect' | 'diamond' | 'blade' | 'shield' | 'rr' | 'checkpoint';
+/**
+ * Sign faces of the CAMEO sign library (11a section 3, 11b section 3). 'rect' / 'blade' / 'shield' are text signs (green freeway, street name, route shield);
+ * 'speedlimit' is the white "Speed Limit NN" rectangle (the posted limit, NOT the assigned speed); 'diamond', 'curve', 'reverse-curve', 'stop-ahead', 'speed-ahead',
+ * 'crossroad' and 'rr-advance' are warning signs (white diamond or round, black pictogram, optional advisory plaque); 'business' is the white-on-black box;
+ * 'tracks' is the railroad-tracks row with its yield triangle; 'tollbooth' and 'landmark' are the line-drawn pictures with a caption.
+ */
+export type SignShape = 'octagon' | 'triangle' | 'rect' | 'diamond' | 'blade' | 'shield' | 'rr' | 'checkpoint'
+  | 'speedlimit' | 'curve' | 'reverse-curve' | 'stop-ahead' | 'speed-ahead' | 'crossroad' | 'rr-advance' | 'business' | 'tracks' | 'tollbooth' | 'landmark';
+/** Where a sign stands: left or right of the road, or overhead (the box is centred on the arrow, 11a: row 12 "sign overhead"). */
+export type SignSide = 'L' | 'R' | 'O';
 export type TimeZoneLabel = 'EDT' | 'EST' | 'CDT' | 'CST' | 'MDT' | 'MST' | 'PDT' | 'PST';
 export type Section = 'warmup' | 'calibration' | 'start' | 'transit' | 'freezone' | 'lunch' | 'refuel' | 'pit' | 'finish' | 'restart';
 
@@ -13,12 +22,15 @@ export interface Exit {
   surface: Surface;
   kind: ExitKind;
   name?: string;
+  /** The name is printed in parentheses in the CAMEO, "(US 1 North)": an unposted or informational name (REG VII.B.3.e). */
+  bracketed?: boolean;
   /** Traffic control facing traffic on that exit road (e.g. a STOP for the side road). */
   controlOnExit?: Control;
   isRoute: boolean;
 }
 
-export interface Sign { text: string; shape: SignShape; side: 'L' | 'R' }
+/** `plaque`: the advisory speed on the small rectangle under a warning diamond (large number over small "MPH"). */
+export interface Sign { text: string; shape: SignShape; side: SignSide; plaque?: number }
 
 export interface Node {
   id: string;
@@ -35,6 +47,8 @@ export interface Node {
   stopLineOffset?: number;
   /** Optional description shown in the road view ("bridge", "RR crossing", "church on R"). */
   label?: string;
+  /** Ramp or multi-lane approach: the CAMEO draws lane-marking ticks on the stem (11a row 4). */
+  ramp?: boolean;
 }
 
 /** `delayed`: Column C prints the interval first ("1m12s / 40 MPH"); holdSpeed is the speed already in force (VII.E.2.d). */
@@ -64,6 +78,8 @@ export interface Instruction {
   transit?: TransitSpec;
   /** Guide row before a transit end: the seconds from this row to the end of the transit, printed "(0m30s)" (HB p.26 #11). Not scored. */
   transitGuide?: number;
+  /** GRIID-011: a countdown row inside a long advisory transit: the time left to its end in whole minutes, printed "(10m00s)", "(8m00s)", "(3m00s)". Not scored. */
+  transitCountdown?: number;
   /** Free zone begin/end (VII.C.5); no Timing Checkpoint lies between begin and end. */
   freeZone?: 'begin' | 'end';
   /** "End timed portion" line (crossed-out clock). */
@@ -71,7 +87,9 @@ export interface Instruction {
   /** Time Allowance point (yellow box): requests are accepted for `windowSeconds` after the car passes it. */
   taPoint?: { windowSeconds: number; endOfStage: boolean };
   /** Promoted lunch/pit/refuel/rest stop inside a transit: "leave here X prior to your end-of-transit time". */
-  promotedStop?: { kind: 'pit' | 'meal' | 'refuel' | 'rest'; leaveBeforeEndSeconds: number };
+  promotedStop?: { kind: 'pit' | 'meal' | 'refuel' | 'rest'; leaveBeforeEndSeconds: number; /** an unhosted meal: the book prints "no-host" above the knife and fork */ noHost?: boolean };
+  /** Information Box row (GRIID-016, 11a section 3): a rounded box over Columns B and C with the body text (host dinner, parc ferme, parking); Column D keeps its own list. Not an action: the line is complete when passed. */
+  infoBox?: string;
   /** First line of the speedometer calibration run ("26m00s / 50 MPH / * 0m00.0s"). */
   calibrationStart?: boolean;
   /** GRIID-005: the number as printed when it is lettered ("3a", "3b"); `n` stays the unique execution order. */

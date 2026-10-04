@@ -120,10 +120,17 @@ function drawFeature(ctx: CanvasRenderingContext2D, f: VisibleFeature, cx: numbe
       break;
     }
     case 'checkpoint': {
-      const x = cx + roadW / 2 + 30; ctx.fillStyle = '#1f8f4e'; roundRect(ctx, x - 30, y - 14, 60, 28, 4); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-      label(ctx, f.label?.startsWith('OBS') ? 'OBS CP' : 'CHECKPOINT', x, y, 9, '#fff', '700');
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.moveTo(cx - roadW / 2, y); ctx.lineTo(cx + roadW / 2, y); ctx.stroke(); ctx.setLineDash([]);
-      label(ctx, d, cx - roadW / 2 - 50, y, 11, th.ok, '600', 'right');
+      // SIM-004 / 11a: the Observation Checkpoint sign is a RED "GREAT RACE STOP" board hung on a wire stand; the Timing Checkpoint sign is GREEN. Red = stop, green = keep going.
+      const obs = !!f.label?.startsWith('OBS');
+      const x = cx + roadW / 2 + 40; const w = 58, h = 46; const board = obs ? '#d93a2f' : '#1f8f4e';
+      ctx.strokeStyle = '#cfd6df'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x - w / 2 + 4, y - h / 2); ctx.lineTo(x - w / 2 - 6, y - h / 2 - 8); ctx.lineTo(x + w / 2 + 6, y - h / 2 - 8); ctx.lineTo(x + w / 2 - 4, y - h / 2); ctx.moveTo(x - w / 2 - 6, y - h / 2 - 8); ctx.lineTo(x - w / 2 - 6, y + h / 2 + 14); ctx.moveTo(x + w / 2 + 6, y - h / 2 - 8); ctx.lineTo(x + w / 2 + 6, y + h / 2 + 14); ctx.stroke();
+      ctx.fillStyle = board; roundRect(ctx, x - w / 2, y - h / 2, w, h, 3); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(x, y + 6, w * 0.38, h * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+      label(ctx, 'GREAT RACE', x, y - h * 0.3, 8.5, '#fff', '800');
+      label(ctx, obs ? 'STOP' : 'TIMING', x, y + 6, obs ? 13 : 9, obs ? '#7a2a24' : '#1f6a3c', '800');
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([3, 5]); ctx.beginPath(); ctx.moveTo(cx - roadW / 2, y); ctx.lineTo(cx + roadW / 2, y); ctx.stroke(); ctx.setLineDash([]);
+      label(ctx, obs ? 'red = stop here' : 'green = keep going', x, y + h / 2 + 22, 9, obs ? th.danger : th.ok, '700');
+      label(ctx, d, cx - roadW / 2 - 50, y, 11, obs ? th.danger : th.ok, '600', 'right');
       break;
     }
     case 'slow': case 'construction': {
@@ -144,7 +151,11 @@ function signShape(ctx: CanvasRenderingContext2D, shape: string, text: string | 
   switch (shape) {
     case 'octagon': { ctx.beginPath(); for (let i = 0; i < 8; i++) { const a = Math.PI / 8 + i * Math.PI / 4; ctx.lineTo(x + 16 * Math.cos(a), y + 16 * Math.sin(a)); } ctx.closePath(); ctx.fillStyle = '#c8312b'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); label(ctx, text ? 'STOP' : '', x, y, 9, '#fff', '700'); break; }
     case 'triangle': { ctx.beginPath(); ctx.moveTo(x - 16, y - 12); ctx.lineTo(x + 16, y - 12); ctx.lineTo(x, y + 14); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill(); ctx.strokeStyle = '#c8312b'; ctx.lineWidth = 4; ctx.stroke(); if (text) label(ctx, 'YIELD', x, y - 4, 7, '#c8312b', '700'); break; }
-    case 'diamond': { ctx.beginPath(); ctx.moveTo(x, y - 18); ctx.lineTo(x + 18, y); ctx.lineTo(x, y + 18); ctx.lineTo(x - 18, y); ctx.closePath(); ctx.fillStyle = '#f0b35b'; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5; ctx.stroke(); if (text) label(ctx, t.slice(0, 8), x, y, 7, '#111', '700'); break; }
+    case 'speedlimit': { ctx.fillStyle = '#fff'; roundRect(ctx, x - 20, y - 22, 40, 44, 2); ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5; ctx.stroke(); label(ctx, 'SPEED', x, y - 12, 7, '#111', '800'); label(ctx, 'LIMIT', x, y - 4, 7, '#111', '800'); label(ctx, (t.match(/(\d{2,3})\s*$/) ?? t.match(/(\d{2,3})/) ?? [])[1] ?? '', x, y + 11, 15, '#111', '800'); break; }
+    case 'business': { ctx.fillStyle = '#111'; const w = Math.max(48, Math.min(110, t.length * 6.5 + 12)); roundRect(ctx, x - w / 2, y - 11, w, 22, 2); ctx.fill(); ctx.strokeStyle = '#999'; ctx.lineWidth = 1; ctx.stroke(); label(ctx, t.slice(0, 18), x, y, 9, '#fff', '700'); break; }
+    case 'rr-advance': { ctx.beginPath(); ctx.arc(x, y, 16, 0, Math.PI * 2); ctx.fillStyle = '#f0d34a'; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke(); ctx.lineWidth = 3.5; ctx.beginPath(); ctx.moveTo(x - 9, y - 9); ctx.lineTo(x + 9, y + 9); ctx.moveTo(x - 9, y + 9); ctx.lineTo(x + 9, y - 9); ctx.stroke(); label(ctx, 'R', x - 12, y, 7, '#111', '800'); label(ctx, 'R', x + 12, y, 7, '#111', '800'); break; }
+    case 'curve': case 'reverse-curve': case 'stop-ahead': case 'speed-ahead': case 'crossroad':
+    case 'diamond': { ctx.beginPath(); ctx.moveTo(x, y - 18); ctx.lineTo(x + 18, y); ctx.lineTo(x, y + 18); ctx.lineTo(x - 18, y); ctx.closePath(); ctx.fillStyle = '#f0b35b'; ctx.fill(); ctx.strokeStyle = '#111'; ctx.lineWidth = 1.5; ctx.stroke(); if (text) label(ctx, shape === 'diamond' ? t.slice(0, 8) : ({ curve: 'CURVE', 'reverse-curve': 'S-CURVE', 'stop-ahead': 'STOP AHD', 'speed-ahead': 'LIMIT AHD', crossroad: 'CROSS' } as Record<string, string>)[shape] ?? t.slice(0, 8), x, y, 7, '#111', '700'); break; }
     case 'rr': { ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - 16, y - 7); ctx.lineTo(x + 16, y + 7); ctx.moveTo(x - 16, y + 7); ctx.lineTo(x + 16, y - 7); ctx.stroke(); break; }
     case 'checkpoint': { ctx.fillStyle = '#1f8f4e'; roundRect(ctx, x - 24, y - 12, 48, 24, 4); ctx.fill(); label(ctx, 'CP', x, y, 10, '#fff', '700'); break; }
     case 'blade': case 'shield': case 'rect': default: {

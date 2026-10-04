@@ -84,28 +84,41 @@ test('UI-037 START-001 the restart card and the count work at a time-of-day rest
   await expect(page.locator('#holdcard')).toContainText(/base \d\d:\d\d:\d\d \+ ASP \d+ min = your time/);                           // the V2 restart card is unchanged
 });
 
-test('UI-037 TAF-001 TAF-002 the TA form carries the web form fields, the make-up helper, and a classic paper toggle', async ({ page }) => {
+test('UI-037 TAF-001 TAF-002 TAF-003 the TA form is the 2026 web page word for word (no witness field), with the make-up helper, and a classic paper sheet', async ({ page }) => {
   await resumeAtFirstTaWindow(page, 6);
   await expect(page.locator('#ta-panel')).toBeVisible();
-  for (const id of ['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-request', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind']) await expect(page.locator(`#${id}`)).toBeVisible();
-  await expect(page.locator('#ta-request')).toHaveAttribute('step', '10');                                   // time in 10 s steps
-  await expect(page.locator('#ta-leg')).toHaveValue('3');                                                    // the leg is filled in
+  // the login page: Car Number, Password, Phone Number and a green Login
+  await expect(page.locator('#ta-login-screen .taweb-title')).toHaveText(/Great Race\s*Time Allowance\s*Login/);
+  for (const [id, label] of [['ta-car', 'Car Number'], ['ta-password', 'Password'], ['ta-phone', 'Phone Number']] as const) { await expect(page.locator(`#${id}`)).toBeVisible(); await expect(page.locator('#ta-login-screen')).toContainText(label); }
+  await expect(page.locator('#ta-login')).toHaveText('Login'); await expect(page.locator('#ta-entry-screen')).toBeHidden();
   await expect(page.locator('#ta-helper')).toContainText(/measured \d+m\d\ds = stopped \d+m\d\ds \+ chart loss [\d.]+ s; make up the odd \d+ s, claim \d+m\d0s\./);
+  await page.locator('#ta-login').click();                                                                   // blank login: refused
+  await expect(page.locator('#ta-entry-screen')).toBeHidden();
+  await page.locator('#ta-car').fill('99'); await page.locator('#ta-password').fill('1234'); await page.locator('#ta-phone').fill('555-0100'); await page.locator('#ta-login').click();
+  // the entry page: Stage, Leg Number, Between Instructions a & b, Allowance m s, Reason, green Submit, yellow and red buttons; no witnesses
+  const entry = page.locator('#ta-entry-screen'); await expect(entry).toBeVisible();
+  for (const text of ['Stage', 'Leg Number', 'Between Instructions', '&', 'Allowance', 'Reason', 'Submit', 'CLICK to see Time Allowances Submitted', 'CLICK this after submitting ALL Time Allowances for the ENTIRE stage', 'grscores.com']) await expect(entry).toContainText(text);
+  for (const id of ['ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-min', 'ta-sec', 'ta-cause']) await expect(page.locator(`#${id}`)).toBeVisible();
+  await expect(page.locator('#ta-sec')).toHaveAttribute('step', '10');                                       // seconds in 10 s steps
+  await expect(page.locator('#ta-leg')).toHaveValue('3'); await expect(page.locator('#ta-leg option:checked')).toHaveText('Leg 3');   // the leg is filled in: "Leg 3"
+  await expect(page.locator('#ta-ack-btn')).toHaveClass(/red/); await expect(page.locator('#ta-see')).toHaveClass(/yellow/); await expect(page.locator('#ta-submit')).toHaveClass(/green/);
+  expect(await page.locator('#ta-form [id*="witness"], #ta-form [id^="ta-w"]').count()).toBe(0);              // no witness field on the web form
   await expect(page.locator('#ta-causes option')).toHaveCount(6);
-  // classic paper: no password, no phone, a signature line
+  // classic paper: the Time Delay Form: no password, no phone, three request types, minutes and seconds blanks, witness rows, signature, status
   await page.locator('#ta-paper').check();
   await expect(page.locator('#ta-password')).toHaveCount(0); await expect(page.locator('#ta-phone')).toHaveCount(0); await expect(page.locator('#ta-signature')).toBeVisible();
   await expect(page.locator('#ta-panel .ta-head b')).toContainText('classic paper');
+  await expect(page.locator('#tapaper')).toContainText('Formal Problem Resolution Request (VI.A.2): +30 s'); await expect(page.locator('#tapaper')).toContainText('Witnessed by (for V.H.1):'); await expect(page.locator('#tapaper')).toContainText('EXECUTIVE COMMITTEE DECISION');
+  await expect(page.locator('#ta-status')).toBeVisible(); await expect(page.locator('#ta-w1-car')).toBeVisible(); await expect(page.locator('#ta-w2-role')).toBeVisible();
   await page.locator('#ta-paper').uncheck();
-  await expect(page.locator('#ta-password')).toBeVisible();
+  await expect(page.locator('#ta-entry-screen')).toBeVisible();                                              // still logged in
   // file it with the form fields; they travel with the request
-  await page.locator('#ta-car').fill('99'); await page.locator('#ta-password').fill('1234'); await page.locator('#ta-phone').fill('555-0100'); await page.locator('#ta-stage').fill('2');
-  await page.locator('#ta-cause').fill('a school bus'); await page.locator('#ta-witness-ahead').fill('2'); await page.locator('#ta-witness-behind').fill('8');
-  await expect(page.locator('#ta-pattern')).toContainText('by a school bus'); await expect(page.locator('#ta-pattern')).toContainText('Witness: car 2 ahead, car 8 behind.');
-  await page.locator('#ta-submit').click();
+  await page.locator('#ta-stage').fill('2'); await page.locator('#ta-cause').fill('Delayed by a school bus');
+  await expect(page.locator('#ta-pattern')).toContainText('by a school bus');
+  await page.locator('#ta-submit').click(); await page.locator('#ta-see').click();
   await expect(page.locator('#ta-filed')).toContainText(/Leg 3: /);
   const rec = await page.evaluate(() => window.__rally!.sim.taRequests[0] as unknown as Record<string, unknown>);
-  expect(rec['carNumber']).toBe(99); expect(rec['password']).toBe('1234'); expect(rec['cause']).toBe('schoolBus'); expect(rec['witnesses']).toEqual({ ahead: '2', behind: '8' });
+  expect(rec['carNumber']).toBe(99); expect(rec['password']).toBe('1234'); expect(rec['cause']).toBe('schoolBus'); expect(rec['stage']).toBe(2); expect(rec['witnesses']).toBeUndefined();
 });
 
 test('UI-037 MAKEUP-001 the ledger shows the make-up total with the 10 % and 20 % options in mph and seconds and the drop-at-the-next-sign reminder; a logged chunk lowers the total', async ({ page }) => {

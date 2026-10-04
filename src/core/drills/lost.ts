@@ -35,4 +35,4 @@ export function lostProcedure(r: StageResult): LostExcursion[] {
   }
   return out;
 }
-export const LOST_GUIDANCE = 'Lost doctrine (LOST-001): start the stopwatch at the turn-around, double the time back to the junction for the lost time, rejoin 30 s behind a car you know is on course, throw the leg away and reset at the next checkpoint. Never ask for a Time Allowance for a wrong turn.';
+export const LOST_GUIDANCE = 'Lost doctrine (LOST-001), in the order the "Hacking" how-to gives it: do not panic; turn around and backtrack to a place you know; start the stopwatch at the turn-around and double the time back to the junction for the lost time; find the order of start and your position: the car a minute behind you is your clock (the car 10 positions behind arrives 10 minutes after you, so if it is not there you are that late); rejoin 30 s behind a car you know is on course, throw the leg away and reset at the next checkpoint. "Hacking" is the unofficial time reference you take off other cars and landmarks. Never ask for a Time Allowance for a wrong turn.';

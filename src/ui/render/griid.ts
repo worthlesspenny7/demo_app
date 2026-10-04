@@ -1,44 +1,58 @@
-/** HTML for one GRIID book row (UI-029): number | A CAMEO | B icons | C stacked lines in a monospace box | D sentence or remark. Pure strings, no DOM. */
-import type { BookRow } from '../viewmodels/book.js';
+/**
+ * HTML for one GRIID book row (UI-029, GRIID-015, GRIID-016): number gutter | A CAMEO | B pictograms | C bold centred lines | D remarks. Pure strings, no DOM.
+ * The cells follow the real page (11a section 3): Column C is bold, centred and unboxed with generous leading; a calibration box is thin, with the interval at the left
+ * over the cumulative at the right; the calibration start prints "50 MPH" / "29m00s" and then the empty box with its dot and "0m00.0s"; a restart is the bold zone label
+ * over a digital wristwatch with the time inside; the TA row is one rounded black-outlined box over A to D on yellow; the Information Box is a rounded box over B and C.
+ */
+import type { BookRow, PageFooter } from '../viewmodels/book.js';
 import { griidIcon, odometerHtml } from './griid-icons.js';
 
 export function esc(s: unknown): string { return String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] ?? ch)); }
 
 export interface CameoParts {
-  /** The CAMEO svg markup (cameoSvg). */
+  /** The CAMEO svg markup (cameoSvg): the route, roads, names, control glyph, sign face and landmark are all drawn inside it. */
   svg: string;
-  /** Sign text box drawn beside the diagram. */
-  sign?: { text: string; side: 'L' | 'R'; shape: string } | null;
-  /** Landmark caption under the diagram. */
-  landmark?: string | null;
 }
 
-/** Column A: the CAMEO with the sign boxes on the side of the road they stand on and the landmark name. */
+/** Column A: the CAMEO (sign boxes and landmark pictures live inside the drawing, left or right of the arrow or overhead). */
 export function columnAHtml(a: CameoParts): string {
-  const sign = a.sign ? `<span class="sign-box side-${a.sign.side} shape-${esc(a.sign.shape)}" title="sign on the ${a.sign.side === 'L' ? 'left' : 'right'}">${esc(a.sign.text)}</span>` : '';
-  const lm = a.landmark ? `<span class="landmark">${esc(a.landmark)}</span>` : '';
-  return `<span class="cameo-svg">${a.svg}</span>${sign}${lm}`;
+  return `<span class="cameo-svg">${a.svg}</span>`;
 }
 
-/** Column B: pictograms, with the 4-digit odometer box beside a transit's hourglass. */
-export function columnBHtml(r: Pick<BookRow, 'b' | 'odometer'>): string {
-  // the odometer box sits under the first of tire / speedometer / hourglass on the line (HB App. D: tire "0090", speedometer "0240", hourglass "0045")
+/** Column B: pictograms centred in the cell, the odometer box under a begin symbol, the "no-host" label above a meal. */
+export function columnBHtml(r: Pick<BookRow, 'b' | 'odometer'> & { bLabel?: string | null }): string {
+  // the odometer box sits under the first of tire / speedometer / hourglass on the line (HB App. D: tire "0090", speedometer "0240", hourglass "0045"); never under an end symbol
   const host = r.odometer ? r.b.find(s => s === 'warmup' || s === 'calibration' || s === 'transit-begin') : undefined;
-  return r.b.map(sym => `<span class="bsym">${griidIcon(sym)}${sym === host && r.odometer ? odometerHtml(r.odometer) : ''}</span>`).join('');
+  return r.b.map(sym => `<span class="bsym">${sym === 'meal' && r.bLabel ? `<b class="blabel">${esc(r.bLabel)}</b>` : ''}${griidIcon(sym)}${sym === host && r.odometer ? odometerHtml(r.odometer) : ''}</span>`).join('');
 }
 
-const lineClass = (l: string): string => /^\(.*\)$/.test(l) ? 'approx' : /^[A-Z]{3,4} \d{1,2}:\d\d:\d\d$/.test(l) ? 'tod' : /MPH$/.test(l) ? 'speed' : /^\* /.test(l) ? 'ast' : 'time';
+const lineClass = (l: string): string => /^\(.*\)$/.test(l) ? 'approx' : /MPH$/.test(l) ? 'speed' : 'time';
 
-/** Column C: the stacked lines in a monospace box; calibration boxes are drawn as a bordered box; the asterisk is set apart. */
-export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & { cIcons?: BookRow['cIcons'] }): string {
-  // the watch faces live in Column C (HB p.27, Example #17): the restart watch over its time of day and speed, the crossed-out watch of End timed portion
-  const out: string[] = r.cIcons && r.cIcons.length ? [`<div class="cicons">${r.cIcons.map(s => `<span class="csym">${griidIcon(s, 26)}</span>`).join('')}</div>`] : [];
-  r.c.forEach((l, i) => {
+/**
+ * Column C: bold, centred, unboxed lines with about 1.8 line spacing. The watch pictograms sit in this column: a restart is the zone label (bold) over the digital wristwatch
+ * with the time inside, then the speed or interval; the end of a timed portion is the same watch in a circle with a slash, the interval below. A calibration box is thin:
+ * interval left over cumulative right. The calibration start prints the speed, the allowance, then the empty box with its dot and "0m00.0s".
+ */
+export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & { cIcons?: BookRow['cIcons']; tod?: BookRow['tod'] }): string {
+  const out: string[] = [];
+  const icons = r.cIcons ?? [];
+  let lines = r.c;
+  if (icons.includes('restart')) {
+    const tod = r.tod ?? null;
+    if (tod) { out.push(`<div class="cicons"><b class="zone">${esc(tod.zone)}</b><span class="csym">${griidIcon('restart', 44, { time: tod.time })}</span></div>`); lines = lines.slice(1); }
+    else out.push(`<div class="cicons"><span class="csym">${griidIcon('restart', 44)}</span></div>`);
+  }
+  if (icons.includes('end-timed')) out.push(`<div class="cicons"><span class="csym">${griidIcon('end-timed', 44)}</span></div>`);
+  lines.forEach((l, i) => {
     const inBox = !!r.cBox && i >= r.cBox[0] && i <= r.cBox[1];
-    const html = l.startsWith('* ') ? `<div class="cl ast"><b class="asterisk">*</b> ${esc(l.slice(2))}</div>` : `<div class="cl ${lineClass(l)}">${esc(l)}</div>`;
-    if (inBox && r.cBox && i === r.cBox[0]) out.push('<div class="cbox" title="calibration box: interval over cumulative">');
-    out.push(html);
-    if (inBox && r.cBox && i === r.cBox[1]) out.push('</div>');
+    if (l.startsWith('* ')) { out.push(`<div class="cbox cstart" title="the box the next interval is measured from"><i class="cdot asterisk" aria-label="start mark"></i><span class="cum">${esc(l.slice(2))}</span></div>`); return; }
+    if (inBox && r.cBox) {
+      if (i === r.cBox[0]) out.push(`<div class="cbox" title="calibration box: interval over cumulative"><span class="iv">${esc(l)}</span>`);
+      else out.push(`<span class="cum">${esc(l)}</span>`);
+      if (i === r.cBox[1]) out.push('</div>');
+      return;
+    }
+    out.push(`<div class="cl ${lineClass(l)}">${esc(l)}</div>`);
   });
   return out.join('');
 }
@@ -46,14 +60,19 @@ export function columnCHtml(r: Pick<BookRow, 'c' | 'cBox'> & { cIcons?: BookRow[
 export function columnDHtml(r: Pick<BookRow, 'd'>): string { return r.d ? esc(r.d) : ''; }
 
 /**
- * The Time Allowance row (REG Example #18): a full-width yellow banner, not five cells. The sentence is always the written one, whatever the book style
- * (the real banner prints it in full: "Within 15m00s, ..."); the method (web page, phone, or the Observation Checkpoint) is whatever the day's instructions print.
+ * The Time Allowance row (REG Example #18): one rounded black-outlined box over Columns A to D on a yellow fill, with no Column B symbol. The sentence is always the written
+ * one, whatever the book style; the method (web page, phone, or the Observation Checkpoint) is whatever the day's instructions print.
  */
 export function taBannerHtml(r: Pick<BookRow, 'text'>): string {
-  return `<div class="tabanner" role="note"><span class="tab-icon">${griidIcon('ta', 28)}</span><span class="tab-text">${esc(r.text)}</span></div>`;
+  return `<div class="tabanner" role="note"><span class="tab-text">${esc(r.text)}</span></div>`;
 }
 
-/** The five cells of a row as HTML strings. */
+/** The Information Box (11a, GRIID-016): a rounded rectangle over Columns B and C holding the body text; Column D keeps its own list beside it. */
+export function infoBoxHtml(r: Pick<BookRow, 'info'>): string {
+  return `<div class="infobox" role="note">${esc(r.info ?? '')}</div>`;
+}
+
+/** The cells of a row as HTML strings. */
 export function griidCells(r: BookRow, a: CameoParts): { n: string; a: string; b: string; c: string; d: string } {
   return { n: esc(r.printed), a: columnAHtml(a), b: columnBHtml(r), c: columnCHtml(r), d: columnDHtml(r) };
 }
@@ -62,6 +81,12 @@ export function griidCells(r: BookRow, a: CameoParts): { n: string; a: string; b
 export function griidRowHtml(r: BookRow, a: CameoParts, extraClass = ''): string {
   if (r.ta) return `<div class="grow ta-row ${extraClass}" data-n="${r.n}"><div class="gn">${esc(r.printed)}</div>${taBannerHtml(r)}</div>`;
   const c = griidCells(r, a);
+  if (r.info !== null) return `<div class="grow info-row ${extraClass}" data-n="${r.n}"><div class="gn">${c.n}</div><div class="ga">${c.a}</div><div class="gbc">${infoBoxHtml(r)}</div><div class="gd">${c.d}</div></div>`;
   return `<div class="grow ${extraClass}${r.omitted ? ' omitted' : ''}" data-n="${r.n}">`
     + `<div class="gn">${c.n}</div><div class="ga">${c.a}</div><div class="gb">${c.b}</div><div class="gc">${c.c}</div><div class="gd">${c.d}${r.omitted ? ' <em>(omitted)</em>' : ''}</div></div>`;
+}
+
+/** The page footer of the real sheets: three blocks, no rule, no page header ("(c) 2026, Great Race" | "Hemmings Motor News Great Race / Page n of N" | "stage / date"). */
+export function sheetFootHtml(f: PageFooter): string {
+  return `<div class="sheet-foot"><span class="sf-left">${esc(f.left)}</span><span class="sf-mid">${esc(f.center[0])}<br><span class="pageno">${esc(f.center[1])}</span></span><span class="sf-right">${esc(f.right[0])}<br>${esc(f.right[1])}</span></div>`;
 }

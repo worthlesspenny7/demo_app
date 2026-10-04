@@ -10,6 +10,7 @@
 import type { Exit, Control, Sign, TurnDir, Node } from '../course.js';
 import { EXITS, type NodeSpec, type InsSpec } from '../builder.js';
 import type { Rng } from '../rng.js';
+import { cameoSvg as renderCameo } from '../cameo.js';
 
 export type TrapCategory =
   | 'controls' | 'intersection-type' | 'turn-vocabulary' | 'counting' | 'signs' | 'main-road'
@@ -184,7 +185,7 @@ export const TRAPS: TrapCard[] = [
   },
   {
     id: 'hidden-speed-sign', name: 'Hidden speed-change sign', category: 'speed-change',
-    instructionText: 'At "CURVE" sign', control: 'none', exits: [], nodeKind: 'sign', sign: { text: 'CURVE', shape: 'diamond', side: 'R' }, sightDistance: 150, hint: 'Look sharp', speedChange: true,
+    instructionText: 'At "CURVE" sign', control: 'none', exits: [], nodeKind: 'sign', sign: { text: 'CURVE', shape: 'curve', side: 'R', plaque: 35 }, sightDistance: 150, hint: 'Look sharp', speedChange: true,
     wrongExits: [{ angle: 0, why: 'Changing speed late because the sign appears only past the bend' }],
     tip: 'Speed changes happen at the near edge of the sign. When column D says Look sharp, have the driver pre-brief the change.',
     visual: 'Yellow diamond just past a blind bend, visible 150 ft out.',
@@ -263,8 +264,8 @@ export const TRAPS: TrapCard[] = [
     id: 'cp-after-stop', name: 'Checkpoint right after a STOP', category: 'checkpoint',
     instructionText: 'Straight at STOP', control: 'STOP', sign: octagon, exits: EXITS.crossroads('S'), turn: 'S', cpAfterFt: [500, 1500],
     wrongExits: [{ angle: -90, why: 'Wrong side' }, { angle: 90, why: 'Wrong side' }],
-    tip: 'Rallymasters put checkpoints in the most inopportune places. Leave the stop exactly on your dwell; there is no road left to recover on.',
-    visual: 'Plain 4-way STOP; the green checkpoint sign stands 500-1500 ft past it.',
+    tip: 'Rallymasters put checkpoints in the most inopportune places. Leave the stop exactly on your dwell; there is no road left to recover on. A GREEN sign is a Timing checkpoint (do nothing, never slow below 5 mph in sight of it); the RED GREAT RACE STOP board is the Observation Checkpoint (stop).',
+    visual: 'Plain 4-way STOP; the green Timing checkpoint sign stands 500-1500 ft past it (the Observation Checkpoint is the red GREAT RACE STOP board: red = stop, green = keep going).',
     source: `docs/research/06 §1 ("most inopportune places"); GEN-007`,
   },
   {
@@ -277,7 +278,7 @@ export const TRAPS: TrapCard[] = [
   },
   {
     id: 'rr-crossing', name: 'Speed change at RR crossing', category: 'speed-change',
-    instructionText: 'At RR crossing', control: 'RR', exits: [], nodeKind: 'landmark', sign: { text: 'RR', shape: 'rr', side: 'R' }, label: 'RR crossing', speedChange: true,
+    instructionText: 'At RR crossing', control: 'RR', exits: [], nodeKind: 'landmark', sign: { text: 'RR', shape: 'rr-advance', side: 'R' }, label: 'RR crossing', speedChange: true,
     wrongExits: [{ angle: 0, why: 'Changing speed at the crossbuck sign instead of the rails' }],
     tip: 'A train is a Time Allowance: start the stopwatch when the gates drop, declare the measured wait at the checkpoint.',
     visual: 'Crossbuck and gates; rails cross the road at the node.',
@@ -394,33 +395,12 @@ export function trapDistractorBefore(card: TrapCard, rng: Rng): DistractorPlacem
 }
 
 /**
- * GRIID CAMEO as an SVG string: dot = approach, bold line dot->arrow = route, thin = roads not taken,
- * dashed = driveway / lot / dead end / unpaved. Throws when the exits do not describe exactly one route.
+ * GRIID CAMEO as an SVG string: the one renderer in cameo.ts (bold route, thin roads, dashed driveways / lots / dead ends / gravel, names, control glyph, sign face).
+ * Throws when the exits do not describe exactly one route.
  */
-export function cameoSvg(exits: Exit[], opts: { size?: number; control?: Control; title?: string } = {}): string {
+export function cameoSvg(exits: Exit[], opts: { size?: number; control?: Control; title?: string; sign?: Sign; turn?: TurnDir } = {}): string {
   if (exits.length && exits.filter(e => e.isRoute).length !== 1) throw new Error('cameo: exits must have exactly one route');
-  const S = opts.size ?? 120, cx = S / 2, cy = S * 0.6, L = S * 0.38;
-  const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${S} ${S}" width="${S}" height="${S}" role="img" aria-label="${esc(opts.title ?? 'CAMEO')}">`];
-  out.push(`<line x1="${cx}" y1="${cy + L}" x2="${cx}" y2="${cy}" stroke="currentColor" stroke-width="4"/>`);
-  out.push(`<circle cx="${cx}" cy="${cy + L}" r="5" fill="currentColor"/>`);
-  for (const e of exits) {
-    const a = e.angle * Math.PI / 180;
-    const x2 = cx + Math.sin(a) * L, y2 = cy - Math.cos(a) * L;
-    const dashed = e.kind !== 'road' || e.surface !== 'paved';
-    const w = e.isRoute ? 4 : 1.5;
-    out.push(`<line x1="${cx}" y1="${cy}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="currentColor" stroke-width="${w}"${dashed ? ' stroke-dasharray="4 3"' : ''}/>`);
-    if (e.isRoute) {
-      const hx = x2 - Math.sin(a) * 10, hy = y2 + Math.cos(a) * 10;
-      const px = Math.cos(a) * 5, py = Math.sin(a) * 5;
-      out.push(`<polygon points="${x2.toFixed(1)},${y2.toFixed(1)} ${(hx + px).toFixed(1)},${(hy + py).toFixed(1)} ${(hx - px).toFixed(1)},${(hy - py).toFixed(1)}" fill="currentColor"/>`);
-    }
-    if (e.name) out.push(`<text x="${(x2 + Math.sin(a) * 8).toFixed(1)}" y="${(y2 - Math.cos(a) * 8).toFixed(1)}" font-size="8" text-anchor="middle" fill="currentColor">${esc(e.name)}</text>`);
-  }
-  if (!exits.length) out.push(`<line x1="${cx}" y1="${cy}" x2="${cx}" y2="${cy - L}" stroke="currentColor" stroke-width="4"/>`);
-  if (opts.control && opts.control !== 'none') out.push(`<text x="${cx + 10}" y="${cy + 4}" font-size="9" font-weight="bold" fill="currentColor">${esc(opts.control)}</text>`);
-  out.push('</svg>');
-  return out.join('');
+  return renderCameo(exits.length ? exits : [{ angle: 0, kind: 'road', isRoute: true }], opts.control, opts.turn ?? null, opts.size ?? 100, { sign: opts.sign ?? null });
 }
 
-export function trapCameo(card: TrapCard): string { return cameoSvg(card.exits, { control: card.control, title: card.name }); }
+export function trapCameo(card: TrapCard): string { return cameoSvg(card.exits, { control: card.control, title: card.name, sign: card.sign, turn: card.turn }); }

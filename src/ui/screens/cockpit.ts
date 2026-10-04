@@ -1,5 +1,5 @@
 /** Cockpit (UI-009..UI-013): road view, instruments, GRIID book, lapboard drawer, keyboard, adaptive time scale, audio. */
-import { Simulator, type Observation, type Action, type DriverMessage, type StageResult } from '../../core/sim.js';
+import { Simulator, type Observation, type Action, type DriverMessage, type StageResult, type TaWitness, type TaRequestType } from '../../core/sim.js';
 import type { Scenario, Node } from '../../core/course.js';
 import { accelLoss } from '../../core/perf-table.js';
 import { formatClock, formatElapsed } from '../../core/units.js';
@@ -7,19 +7,20 @@ import { allDrills } from '../../core/drills/index.js';
 import { stopwatchViewModel } from '../viewmodels/stopwatch.js';
 import { clockViewModel, type EngineClock } from '../viewmodels/clock.js';
 import { speedoViewModel } from '../viewmodels/speedo.js';
-import { cameoSvg } from '../viewmodels/cameo.js';
-import { bookRows, signBox, landmarkLabel, ROWS_PER_PAGE } from '../viewmodels/book.js';
-import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, esc } from '../render/griid.js';
-import { chartGrids, type ChartGrid } from '../viewmodels/charts.js';
+import { bookRows, bookLayout, rowCameo } from '../viewmodels/book.js';
+import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, infoBoxHtml, esc } from '../render/griid.js';
+import { chartGrids, simpleChart, type ChartGrid, type SimpleChart } from '../viewmodels/charts.js';
 import { holdCardFor, openTransitCard, type HoldCard } from '../viewmodels/cockpitinfo.js';
 import { digitalWatchViewModel, SplitTracker } from '../viewmodels/digitalwatch.js';
-import { taFormVm, taNoteText, taRounding, taFormFields, taHelper, taCauseId, taWitnessText, TA_CAUSES, TA_STEP, type TaFormMode } from '../viewmodels/ta.js';
+import { taFormVm, taNoteText, taRounding, taHelper, buildTaRequest, allowanceSeconds, type TaFormMode } from '../viewmodels/ta.js';
+import { taWebHtml, taPaperHtml, type TaFormState } from '../render/taform.js';
 import { inTimedInterval, startQueueVm, startLaunchFor, launchPlanFromInfo, startCount, makeUpPlan, assignedAfter, scheduleCorrection, inCalibrationRun, nextCallPrompt, driverLineKind, paceCarsFrom, type LaunchPlan, type StartCountVm } from '../viewmodels/v3.js';
 import { formatInterval } from '../../core/griid.js';
 import { effectiveScale, simAdvance, nextScale, SCALE_STEPS } from '../viewmodels/timescale.js';
 import { KeyMapper, KEY_HELP, type KeyCommand } from '../viewmodels/keys.js';
 import { audioCues, AudioPlayer } from '../viewmodels/audio.js';
-import { createAnnotations, HIGHLIGHTS, type Highlight } from '../viewmodels/annotations.js';
+import { createAnnotations, HIGHLIGHTS, MARK_PRESETS, markRow, markAnnotation, formatPauseMark, formatLossMark, formatCarryMark, formatQuickMark, formatTodMark, formatTrainMark, type Highlight, type Mark, type MarkKind } from '../viewmodels/annotations.js';
+import { chartLossFor } from '../../core/drills/preread.js';
 import { cockpitLayout } from '../viewmodels/layout.js';
 import { cpCards, debriefViewModel, type CpCard } from '../viewmodels/debrief.js';
 import { instrumentPolicy, paceAidText, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, finishPrompt, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
@@ -31,7 +32,7 @@ import { drawClock } from '../render/clock.js';
 import { drawSpeedo } from '../render/speedo.js';
 import { drawRoad } from '../render/road.js';
 import { prepare, themeFromCss } from '../render/common.js';
-import { app, buildScenario, withDriver, el, escapeHtml, sourceHash, type RunSource, type Run, type Settings } from '../state.js';
+import { app, buildScenario, withDriver, el, escapeHtml, sourceHash, saveSettings, type RunSource, type Run, type Settings } from '../state.js';
 
 declare global { interface Window { __rally?: { sim: Simulator; advance(seconds: number): Observation; act(a: Action): Observation; observe(): Observation; result(): StageResult; finish(): void } } }
 
@@ -119,9 +120,11 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   let showCharts = false; let chartsKey = '';
   function setCharts(on: boolean): void { showCharts = on; chartsBox.style.display = on ? '' : 'none'; chartsKey = ''; if (on) renderCharts(obs); }
   function chartHtml(g: ChartGrid): string {
-    const head = `<tr><th>IN \\ OUT</th>${g.speeds.map(v => `<th class="${g.highlight?.out === v ? 'cur' : ''}">${v}</th>`).join('')}</tr>`;
-    const body = g.rows.map(r => `<tr><th class="${g.highlight?.in === r.in ? 'cur' : ''}">${r.in}</th>${r.cells.map(c => `<td class="${c.hi ? 'cur' : ''}" data-in="${r.in}" data-out="${c.out}">${c.text}</td>`).join('')}</tr>`).join('');
-    return `<div class="chart" id="chart-${g.id}"><h4>(${g.letter}) ${esc(g.title.toUpperCase())}</h4><p class="muted">${esc(g.note)}</p><div class="charttable-wrap"><table class="charttable"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+    // CHART-001: the printed axis labels (BRAKING down the side and ACCELERATION across the top on chart (a); IN speed / OUT speed on (b) and (c)), a blank grey diagonal on (a),
+    // blanks for unmeasured cells, negatives in the warning colour, and the sheet's footnotes verbatim
+    const head = `<tr><th class="axis-corner" colspan="2"></th><th class="axis axis-top" colspan="${g.speeds.length}">${esc(g.colAxis)}</th></tr><tr><th class="axis-corner" colspan="2"></th>${g.speeds.map(v => `<th class="${g.highlight?.out === v ? 'cur' : ''}">${v}</th>`).join('')}</tr>`;
+    const body = g.rows.map((r, k) => `<tr>${k === 0 ? `<th class="axis axis-side" rowspan="${g.rows.length}">${esc(g.rowAxis)}</th>` : ''}<th class="${g.highlight?.in === r.in ? 'cur' : ''}">${r.in}</th>${r.cells.map(c => `<td class="${[c.hi ? 'cur' : '', c.blank ? 'blank' : '', c.unmeasured ? 'unmeasured' : '', c.neg ? 'neg' : ''].filter(Boolean).join(' ')}" data-in="${r.in}" data-out="${c.out}">${c.text}</td>`).join('')}</tr>`).join('');
+    return `<div class="chart" id="chart-${g.id}"><h4>(${g.letter}) ${esc(g.title.toUpperCase())}</h4><p class="muted">${esc(g.note)}</p><div class="charttable-wrap"><table class="charttable"><thead>${head}</thead><tbody>${body}</tbody></table></div>${g.footnotes.map(f => `<p class="chart-foot">${esc(f)}</p>`).join('')}</div>`;
   }
   function renderCharts(o: Observation): void {
     if (!showCharts) return;
@@ -168,7 +171,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   lcdEl.title = 'in TOD mode: click (or K) to note a time-of-day read';
   const dwLaps = el('div', { class: 'dw-laps', id: 'laps' });
   const dwHint = el('div', { class: 'dw-hint muted', id: 'dw-hint' }, 'TOD (M) is your time of day: the director\'s source. The clock is for its second hand.');
-  const dwatch = el('div', { class: 'dwatch', id: 'stopwatch' }, el('div', { class: 'dw-top' }, dwMode, dwInd), lcdEl, dwHint, el('div', { class: 'dw-btns' }, dwStart, dwLap, dwRecall, dwReset), dwLaps);
+  const dwLanyard = el('div', { class: 'dw-lanyard', 'aria-hidden': 'true', html: '<svg viewBox="0 0 74 16" preserveAspectRatio="xMidYMax meet"><path d="M10 16C10 2 64 2 64 16" fill="none" stroke="#1d4fb8" stroke-width="3" stroke-linecap="round"/><circle cx="37" cy="6" r="2.4" fill="#c9ccd3"/></svg>' });
+  const dwatch = el('div', { class: 'dwatch', id: 'stopwatch' }, dwLanyard, el('div', { class: 'dw-top' }, dwMode, dwInd), lcdEl, dwHint, el('div', { class: 'dw-btns' }, dwStart, dwLap, dwRecall, dwReset), dwLaps);
   const splitTracker = new SplitTracker();
   const instruments = el('div', { class: 'instruments' },
     el('div', { class: 'instrument' }, clockCanvas, clockCap),
@@ -198,7 +202,25 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   };
   const notesList = el('div', { class: 'mono', style: 'font-size:12px' }); notesBox.append(noteInput, notesList);
   const cardTitle = el('h4', {}, 'Perf card'); const chartsBtn = el('button', { id: 'charts-btn', class: 'mini', title: 'C: the three handbook charts' }, 'Charts'); chartsBtn.onclick = () => setCharts(!showCharts);
-  const cardBox = el('div', { class: 'box', id: 'perfcard' }, el('div', { class: 'cardhead' }, cardTitle, chartsBtn)); const cardBody = el('div', {}); cardBox.append(cardBody);
+  // CHART-007: a selectable card view: the simple chart (Speed | Dec | Acc | S/G | T@15 | T@20, default) or the three matrices behind the Charts overlay
+  const chartViewSel = el('select', { id: 'chart-view', class: 'mini', title: 'what the card shows: the simple chart, or a pointer to the three matrices' }) as HTMLSelectElement;
+  for (const [v, t] of [['simple', 'Simple chart'], ['matrices', 'Three charts']] as const) chartViewSel.append(el('option', { value: v, selected: app.settings.chartView === v ? true : null }, t));
+  chartViewSel.onchange = () => { app.settings.chartView = chartViewSel.value === 'matrices' ? 'matrices' : 'simple'; saveSettings(app.settings); simpleKey = ''; renderNow(); };
+  chartViewSel.onkeydown = e => e.stopPropagation();
+  const cardBox = el('div', { class: 'box', id: 'perfcard' }, el('div', { class: 'cardhead' }, cardTitle, chartViewSel, chartsBtn)); const cardBody = el('div', {});
+  const simpleBox = el('div', { class: 'simplechart', id: 'simplechart', title: simpleChart(scenario.car).note }); let simpleKey = '';
+  const simple: SimpleChart = simpleChart(scenario.car);
+  cardBox.append(cardBody, simpleBox);
+  function renderSimpleChart(line: number): void {
+    const view = app.settings.chartView; const sp = policy.computedCard ? lineSpeeds(scenario, line) : { vIn: null as number | null, vOut: null as number | null };
+    const key = `${view}|${line}|${policy.computedCard}`; if (key === simpleKey) return; simpleKey = key;
+    if (view !== 'simple') { simpleBox.innerHTML = '<div class="muted" id="matrices-note">The three matrices (accel/decel, stop &amp; go, turns) are behind the Charts button (C).</div>'; return; }
+    const near = (v: number | null): number | null => (v === null || v <= 0 ? null : simple.speeds.reduce((b, s) => (Math.abs(s - v) < Math.abs(b - v) ? s : b), simple.speeds[0]!));
+    const hl = new Set([near(sp.vIn), near(sp.vOut)].filter((x): x is number => x !== null));
+    const cls: Record<string, string> = { Dec: 'c-dec', Acc: 'c-acc', 'S/G': 'c-sg', 'T@15': 'c-t15', 'T@20': 'c-t20' };
+    simpleBox.innerHTML = `<table id="simplechart-table"><thead><tr><th>Speed</th>${simple.columns.map(c => `<th class="${cls[c]}">${c}</th>`).join('')}</tr></thead><tbody>${simple.rows.map(r => `<tr data-speed="${r.speed}" class="${hl.has(r.speed) ? 'cur' : ''}"><th>${r.speed}</th>${simple.columns.map(c => `<td class="${cls[c]}">${esc(r.text[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+    const cur = simpleBox.querySelector('tr.cur') as HTMLElement | null; if (cur) simpleBox.scrollTop = Math.max(0, cur.offsetTop - 40);   // keep the highlighted speed in view inside the small box
+  }
   const ledgerBox = el('div', { class: 'box', id: 'ledgerbox' }, el('h4', {}, 'Ledger (E) and time allowance (T)')); const ledgerBody = el('div', {});
   // MAKEUP-001: log each chunk you make up; the running total falls with it
   const chunkIn = el('input', { type: 'number', step: '1', min: '0', placeholder: 's', id: 'makeup-chunk', style: 'width:64px', title: 'seconds you have just made up' }) as HTMLInputElement;
@@ -368,34 +390,83 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
 
   // ---------- book ----------
   rows.onclick = e => { const r = (e.target as HTMLElement).closest('.row') as HTMLElement | null; if (r && !(e.target as HTMLElement).closest('input,button')) { act({ type: 'line.set', n: Number(r.dataset.n) }); renderNow(); } };
+  /** PREREAD-001: write a preset hand mark on the book. The text typed is formatted as the real mark ("10.2" -> "P10.2", "2.9" -> "-2.9", "3:47" -> "TRAIN Delay 3:47" with a star). */
+  function writeMark(kind: MarkKind, n: number, pageTop: boolean): void {
+    const ins = scenario.book[n - 1]; if (!ins) return;
+    const sp = lineSpeeds(scenario, n); const show = policy.computedCard;
+    const known = show && sp.vIn !== null && sp.vOut !== null ? chartLossFor(scenario, ins, { vIn: sp.vIn, vOut: sp.vOut }) : null;
+    const dwell = show ? cardDwell(scenario, n) : null;
+    const dflt: Record<MarkKind, string> = { pause: dwell !== null ? String(Math.round(dwell * 10) / 10) : '', loss: known !== null ? String(known) : '', carry: show && sp.vIn ? String(sp.vIn) : '', quick: String(n), tod: show && ins.restartTime !== undefined ? formatTodMark(ins.restartTime) : '', cp: '', train: '' };
+    const label: Record<MarkKind, string> = { pause: 'chart pause time in seconds (P10.2)', loss: 'seconds lost (circled, written negative: -2.9)', carry: 'speed carried (mph)', quick: 'the row that comes quick (number)', tod: 'time of day (9:34:00)', cp: 'checkpoint number and time: CP3 9:14:22', train: 'delay m:ss (TRAIN Delay 3:47)' };
+    promptText(label[kind], dflt[kind], raw => {
+      const num = Number(raw.replace(/^[Pp]/, '').replace(/^-/, '').replace(',', '.'));
+      let text = raw.trim(); let star = false;
+      if (kind === 'pause' && Number.isFinite(num)) text = formatPauseMark(num);
+      else if (kind === 'loss' && Number.isFinite(num)) text = formatLossMark(num);
+      else if (kind === 'carry' && Number.isFinite(num)) text = formatCarryMark(num);
+      else if (kind === 'quick') text = formatQuickMark(Number.isFinite(Number(raw)) && Number(raw) > 0 ? Number(raw) : n);
+      else if (kind === 'cp') text = /^CP/i.test(text) ? text.toUpperCase() : `CP${text}`;
+      else if (kind === 'train') { const m = /^(\d+):(\d{2})$/.exec(text); text = m ? formatTrainMark(Number(m[1]) * 60 + Number(m[2])) : /^train/i.test(text) ? text : `TRAIN Delay ${text}`; star = true; }
+      const mark: Mark = { kind, text, ...(star ? { star: true } : {}) };
+      const row = markRow(kind, n, pageTop);
+      ann.addMark(row, mark);
+      try { sim.act({ type: 'line.annotate', n: row, text: markAnnotation(mark) } as Action); } catch { /* older engine */ }
+      lastBookKey = ''; flash(`Marked line ${row}: ${text}`); renderNow();
+    });
+  }
   function renderBook(o: Observation): void {
     const key = `${o.currentLine}|${o.stoppedAtLine ?? ''}|${o.driver.lastExecutedLine ?? ''}|${o.phase}|${ann.serialize().length}|${Object.keys(o.annotations ?? {}).length}`;
     if (key === lastBookKey) return; lastBookKey = key; lastExecuted = o.driver.lastExecutedLine ?? lastExecuted;
     const frag = document.createDocumentFragment();
-    const per = scenario.rowsPerPage ?? ROWS_PER_PAGE;
-    const pages = Math.max(1, Math.ceil(bookLen / per));
+    const layout = bookLayout(scenario);   // GRIID-014: page breaks from the row heights (the hand-laid-out drill book keeps its own count)
     for (const r of bookRows(scenario.book, o.currentLine, { timeZone: scenario.timeZone, style: scenario.bookStyle })) {
-      if (r.n > 1 && (r.n - 1) % per === 0) frag.append(el('div', { class: 'page-break' }, el('span', {}, scenario.name), el('span', {}, `Page ${(r.n - 1) / per + 1} of ${pages}`)));
+      const pageNo = layout.pageOfIndex[r.n - 1] ?? 1;
+      const pageTop = r.n > 1 && pageNo !== (layout.pageOfIndex[r.n - 2] ?? 1);
+      if (pageTop) {
+        // PREREAD-001: the hand marks that live on the page edges: "COMES QUICK" with the circled row number at the bottom of the previous page, the carried speed at the top centre
+        const quick = ann.marks(r.n - 1).find(m => m.kind === 'quick'), carry = ann.marks(r.n).find(m => m.kind === 'carry');
+        const bar = el('div', { class: 'page-break' }, el('span', { class: 'pb-left' }, quick ? el('span', { class: 'hand quick-note', title: 'written at the bottom of the previous page' }, quick.text) : scenario.name), el('span', { class: 'pb-mid' }, carry ? el('span', { class: 'hand carry-top', title: 'speed carried from the previous page' }, carry.text) : ''), el('span', {}, `Page ${pageNo} of ${layout.pages}`));
+        frag.append(bar);
+      }
       const ins = scenario.book[r.n - 1]; const node = ins ? nodes.get(ins.nodeId) : undefined;
       const hls = ann.highlights(r.n);
       const stopped = o.stoppedAtLine === r.n;
       const row = el('div', { class: `row ${r.state}${stopped ? ' stopped' : ''}${lastExecuted !== null && r.n <= lastExecuted ? ' executed' : ''}${r.omitted ? ' omitted' : ''} ${hls.map(h => `hl-${h}`).join(' ')}`, 'data-n': String(r.n) });
-      const svg = node?.exits ? cameoSvg(node.exits, node.control, ins?.turn ?? null, 64) : node?.sign || node?.control && node.control !== 'none' ? cameoSvg([{ angle: 0, kind: 'road', isRoute: true }], node.control, 'S', 64) : '';
+      const svg = rowCameo(node, ins);
       const dCell = el('div', { class: 'gd' });
       dCell.innerHTML = `${stopped ? '<span class="stoptag">STOPPED HERE </span>' : ''}${columnDHtml(r)}${r.omitted ? ' <em>(omitted)</em>' : ''}${o.aids.cumulativePerfectAtNextLine !== undefined && r.isCurrent ? `<span class="cold accent">perfect cumulative ${esc(formatElapsed(o.aids.cumulativePerfectAtNextLine, 0))}</span>` : ''}`;
       if (r.ta) { row.classList.add('ta-row'); row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'tabanner-cell', html: taBannerHtml(r) })); }   // REG Example #18: a full-width yellow row
-      else row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg, sign: signBox(node), landmark: landmarkLabel(node) }) }),
+      else if (r.info !== null) { row.classList.add('info-row'); row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg }) }), el('div', { class: 'gbc', html: infoBoxHtml(r) }), dCell); }   // GRIID-016: the Information Box over B and C
+      else row.append(el('div', { class: 'gn' }, r.printed), el('div', { class: 'ga', html: columnAHtml({ svg }) }),
         el('div', { class: 'gb', html: columnBHtml(r) }), el('div', { class: 'gc', html: columnCHtml(r), title: r.colC }), dCell);
+      // PREREAD-001: the hand marks written on this row (the page-edge ones are drawn in the page-break bars)
+      { const gcEl = row.querySelector('.gc') as HTMLElement | null;
+        for (const m of ann.marks(r.n)) {
+          const hand = (cls: string, text: string, star = false): string => `<span class="hand ${cls}" data-mark="${m.kind}">${esc(text)}${star ? ' <b class="star">\u2605</b>' : ''}</span>`;
+          if (m.kind === 'pause' && gcEl) { const t = [...gcEl.querySelectorAll('.cl.time')].find(x => r.pause && x.textContent === formatInterval(r.pause)); if (t) { t.classList.add('struck'); t.innerHTML = `<span class="struck-text">${esc(t.textContent ?? '')}</span> ${hand('pnote', m.text)}`; } }
+          else if (m.kind === 'loss' && gcEl) { const sp = [...gcEl.querySelectorAll('.cl.speed')]; const last = sp[sp.length - 1]; const html = `<div>${hand('circled', m.text)}</div>`; if (last) last.insertAdjacentHTML('afterend', html); else gcEl.insertAdjacentHTML('beforeend', html); }
+          else if (m.kind === 'carry' && !(r.n > 1 && pageNo !== (layout.pageOfIndex[r.n - 2] ?? 1)) && gcEl) gcEl.insertAdjacentHTML('beforeend', `<div>${hand('big', m.text)}</div>`);   // an empty Column C box
+          else if (m.kind === 'quick' && !(layout.pageOfIndex[r.n] !== undefined && layout.pageOfIndex[r.n] !== pageNo)) dCell.insertAdjacentHTML('beforeend', `<div>${hand('quick-note', m.text)}</div>`);
+          else if (m.kind === 'tod' || m.kind === 'cp' || m.kind === 'train') dCell.insertAdjacentHTML('beforeend', `<div>${hand('dnote', m.text, m.star)}</div>`);
+        } }
       // annotation strip: highlighters + GO-time for pause lines (UI-013)
       const strip = el('div', { class: 'ann' });
       for (const h of HIGHLIGHTS) { const b = el('button', { class: `hl-btn ${h}`, title: `highlight ${h}` }); b.onclick = ev => { ev.stopPropagation(); ann.toggleHighlight(r.n, h as Highlight); lastBookKey = ''; renderBook(sim.observe({ peek: true })); }; strip.append(b); }
       if (r.pause) {
-        const go = el('input', { class: 'go-time', placeholder: 'GO at', value: ann.goTime(r.n) || (o.annotations?.[r.n] ?? '') }) as HTMLInputElement;
+        const go = el('input', { class: 'go-time', placeholder: 'GO at', value: ann.goTime(r.n) || (ann.marks(r.n).length ? '' : (o.annotations?.[r.n] ?? '')) }) as HTMLInputElement;
         go.onkeydown = ev => { ev.stopPropagation(); if (ev.key === 'Enter' || ev.key === 'Escape') go.blur(); };
         go.onchange = () => { ann.setGoTime(r.n, go.value); try { sim.act({ type: 'line.annotate', n: r.n, text: go.value } as Action); } catch { /* older engine */ } };
         strip.append(el('span', { class: 'muted' }, `0 MPH / ${formatInterval(r.pause)}`), go);
         // the answer sheet (same turn-capped loss as the Debrief) only where the aids ladder allows it
         if (policy.computedCard) { const d = cardDwell(scenario, r.n); if (d !== null) strip.append(el('span', { class: 'muted', title: 'card dwell = pause - stop/start loss (turn-capped)' }, `card ${d.toFixed(1)} s`)); }
+      }
+      // the hand marks of PREREAD-001 as presets: choose one, type the number (a suggestion is filled in where the aids ladder shows answers), and it is written on the right row
+      if (!r.ta && r.info === null) {
+        const msel = el('select', { class: 'mark-sel', title: 'write a mark on the book: P10.2 beside the struck pause, a circled loss, the speed carried, COMES QUICK, a time of day, a TRAIN delay with a star' }) as HTMLSelectElement;
+        msel.append(el('option', { value: '' }, 'Mark…'), ...MARK_PRESETS.map(pr => el('option', { value: pr.kind }, pr.label)));
+        msel.onclick = ev => ev.stopPropagation(); msel.onkeydown = ev => ev.stopPropagation();
+        msel.onchange = () => { const kind = msel.value as MarkKind; msel.value = ''; if (kind) writeMark(kind, r.n, pageTop); };
+        strip.append(msel);
       }
       row.append(strip); frag.append(row);
     }
@@ -404,85 +475,88 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   }
 
   // ---------- UI-031 Time Allowance point form ----------
+  let taLoggedIn = false; let taShowFiled = false;
   function buildTaPanel(vm: ReturnType<typeof taFormVm>): void {
     const first = vm.legs.find(l => l.measured > 0) ?? vm.legs[0];
     const mode: TaFormMode = taMode;
-    const has = (id: string): boolean => taFormFields(mode).some(f => f.id === id);
-    const draft = (id: string, dflt = ''): string => escapeHtml(taDraft[id] ?? dflt);
     const carDefault = String((scenario as unknown as { carNumber?: number | string }).carNumber ?? '');
+    const formState: TaFormState = { draft: taDraft, legs: vm.legs, first: first ? { legIndex: first.legIndex, fromLine: first.fromLine, toLine: first.toLine, suggested: first.suggested, cause: first.cause } : null, carDefault, loggedIn: taLoggedIn, endOfStage: vm.endOfStage, acked: vm.acked };
     taPanel.innerHTML = `<div class="ta-head"><b>${esc(mode === 'paper' ? 'Time Delay Form (classic paper sheet)' : vm.title)}</b><span class="mono" id="ta-count"></span><label class="ta-paper-toggle" title="the older paper sheet handed to an official at lunch or at the finish; practice only"><input type="checkbox" id="ta-paper" ${mode === 'paper' ? 'checked' : ''}> classic paper</label><button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
       <div class="ta-body" id="ta-body">
-        <p class="muted ta-help">${mode === 'paper' ? 'The paper sheet (older rally schools): fill it in at the stop, hand it to an official at lunch or at the finish. ' : 'The 2026 web form, filed at the TA point within 15 minutes; the red button at the end of the day prints the scorecard. '}Time in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
-        <div class="ta-helper mono" id="ta-helper"></div>
-        <table class="ta-legs" id="ta-legs"></table>
-        <div class="ta-form" id="ta-form">
-          ${has('ta-car') ? `<label>Car number <input id="ta-car" type="text" inputmode="numeric" value="${draft('ta-car', carDefault)}"></label>` : ''}
-          ${has('ta-password') ? `<label>Password <input id="ta-password" type="password" inputmode="numeric" maxlength="4" placeholder="4 digits" value="${draft('ta-password')}"></label>` : ''}
-          ${has('ta-phone') ? `<label>Phone <input id="ta-phone" type="tel" placeholder="registered number" value="${draft('ta-phone')}"></label>` : ''}
-          ${has('ta-stage') ? `<label>Stage <input id="ta-stage" type="number" min="0" step="1" value="${draft('ta-stage')}"></label>` : ''}
-          <label title="checkpoints passed + 1, filled in for you">Leg (auto) <select id="ta-leg">${vm.legs.map(l => `<option value="${l.legIndex}">${l.legIndex}</option>`).join('')}</select></label>
-          <label>Delay (s) <input id="ta-delay" type="number" min="0" step="1" value="${first ? Math.round(first.measured) : ''}"></label>
-          <label>Made up (s) <input id="ta-madeup" type="number" min="0" step="1" value="${first ? Math.round(first.recoverable) : ''}"></label>
-          <label title="in multiples of 10 s">Time (s) <input id="ta-request" type="number" min="0" step="${TA_STEP}" placeholder="10 s steps" value="${first ? first.suggested : ''}"></label>
-          <span id="ta-round" class="ta-round"></span>
-          <label>From instruction <input id="ta-from" type="number" min="1" step="1" value="${first?.fromLine ?? ''}"></label>
-          <label>to <input id="ta-to" type="number" min="1" step="1" value="${first?.toLine ?? ''}"></label>
-          <label class="wide">Cause <input id="ta-cause" type="text" list="ta-causes" placeholder="train, tractor, school bus, construction, combine" value="${draft('ta-cause', first?.cause ?? '')}"></label>
-          <datalist id="ta-causes">${TA_CAUSES.map(c => `<option value="${c}">`).join('')}</datalist>
-          <label title="witness: the car ahead">Car ahead <input id="ta-witness-ahead" type="text" placeholder="car number" value="${draft('ta-witness-ahead')}"></label>
-          <label title="witness: the car behind">Car behind <input id="ta-witness-behind" type="text" placeholder="car number" value="${draft('ta-witness-behind')}"></label>
-          ${has('ta-signature') ? `<label class="wide">Signature <input id="ta-signature" type="text" value="${draft('ta-signature')}"></label>` : ''}
-          <div class="ta-pattern mono" id="ta-pattern"></div>
-          <button id="ta-submit" class="primary">${mode === 'paper' ? 'Hand in the sheet' : 'File request'}</button>
-        </div>
+        <p class="muted ta-help">${mode === 'paper' ? 'The paper sheet (older rally schools): fill it in at the stop, hand it to an official at lunch or at the finish. ' : 'The 2026 web form (grscores.com/timeallowance), filed within 15 minutes of the TA point; the red button at the end of the day prints the scorecard. '}Time in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
+        <details class="ta-worksheet" id="ta-worksheet" open><summary>Your worksheet (not on the form)</summary>
+          <div class="ta-helper mono" id="ta-helper"></div>
+          <table class="ta-legs" id="ta-legs"></table>
+          <div class="ta-work">
+            <label>Delay (s) <input id="ta-delay" type="number" min="0" step="1" value="${first ? Math.round(first.measured) : ''}"></label>
+            <label>Made up (s) <input id="ta-madeup" type="number" min="0" step="1" value="${first ? Math.round(first.recoverable) : ''}"></label>
+            <span id="ta-round" class="ta-round"></span>
+            <div class="ta-pattern mono" id="ta-pattern"></div>
+          </div>
+        </details>
+        <div class="ta-form" id="ta-form">${mode === 'paper' ? taPaperHtml(formState) : taWebHtml(formState)}</div>
         <div id="ta-filed" class="ta-filed"></div>
         <div id="ta-ack"></div>
       </div>`;
     const legSel = taField('ta-leg') as unknown as HTMLSelectElement;
     if (first) legSel.value = String(first.legIndex);
-    const num = (id: string): number => Number(taField(id)?.value ?? '');
-    const txt = (id: string): string => taField(id)?.value ?? '';
+    const val = (id: string): string => (taPanel.querySelector(`#${id}`) as HTMLInputElement | null)?.value ?? '';
+    const num = (id: string): number => Number(val(id));
     const advice = (leg: number): ReturnType<Simulator['taAdvice']> => sim.taAdvice(leg);
     const measuredOf = (leg: number): number => taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).legs.find(l => l.legIndex === leg)?.measured ?? 0;
-    const witness = (): string => taWitnessText(txt('ta-witness-ahead'), txt('ta-witness-behind'));
     const refresh = (): void => {
-      const leg = Number(legSel.value); const req = num('ta-request');
+      const leg = Number(legSel.value); const req = allowanceSeconds(val('ta-min'), val('ta-sec'));
       const rd = taRounding(req, measuredOf(leg));
       const r = taPanel.querySelector('#ta-round'); if (r) { r.textContent = rd.text; r.classList.toggle('adj', rd.changed); }
-      const pat = taPanel.querySelector('#ta-pattern'); if (pat) pat.textContent = taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: rd.adjusted, cause: txt('ta-cause'), witness: witness() });
+      const pat = taPanel.querySelector('#ta-pattern'); if (pat) pat.textContent = taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: rd.adjusted, cause: val('ta-cause').replace(/^delayed by\s+/i, '') });
       let h = ''; try { h = taHelper(advice(leg)).text; } catch { h = ''; }
       const he = taPanel.querySelector('#ta-helper'); if (he) he.textContent = h;   // TAF-002: measured = stopped + chart loss, make up the odd seconds
     };
+    const setVal = (id: string, value: string): void => { const e = taField(id); if (e) { e.value = value; taDraft[id] = value; } };
     const fillFor = (leg: number): void => {
       const l = taFormVm(sim.observe({ peek: true }).ta, x => sim.taAdvice(x)).legs.find(x => x.legIndex === leg); if (!l) return;
       legSel.value = String(leg);
-      (taField('ta-delay') as HTMLInputElement).value = String(Math.round(l.measured)); (taField('ta-madeup') as HTMLInputElement).value = String(Math.round(l.recoverable)); (taField('ta-request') as HTMLInputElement).value = String(l.suggested);
-      (taField('ta-from') as HTMLInputElement).value = l.fromLine === null ? '' : String(l.fromLine); (taField('ta-to') as HTMLInputElement).value = l.toLine === null ? '' : String(l.toLine);
-      if (l.cause) { (taField('ta-cause') as HTMLInputElement).value = l.cause; taDraft['ta-cause'] = l.cause; }   // the cause the engine saw (a train, a tractor, ...)
+      setVal('ta-delay', String(Math.round(l.measured))); setVal('ta-madeup', String(Math.round(l.recoverable)));
+      setVal('ta-min', String(Math.floor(l.suggested / 60))); setVal('ta-sec', String(l.suggested % 60));
+      setVal('ta-from', l.fromLine === null ? '' : String(l.fromLine)); setVal('ta-to', l.toLine === null ? '' : String(l.toLine));
+      if (l.cause) setVal(mode === 'paper' ? 'ta-circumstances' : 'ta-cause', mode === 'paper' ? `caught by a ${l.cause}` : `Delayed by ${l.cause}`);   // the cause the engine saw (a train, a tractor, ...)
       refresh();
     };
-    for (const id of ['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-delay', 'ta-madeup', 'ta-request', 'ta-from', 'ta-to', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind', 'ta-signature']) {
+    const fieldIds = ['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-delay', 'ta-madeup', 'ta-min', 'ta-sec', 'ta-from', 'ta-to', 'ta-cause', 'ta-circumstances', 'ta-signature', 'ta-status', 'ta-w1-car', 'ta-w1-name', 'ta-w1-role', 'ta-w2-car', 'ta-w2-name', 'ta-w2-role'];
+    for (const id of fieldIds) {
       const f = taField(id); if (!f) continue;
-      f.addEventListener('input', () => { taDraft[id] = f.value; refresh(); });
-      f.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') f.blur(); if (e.key === 'Enter') (taPanel.querySelector('#ta-submit') as HTMLButtonElement).click(); });
+      f.addEventListener('input', () => { taDraft[id] = f.value; refresh(); }); f.addEventListener('change', () => { taDraft[id] = f.value; refresh(); });
+      f.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') f.blur(); if (e.key === 'Enter' && (f as HTMLElement).tagName !== 'TEXTAREA') (taPanel.querySelector(taLoggedIn || taMode === 'paper' ? '#ta-submit' : '#ta-login') as HTMLButtonElement).click(); });
     }
+    taPanel.querySelectorAll('input[name="ta-type"]').forEach(r => r.addEventListener('change', () => { taDraft['ta-type'] = (r as HTMLInputElement).value; }));
     legSel.addEventListener('change', () => fillFor(Number(legSel.value))); legSel.addEventListener('keydown', e => e.stopPropagation());
     (taPanel.querySelector('#ta-legs') as HTMLElement).onclick = e => { const b = (e.target as HTMLElement).closest('button[data-leg]') as HTMLElement | null; if (b) fillFor(Number(b.dataset.leg)); };
     (taPanel.querySelector('#ta-toggle') as HTMLElement).onclick = () => { taCollapsed = !taCollapsed; };
     const paper = taPanel.querySelector('#ta-paper') as HTMLInputElement; paper.onchange = () => { taMode = paper.checked ? 'paper' : 'web'; taBuiltFor = null; taSig = ''; };
+    // web: the login page (Car Number, Password, Phone Number) comes first
+    const login = taPanel.querySelector('#ta-login') as HTMLButtonElement | null;
+    if (login) login.onclick = () => {
+      if (!val('ta-car').trim() || !val('ta-password').trim() || !val('ta-phone').trim()) { flash('Fill in Car Number, Password and Phone Number'); return; }
+      if (!/^\d{4}$/.test(val('ta-password').trim())) { flash('The password is four digits'); return; }
+      taLoggedIn = true; (taPanel.querySelector('#ta-login-screen') as HTMLElement).hidden = true; (taPanel.querySelector('#ta-entry-screen') as HTMLElement).hidden = false; flash('Logged in to the Time Allowance page');
+    };
+    const see = taPanel.querySelector('#ta-see') as HTMLButtonElement | null;
+    if (see) see.onclick = () => { taShowFiled = !taShowFiled; taSig = ''; renderNow(); };
+    const ackBtn = taPanel.querySelector('#ta-ack-btn') as HTMLButtonElement | null;
+    if (ackBtn) ackBtn.onclick = () => {
+      if (!taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).endOfStage) { flash('Press the red button once, after the last Time Allowances of the ENTIRE stage (the end-of-stage TA point)'); return; }
+      act({ type: 'scorecard.ack' }); renderNow();
+    };
     (taPanel.querySelector('#ta-submit') as HTMLButtonElement).onclick = () => {
-      const leg = Number(legSel.value), seconds = num('ta-request'), fromLine = Math.round(num('ta-from')), toLine = Math.round(num('ta-to'));
-      if (!(seconds > 0) || !(fromLine >= 1) || !(toLine >= fromLine)) { flash('Fill in the time (seconds) and the instruction numbers it happened between'); return; }
-      if (taMode === 'web' && txt('ta-password') !== '' && !/^\d{4}$/.test(txt('ta-password'))) { flash('The password is four digits'); return; }
-      // TAF-001: the web form's fields travel with the request; blank ones are listed by the engine (the request is still filed)
-      const asNum = (id: string): number | undefined => { const v = txt(id).trim(); return v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined; };
-      const ahead = txt('ta-witness-ahead').trim(), behind = txt('ta-witness-behind').trim();
-      const a: Action = { type: 'ta.request', legIndex: leg, seconds, fromLine, toLine,
-        note: taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: seconds, cause: txt('ta-cause'), witness: witness() }),
-        ...(asNum('ta-car') !== undefined ? { carNumber: asNum('ta-car') } : {}), ...(taMode === 'web' && txt('ta-password') ? { password: txt('ta-password') } : {}), ...(taMode === 'web' && txt('ta-phone') ? { phone: txt('ta-phone') } : {}),
-        ...(asNum('ta-stage') !== undefined ? { stage: asNum('ta-stage') } : {}), ...(txt('ta-cause').trim() ? { cause: taCauseId(txt('ta-cause')) } : {}),
-        ...(ahead || behind ? { witnesses: { ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}) } } : {}) };
-      act(a);
+      const witnesses: TaWitness[] = [1, 2].map(n => ({ car: val(`ta-w${n}-car`).trim(), description: val(`ta-w${n}-name`).trim(), ...(val(`ta-w${n}-role`) ? { role: val(`ta-w${n}-role`) as 'contestant' | 'official' } : {}) }));
+      const typeSel = taPanel.querySelector('input[name="ta-type"]:checked') as HTMLInputElement | null;
+      const r = buildTaRequest(taMode, {
+        car: val('ta-car'), password: val('ta-password'), phone: val('ta-phone'), stage: val('ta-stage'), leg: Number(legSel.value), from: val('ta-from'), to: val('ta-to'), minutes: val('ta-min'), seconds: val('ta-sec'),
+        reason: val('ta-cause'), circumstances: val('ta-circumstances'), type: (typeSel?.value as TaRequestType | undefined) ?? 'time-allowance', status: val('ta-status') === 'navigator' ? 'navigator' : 'driver', signature: val('ta-signature'), witnesses,
+        delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0,
+      });
+      if ('error' in r) { flash(r.error); return; }
+      act(r.action); flash(taMode === 'web' ? 'Time Allowance submitted' : 'Sheet handed in');
       renderNow();
     };
     refresh();
@@ -497,13 +571,12 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const sig = JSON.stringify([vm.legs.map(l => [l.measured, l.recoverable, l.suggested, l.fromLine, l.toLine, l.filed?.adjusted ?? null]), vm.requests.length, vm.ackAvailable, vm.acked]);
     if (sig === taSig) return; taSig = sig;
     const legsEl = taPanel.querySelector('#ta-legs'); if (legsEl) legsEl.innerHTML = `<thead><tr><th>Leg</th><th title="measured delay">Delay</th><th title="time you could have made up">Made up</th><th title="suggested request">Suggest</th><th>Lines</th><th></th></tr></thead><tbody>${vm.legs.map(l => `<tr data-leg="${l.legIndex}"><td>${l.legIndex}</td><td class="mono">${formatInterval(l.measured)}</td><td class="mono">${formatInterval(l.recoverable)}</td><td class="mono"><b>${formatInterval(l.suggested)}</b></td><td>${l.fromLine !== null ? `${l.fromLine}-${l.toLine}` : '-'}</td><td><button class="mini" data-leg="${l.legIndex}">Use</button></td></tr>`).join('')}</tbody>`;
-    const filed = taPanel.querySelector('#ta-filed'); if (filed) filed.innerHTML = vm.requests.length ? `<b>Filed</b>${vm.requests.map(r => `<div class="${r.status === 'refused' ? 'danger' : ''}">Leg ${r.legIndex}: ${formatInterval(r.requested)}${r.adjustment ? ` (${esc(r.adjustment)})` : ''} ${r.status === 'refused' ? `refused: ${esc(r.reason ?? '')}` : 'filed'}</div>`).join('')}` : '';
+    const filed = taPanel.querySelector('#ta-filed') as HTMLElement | null; if (filed) filed.style.display = taMode === 'paper' || taShowFiled ? '' : 'none';
+    if (filed) filed.innerHTML = vm.requests.length ? `<b>Filed</b>${vm.requests.map(r => `<div class="${r.status === 'refused' ? 'danger' : ''}">Leg ${r.legIndex}: ${formatInterval(r.requested)}${r.adjustment ? ` (${esc(r.adjustment)})` : ''} ${r.status === 'refused' ? `refused: ${esc(r.reason ?? '')}` : 'filed'}</div>`).join('')}` : '';
     const ack = taPanel.querySelector('#ta-ack') as HTMLElement | null;
     if (ack) {
-      if (vm.endOfStage) {
-        ack.innerHTML = vm.acked ? '<div class="ok">Scorecard acknowledged.</div>' : '<p class="muted">End of the stage: check the scoring crew\'s scorecard and acknowledge it before the window closes.</p><button id="ta-ack-btn" class="primary">Acknowledge scorecard</button>';
-        const b = ack.querySelector('#ta-ack-btn') as HTMLButtonElement | null; if (b) b.onclick = () => { act({ type: 'scorecard.ack' }); renderNow(); };
-      } else ack.innerHTML = '';
+      ack.innerHTML = vm.endOfStage ? (vm.acked ? '<div class="ok" id="ta-acked">Scorecard acknowledged.</div>' : '<p class="muted">End of the stage: press the red button once the last Time Allowance is in, so the scoring crew can print your scorecard.</p>') : '';
+      const rb = taPanel.querySelector('#ta-ack-btn') as HTMLButtonElement | null; if (rb) rb.disabled = vm.acked;
     }
   }
 
@@ -631,8 +704,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       laps.replaceChildren(...swVm.lapRows.flatMap((r, i) => [el('span', { class: i === 0 ? 'cur' : '' }, `L${r.n}`), el('span', { class: i === 0 ? 'cur' : '' }, r.text), el('span', {}, `+${r.split}`)]));
     }
     const cvm = clockViewModel(o.tod, o.bezel, { rung, slop: o.rules.clockMinuteSlop, engine: (o.clock as EngineClock | undefined) ?? null });   // INST-001: the loose minute hand
-    { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme); }
-    clockCanvas.dataset.minuteAmbiguous = String(cvm.minuteAmbiguous);
+    { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme, app.settings.clockFace); }
+    clockCanvas.dataset.minuteAmbiguous = String(cvm.minuteAmbiguous); clockCanvas.dataset.face = app.settings.clockFace;
     if (digitalSw) dwMode.classList.toggle('attn', cvm.minuteAmbiguous && sw.mode !== 'tod');
     clockCap.innerHTML = `official start ${escapeHtml(formatClock(o.startTime))}${cvm.minuteAmbiguous ? '<div class="clock-warn" id="clock-warn">minute hand is between marks: read the minute on the watch (TOD, M)</div>' : ''}`;   // no numeric time of day at any aids rung (REG II.H.1.d(1))
     const svm = speedoViewModel(o.speedo.reading, 100);
@@ -728,6 +801,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const line = o.stoppedAtLine ?? (fl.line);
     const card = cachedCard(line);
     cardTitle.textContent = o.stoppedAtLine ? `Stopped: line ${line}` : policy.computedCard ? 'Perf card for the next line' : 'Your notes for this line';
+    renderSimpleChart(line);
     if (!card) { cardBody.innerHTML = ''; return; }
     const parts: string[] = [`<div><b>Line ${line}</b>: ${escapeHtml(card.text)}</div>`];
     const hold: HoldCard | null = policy.computedCard ? (holdCardFor(scenario, sim, line, o.asp) ?? openTransitCard(scenario, sim, o.driver.lastExecutedLine)) : null;   // UI-032: an open exact transit keeps its recorded IN time on the card
