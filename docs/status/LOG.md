@@ -224,3 +224,4 @@ One agent, no sub-agents (no Agent tool in this session). New SPECS section "FIX
 - Reduced bot matrix (D03/D04/D05/D08/D10/D11/D16/D17/D18 x 3 tiers x seeds 1-5 x 8 bots): oracle unchanged except D04 seed 4 (2, as before); goCount D04 0-1; noPause D08/D18 <= 1; rookie D18 <= 1.
 - Checks: tsc clean, 591 unit (was 558), build clean, 338/338 specs (was 322), 80 e2e (was 73).
 - Not done: see STATUS HANDOFF (PT-06 LOW 14/20/21/25-27, PT-09 LOW 10/12/13/14, PT-08 N-B14 and the campaign benchmark totals of N-B16, moving lesson 1's TA procedure to the recovery lesson).
+- PT-10 (b5e36af): 44/55, 13/16 fixed, 0 regressed. Fix sprint PT-10 launched (Sonnet).

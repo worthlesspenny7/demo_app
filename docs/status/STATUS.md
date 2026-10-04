@@ -14,12 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): PT-10 playability replay (Opus, read-only) on the fix-sprint PT-08/PT-09 commit (591 unit,
-  80 e2e, 338/338, ENGINE 3.2.0; path order Safety > Start on time (transits, which-timer, ghost-car, D16) > Stay on
-  course (griid-cameo, protocol, D09, lost, D10) > Stay on time (pause-arithmetic, D01, D03, timed-leads, D04, D05,
-  measure-car, D06, recovery, D08, calibration, D07, D18)). When it lands: commit the report; if its top fixes are small,
-  one more fix sprint, five checks, commit, push. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14;
-  PT-08 N-B14 (side-road turn at 500 ft), N-B16 (campaign benchmarks before play); TA procedure still in lesson 1.
+- In flight (2026-10-04): fix sprint PT-10 (Sonnet) on b5e36af. PT-10 = 44/55, 0 regressed; path reads as the Four S's.
+  Fixing: D06 hides the hidden car's charts at Silver/Gold, D06 MARK wording, D09 red-light card (REG V.H.1), answer tells,
+  turning-stop loss on the simple chart, N-B14 (turn kept for its own intersection), path-complete Next, Silver replays
+  without printed dwell, lighter evening one (TA out of lesson 1, 8x transits in D16), text hygiene, Dad's card print.
+  When it lands: five checks, commit, push, PT-11 replay. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
