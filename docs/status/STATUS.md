@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): nothing. The PT-05/PT-06 fix sprint is done and verified, NOT committed (see LOG "Fix sprint PT-05/PT-06"; SPECS
-  "FIX SPRINT" PLAY-001..011, ENG-001..019 without 014; ENGINE_VERSION 3.1.0, golden regenerated; tsc clean, 523 unit, 62 e2e, 300/300 specs).
-  Not done: PT-06 LOW 14 (unprinted YIELD/BLINKER and slow zones inside timed intervals, generator), 20-27 (CLI defaults, quit, observe clock
-  replay, lap memory cap, oracle laps at timed anchors, stopLoss(0, x)); PT-05 "skip to 1 minute before my time" button, "~N min at 4x" on drill
-  cards, campaign tier names, School index minutes. Next: review the diff, commit, push, then another playability pass (PT-07).
+- In flight (2026-10-04): PT-07 playability re-pass (Opus) and REVALIDATION-v3-education (Sonnet) running read-only on
+  commit 5bd53b2 (fix sprint PT-05/PT-06 landed: 523 unit, 62 e2e, 300/300 specs, ENGINE 3.1.0). When their reports
+  land (docs/playtest/PT-07-playability-v3-fixed.md, REVALIDATION-v3-education.md): commit them, fold the top fixes
+  with one fix agent, verify, push. Known not-done: PT-06 LOW 14 (generator puts YIELD/BLINKER nodes and slow zones
+  inside timed intervals) and LOW 20-27 (CLI defaults, lap memory cap, stopLoss(0,x)).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
