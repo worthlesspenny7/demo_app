@@ -1,0 +1,20 @@
+import { launch, BASE, SHOTS } from './reval4-common.js';
+const { browser, page, errors } = await launch(1366, 800);
+await page.goto(`${BASE}/#/cockpit/builtin/stage/1`); await page.waitForSelector('#cockpit');
+await page.locator('#pause').click().catch(() => {});
+const sel = page.locator('select').filter({ hasText: 'Mark' }).first();
+console.log('options', (await sel.locator('option').allInnerTexts()).join(' | '));
+// find a STOP row with a pause
+const n = await page.evaluate(() => window.__rally!.observe().book.find(i => i.pause && (!i.turn || i.turn === 'S'))!.n);
+console.log('stop row', n);
+await page.evaluate(n => window.__rally!.act({ type: 'line.set', n } as never), n); await page.waitForTimeout(200);
+const row = page.locator(`#book .row[data-n="${n}"], #book [data-n="${n}"]`).first();
+console.log('row found', await row.count());
+await row.scrollIntoViewIfNeeded().catch(() => {});
+const rowSel = row.locator('select').first();
+console.log('row select options', (await rowSel.locator('option').allInnerTexts()).join(' | '));
+await rowSel.selectOption({ index: 1 }); await page.waitForTimeout(300);
+await page.screenshot({ path: `${SHOTS}/v4-15-preread-mark-prompt.png` });
+console.log('prompt text', (await page.locator('#prompt').innerText().catch(() => '')).slice(0, 300));
+console.log('errors', errors);
+await browser.close();

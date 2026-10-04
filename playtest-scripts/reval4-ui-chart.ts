@@ -1,0 +1,10 @@
+import { launch, BASE, SHOTS, FRAMES, sideBySide } from './reval4-common.js';
+const { browser, page } = await launch(1366, 1400);
+await page.goto(`${BASE}/#/cockpit/builtin/stage/1`); await page.waitForSelector('#simplechart-table');
+const t = page.locator('#simplechart-table');
+console.log(await t.innerText());
+const hdr = await t.locator('th').allInnerTexts(); console.log('headers', hdr.join('|'));
+await t.scrollIntoViewIfNeeded();
+await t.screenshot({ path: `${SHOTS}/v4-08-simple-chart-sim.png` });
+await sideBySide(browser, `${SHOTS}/v4-09-simple-chart-vs-2026-frame.png`, { path: `${FRAMES}/2026-13m56s+0-lapboard-and-bezel-rally-clock.jpg`, crop: { x: 795, y: 65, w: 300, h: 340 } }, `${SHOTS}/v4-08-simple-chart-sim.png`, ['Real 2026 "Navigating 101" chart (frame 13m56s)', 'Simulator simple chart (performance card), 1939 Ford'], 520);
+await browser.close();

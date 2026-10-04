@@ -1,0 +1,12 @@
+import { launch, BASE, SHOTS, FRAMES, sideBySide } from './reval4-common.js';
+const { browser, page, errors } = await launch(1366, 800);
+await page.goto(`${BASE}/#/cockpit/builtin/stage/1`); await page.waitForSelector('#cockpit');
+await page.waitForTimeout(400);
+await page.screenshot({ path: `${SHOTS}/v4-06-cockpit-preread.png` });
+const ids = await page.evaluate(() => [...document.querySelectorAll('[id]')].map(e => e.id).filter(Boolean).slice(0, 120));
+console.log(ids.join(' '));
+const rung = await page.evaluate(() => window.__rally!.sim.sc.aids.rung); console.log('rung', rung);
+const clock = page.locator('#clock'); console.log('clock count', await clock.count());
+if (await clock.count()) await clock.first().screenshot({ path: `${SHOTS}/v4-07-clock-sim.png` });
+console.log('errors', errors);
+await browser.close();
