@@ -1,0 +1,37 @@
+/** PT-07 step 4: D16 Bronze by the card in the shared profile (start queue, W/Q, count, exact transit, lunch, restart), with three looks:
+ *  T-10 at the start (did the pre-read fold so the clock and watch show, PLAY-004), the lunch hold (card wording, Dad's line, PLAY-007),
+ *  and T-5 at the restart (is the count on screen, PLAY-004). Wall time from the cockpit's scale rules incl. the PLAY-003 hold fast-forward. */
+import { launch, goto, shot, txt, log, reset, hold, obs } from './pt07-common.js';
+import { playHuman } from './pt07-human.js';
+const [tier = '0', label = 'd16-bronze'] = process.argv.slice(2);
+const F = `${label}.txt`; reset(F);
+const h = await launch({ width: 1366, height: 768 });
+const { page } = h;
+await goto(page, `#/cockpit/drill/D16/${tier}/1`); await hold(page);
+log(F, '== PREREAD ==\n' + await txt(page, '#preread'));
+let o = await obs(page); log(F, 'launch ' + JSON.stringify(o.launch) + ' queue ' + JSON.stringify(o.startQueue) + ' book ' + o.book.length + ' lines');
+const base = { mode: 'card', start: 'count', warn: true, pullUp: true, scale: 8, log: (s: string) => log(F, s) } as const;
+const geo = async () => page.evaluate(() => { const b = (s: string) => { const e = document.querySelector(s) as HTMLElement | null; if (!e || !e.offsetParent) return null; const r = e.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]; }; return { preread: b('#preread'), prereadBox: b('#preread .box'), clock: b('#clock'), watch: b('#stopwatch'), countRoad: b('#start-count-road'), count: b('#start-count'), restartCard: b('#restartcard, .restartcard, .road-start, #startcard-road'), road: b('.road'), drawer: b('.drawer'), book: b('#book') }; });
+let r = await playHuman(page, { ...base, until: "o.phase === 'preread' && o.launch && o.launch.secondsToLaunch <= 10" });
+log(F, `T-10 at the start (wall ${(r.wall / 60).toFixed(1)} min): geometry ${JSON.stringify(await geo())}`);
+log(F, 'count: ' + await txt(page, '#start-count') + ' | preread: ' + (await txt(page, '#preread')).slice(0, 300));
+await shot(page, 'd16-start-T10');
+let wall = r.wall;
+r = await playHuman(page, { ...base, keepState: true, until: "o.driver.state === 'waiting:hold' && o.book[(o.stoppedAtLine || 1) - 1] && o.book[(o.stoppedAtLine || 1) - 1].promotedStop" });
+o = await obs(page); wall = r.wall;
+log(F, `\n== lunch hold line ${o.stoppedAtLine} tod ${o.tod} (wall ${(wall / 60).toFixed(1)} min); scale chip ${await txt(page, '#scale')}`);
+log(F, 'hold card: ' + await txt(page, '#holdcard') + '\ndriver: ' + (await txt(page, '#driverlog')).split('\n').slice(-3).join(' / '));
+await shot(page, 'd16-lunch-hold');
+r = await playHuman(page, { ...base, keepState: true, until: "o.driver.state === 'waiting:hold' && o.launch && o.launch.line > 1 && o.launch.secondsToLaunch <= 5.5" });
+o = await obs(page); wall = r.wall;
+log(F, `\n== restart T-5 line ${o.launch && o.launch.line} tod ${o.tod} (wall ${(wall / 60).toFixed(1)} min): geometry ${JSON.stringify(await geo())}`);
+log(F, 'count road: ' + await txt(page, '#start-count-road') + ' | restart card: ' + await txt(page, '#startcard-road') + '\ndriver: ' + (await txt(page, '#driverlog')).split('\n').slice(-4).join(' / '));
+await shot(page, 'd16-restart-T5');
+r = await playHuman(page, { ...base, keepState: true });
+log(F, `played: finished ${r.finished} wall est ${(r.wall / 60).toFixed(1)} min, sim ${(r.sim / 60).toFixed(1)} min`);
+await page.waitForTimeout(600);
+for (const d of await page.locator('details').all()) await d.evaluate(e => (e as HTMLDetailsElement).open = true);
+log(F, '== DEBRIEF ==\n' + await page.locator('#view').innerText());
+await goto(page, '#/'); log(F, '== HOME ==\n' + await txt(page, '#starthere-panel'));
+log(F, 'errors: ' + JSON.stringify(h.errors));
+await h.close();
