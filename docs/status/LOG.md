@@ -152,3 +152,5 @@ Sources: docs/playtest/PT-05-playability-v3.md (all ten top fixes, the three dri
   (Bronze ticks the path; the book follows the stop), UI-032 / UI-026 / LESSON-002 / START-001 / SPEED-001 / CHART-001 / TA-001 / TAF-001 (wording, 48 row, whole-second launch,
   one request per leg), SIM-002 (steps tick by tick across the sight boundary).
 - Not done: see STATUS HANDOFF.
+- Education re-validation v3 (edf4bce): tip accuracy 94 % loose / 71 % strict; curriculum order inverts the Four S's;
+  Dad's card not enough for a first morning (14 lines to add); 16 slips. Education fix sprint launched (Opus).

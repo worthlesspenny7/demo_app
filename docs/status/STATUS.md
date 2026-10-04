@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): PT-07 playability re-pass (Opus) and REVALIDATION-v3-education (Sonnet) running read-only on
-  commit 5bd53b2 (fix sprint PT-05/PT-06 landed: 523 unit, 62 e2e, 300/300 specs, ENGINE 3.1.0). When their reports
-  land (docs/playtest/PT-07-playability-v3-fixed.md, REVALIDATION-v3-education.md): commit them, fold the top fixes
-  with one fix agent, verify, push. Known not-done: PT-06 LOW 14 (generator puts YIELD/BLINKER nodes and slow zones
-  inside timed intervals) and LOW 20-27 (CLI defaults, lap memory cap, stopLoss(0,x)).
+- In flight (2026-10-04): (a) PT-07 playability replay (Opus, read-only) on 5bd53b2 -> docs/playtest/PT-07-playability-v3-fixed.md;
+  (b) education fix sprint (Opus) editing content/, src/core/drills, rubrics, curriculum, home/school/reference, tests:
+  curriculum reordered to the Four S's, honest headlines (no 'Clean run' under 0-2 stars), Dad's card to ~12 lines,
+  gates tightened, 16 slips fixed, 'Measure your car' lesson, D06 Bronze within 15-50. When (b) lands: five checks,
+  commit, push. When (a) lands: commit the report, then a UI fix sprint from its top-10. Known not-done: PT-06 LOW 14, 20-27.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
