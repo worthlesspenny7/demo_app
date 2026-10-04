@@ -49,7 +49,7 @@ describe('Time Allowance (REG V.H)', () => {
   });
   it('TA-001 rounding follows the measured delay exactly: 1m17s -> 1m10s below 1m15s of delay, 1m20s from 1m15s', () => {
     // two stages whose train leaves 72 s and 78 s of measured delay (found by search so the test states the rule, not the geometry)
-    const find = (target: number) => { for (let d = 60; d < 200; d += 2) { const sim = new Simulator(trainStage(d)); const bot = silentBot(sim); startLikeOracle(sim); while (sim.phase !== 'finished' && !sim.waitingForGo) { bot.onTick(); sim.step(0.1); } const q = sim.taQualifying[1] ?? 0; if (Math.abs(q - target) < 2) return d; } return null; };
+    const find = (target: number) => { for (let d = 60; d < 200; d += 2) { const sim = new Simulator(trainStage(d)); const bot = silentBot(sim); startLikeOracle(sim); runUntilWindow(sim, bot); const q = sim.taQualifying[1] ?? 0; if (Math.abs(q - target) < 2) return d; } return null; };
     for (const [target, want] of [[72, 70], [78, 80]] as const) {
       const d = find(target); expect(d, `train for ${target}`).not.toBeNull();
       const sim = new Simulator(trainStage(d!)); const bot = silentBot(sim); startLikeOracle(sim); runUntilWindow(sim, bot);
@@ -112,7 +112,7 @@ describe('Time Allowance (REG V.H)', () => {
     const sc = trainStage(); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { noRecovery: true }));
     expect(r.ta.requests.length).toBe(1); const q = r.ta.requests[0]!; expect(q.status).toBe('filed'); expect(q.adjusted % 10).toBe(0); expect(q.legIndex).toBe(1);
     expect(r.ta.scorecardAcked).toBe(true); expect(r.score.legs[0]!.taCredit).toBeGreaterThan(40);
-    expect(r.engineVersion).toBe('2.0.0');
+    expect(r.engineVersion).toBe('3.0.0');
   });
 
   it('TA-004 only trains, accident scenes, hazard-forced stops and declared emergency reduced speeds qualify; navigation errors, a slow vehicle and cross traffic never do', () => {
@@ -153,7 +153,7 @@ describe('Time Allowance (REG V.H)', () => {
     expect(note).toMatch(/^Delayed \d+m\d\ds by a train\. Made up 0m00s\. Request \d+m\d0s\.$/);
     sim.act({ type: 'ta.request', legIndex: 1, seconds: adv.suggested, fromLine: adv.fromLine!, toLine: adv.toLine!, note });
     expect(sim.taRequests[0]!.note).toBe(note); expect(sim.observe().ta.requests[0]!.adjusted).toBe(adv.suggested);
-    expect(new Simulator(trainStage()).taAdvice(1)).toEqual({ legIndex: 1, measuredDelay: 0, recoverable: 0, possible: 0, suggested: 0, fromLine: null, toLine: null });
+    expect(new Simulator(trainStage()).taAdvice(1)).toEqual({ legIndex: 1, measuredDelay: 0, recoverable: 0, possible: 0, suggested: 0, fromLine: null, toLine: null, stoppedSeconds: 0, chartLoss: 0, otherDelay: 0, measured: 0, makeUpToRound: 0, claim: 0, cause: null });
   });
 
   it('TA-006 slowing to 6 mph or more in sight of a Timing Checkpoint (to make a delay a multiple of 10 s) is not penalised; only stopping or 5 mph or less is', () => {

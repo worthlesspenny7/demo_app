@@ -1050,7 +1050,9 @@ describe('LESSON-006 Which timer, when', () => {
   it('LESSON-006 sits right after the Four S\'s and states the clock / stopwatch split with the two never-do rules', () => {
     const i = LESSONS.findIndex(l => l.id === 'which-timer'); expect(i).toBeGreaterThan(0); expect(LESSONS[i - 1]!.id).toBe('four-s');
     const l = lesson('which-timer'); const t = lessonText(l); checkOk(l); expect(l.title).toBe('Which timer, when');
-    hasAll(t, ['HB p.5', 'WWV', 'base time plus your assigned start position', 'IN and OUT times of an exact transit', '15-minute Time Allowance window', 'lap at every calibration point', 'asterisk', 'wheels stop', '10 % make-up count', 'backup', 'never read time of day off a running chrono', 'never time an interval off the clock']);
+    hasAll(t, ['HB p.5', 'WWV', 'Restart time = base + ASP', 'exact transit', 'TA window (15 min)', 'lap at every calibration point', 'asterisk', 'wheels stop', '10 % make-up count', 'never read time of day off a running chrono', 'never time an interval off the clock']);
+    // LESSON-006 (V3): the director's clock method
+    hasAll(t, ['time-of-day (TOD) mode', 'second hand', 'loose', 'one-minute mistake', 'Clock and Stopwatch [00:37]', 'Clock and Stopwatch [01:39]', 'Rally School Part 2 [13:08]', 'video, not in the documents', 'WATCH-009']);
     expect(l.check.options[l.check.answer]).toMatch(/stopwatch at the sign/);
   });
   it('LESSON-006 has a situation / device / what-you-write-down table and a worked calibration-lap example against the box', () => {
@@ -1066,7 +1068,7 @@ describe('LESSON-006 Which timer, when', () => {
 
 // ---------- UI V2: GRIID book, charts, TA point, restart cards, scorecard, digital watch ----------
 import { generateStage, PROFILES } from '../src/core/generator/generate.js';
-import { columnCLines, columnBSymbols, columnD, odometerBox, type ColumnBSymbol } from '../src/core/griid.js';
+import { columnCLines, columnBSymbols, columnD, odometerBox, formatInterval, type ColumnBSymbol } from '../src/core/griid.js';
 import { bookPages, griidRow, calibrationBoxRange, pageOfLine, signBox, ROWS_PER_PAGE, PAGE_ROW_CHOICES } from '../src/ui/viewmodels/book.js';
 import { griidIcon, odometerHtml, SYMBOL_LABEL } from '../src/ui/render/griid-icons.js';
 import { columnAHtml, columnBHtml, columnCHtml, griidRowHtml, taBannerHtml, esc } from '../src/ui/render/griid.js';
@@ -1183,7 +1185,7 @@ describe('UI-030 the three handbook charts as IN x OUT grids with the current pa
     const g = chartGrids(FORD_1939, { vIn: 35, vOut: 40 });
     expect(g.map(x => x.id)).toEqual(['accel', 'stopGo', 'turns']); expect(g.map(x => x.letter)).toEqual(['a', 'b', 'c']);
     expect(g[0]!.speeds[0]).toBe(0); expect(g[0]!.rows[0]!.in).toBe(0); expect(g[0]!.rows.every(r => r.cells.length === g[0]!.speeds.length)).toBe(true);
-    expect(g[1]!.speeds[0]).toBe(15); expect(g[2]!.speeds).toContain(55);
+    expect(g[1]!.speeds[0]).toBe(Math.min(...g[1]!.speeds)); expect(g[1]!.speeds[0]).toBeLessThanOrEqual(15); expect(g[2]!.speeds).toContain(55);   // SPEED-001: the Ford's rows run 10 to 55, the Packard's printed 15-50 plus the extrapolated 55
     for (const x of g) { expect(x.highlight).toEqual({ in: 35, out: 40 }); expect(x.rows.flatMap(r => r.cells).filter(c => c.hi).length).toBe(1); }
     const t = buildPerfTable(FORD_1939); const cell = g[1]!.rows.find(r => r.in === 35)!.cells.find(c => c.out === 40)!; expect(cell.value).toBe(t.stopGo.rows[35]![40]); expect(cell.text).toBe(cell.value.toFixed(1));
     expect(chartGrids(FORD_1939, { vIn: null, vOut: 35 })[0]!.highlight).toEqual({ in: 0, out: 35 });          // a start from rest highlights the 0 row of chart (a)
@@ -1214,8 +1216,8 @@ describe('UI-031 TA point screen', () => {
     const vm = taFormVm(ta, l => sim.taAdvice(l));
     expect(vm.visible).toBe(true); expect(vm.endOfStage).toBe(false); expect(vm.countdown).toBe('15:00'); expect(vm.legs.map(l => l.legIndex)).toEqual(ta.eligibleLegs);
     const leg3 = vm.legs.find(l => l.legIndex === 3)!; const adv = sim.taAdvice(3);
-    expect(leg3.measured).toBe(adv.measuredDelay); expect(leg3.recoverable).toBe(adv.recoverable); expect(leg3.suggested).toBe(adv.suggested); expect(leg3.suggested).toBe(50); expect([leg3.fromLine, leg3.toLine]).toEqual([80, 80]);
-    expect(leg3.text).toMatch(/Leg 3: delay 1m29s, could be made up 0m29s, suggested request 0m50s \(lines 80-80\)/);
+    expect(leg3.measured).toBe(adv.measuredDelay); expect(leg3.recoverable).toBe(adv.recoverable); expect(leg3.suggested).toBe(adv.suggested); expect(leg3.suggested % 10).toBe(0); expect(leg3.suggested).toBeGreaterThan(0); expect([leg3.fromLine, leg3.toLine]).toEqual([adv.fromLine, adv.toLine]); expect(leg3.fromLine).not.toBeNull();
+    expect(leg3.text).toBe(`Leg 3: delay ${formatInterval(adv.measuredDelay)}, could be made up ${formatInterval(adv.recoverable)}, suggested request ${formatInterval(adv.suggested)} (lines ${adv.fromLine}-${adv.toLine})`);   // TAF-002: the measured delay now includes the chart stop-and-go loss
     expect(vm.ackAvailable).toBe(false); expect(vm.example).toBe('Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.');
     sim.step(125); const later = taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)); expect(later.countdown).toBe('12:55');
     sim.step(900); expect(taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).visible).toBe(false);
@@ -1352,5 +1354,268 @@ describe('WATCH-008 digital stopwatch view-model and UI-033 instrument keys', ()
   it('UI-033 the key help lists Space / L / R / M, the reset rules and the clock-read key', () => {
     const t = KEY_HELP.map(k => `${k.keys}: ${k.does}`).join('\n');
     for (const s of ['Space', 'L or Enter', 'R: recall', 'M: digital watch mode', 'Reset button', 'Shift+R: force the reset even while running', 'C: the three performance charts', 'K or click the clock', 'T: Time Allowance form']) expect(t).toContain(s);
+  });
+});
+
+// ---------- V3 UI and lessons (LESSON-008, UI-037; INST-001/002, START-001/002, TAF-001/002, MAKEUP-001, PROTO-001, CAL-006) ----------
+import { launchPlan, startLaunchFor, startCount, makeUpPlan as uiMakeUp, scheduleCorrection as uiSchedule, inCalibrationRun, inTimedInterval, nextCallPrompt, driverLineKind, v3Findings, startDeltaRows, paceCarsFrom, startQueueVm, launchPlanFromInfo, V3_KINDS } from '../src/ui/viewmodels/v3.js';
+import { taFormFields, taHelper, taCauseId, taCauseLabel, taWitnessText, TA_STEP } from '../src/ui/viewmodels/ta.js';
+import { minuteAmbiguousAt } from '../src/ui/viewmodels/clock.js';
+import { schoolClaim, VIDEO_ONLY, VIDEO_ONLY_NOTE, type LessonBlock } from '../content/lessons.js';
+import { TA_FORM_FIELDS, CHECKPOINT_FACTS } from '../content/reference-data.js';
+
+const lists = (l: Lesson): string[][] => l.body.filter((b): b is Extract<LessonBlock, { list: string[] }> => typeof b !== 'string' && 'list' in b).map(b => b.list);
+const headings = (l: Lesson): string[] => l.body.filter((b): b is { heading: string } => typeof b !== 'string' && 'heading' in b).map(b => b.heading);
+const TS = /\[\d{2,3}:\d{2}\]/;
+const LABEL = /\((video, not in the documents|in the documents: [^)]+(?:\([^)]*\))?[^)]*)\)/;
+
+describe('LESSON-008 What the rally school adds', () => {
+  const l = lesson('rally-school');
+  it('LESSON-008 exists after the other lessons, cites the research files and has a check question', () => {
+    expect(l.title).toBe('What the rally school adds'); checkOk(l); expect(LESSONS[0]!.id).toBe('ghost-car');
+    expect(l.source).toMatch(/10a-training-sessions/); expect(l.source).toMatch(/10b-rally-school/); expect(l.source).toMatch(/10c-short-videos/);
+    expect(l.check.options[l.check.answer]).toMatch(/9:31:57/);
+  });
+  it('LESSON-008 covers every item of the spec: the director\'s clock method, the start procedure, the TA web form and arithmetic, the make-up rules, the lost doctrine, the checkpoint facts and the callout protocol', () => {
+    expect(headings(l)).toEqual(expect.arrayContaining(['The director\'s clock method', 'The start procedure', 'The Time Allowance web form and arithmetic', 'Making up time', 'When you are lost', 'Checkpoints', 'The callout protocol']));
+    const t = lessonText(l);
+    hasAll(t, ['loose minute hand', 'time-of-day mode', 'Position 1 leaves at base + 1 minute', '9:31:57', 'about 30 seconds', 'the last count lands on the launch second', 'Nobody releases you', 'pull up around it', 'car one minute ahead',
+      'four-digit password', 'red "done" button', 'checkpoints passed + 1', 'stopped time', 'chart', 'Make up the odd seconds', 'delayed 3:47, make up 7, claim 3:40', 'combine', 'school bus',
+      '20 % over gains 12 s per minute', 'running total', 'chunks', 'next speed-change sign', 'stop for 1 s of a 10 s pause and you gain 9 s', 'Never make up time inside a stopwatch-timed interval',
+      'return trip is half the lost time', 'double it', 'Rejoin 30 seconds behind', 'the minimum that you need to do at a green sign is nothing', 'red sign', '5 mph', 'Column D',
+      'ICE: identify, confirm, execute', 'I see it too', 'mark', 'holding 35', 'keep counting', '0, 1, 2', 'no early/late feedback']);
+  });
+  it('LESSON-008 every claim names its video and a [mm:ss] timestamp, and says whether the documents also say it or it is "(video, not in the documents)"', () => {
+    const items = lists(l).flat();
+    expect(items.length).toBeGreaterThanOrEqual(35);
+    for (const it of items) { expect(it, it).toMatch(TS); expect(it, it).toMatch(LABEL); expect(it, it).toMatch(/Clock and Stopwatch|Starting on Time|Time Delay Form|Making Up Time|Rally School Part [12]|2024 Training Session|2026 Training Session/); }
+    expect(items.filter(i => i.includes(VIDEO_ONLY)).length).toBeGreaterThanOrEqual(20);   // most of the page is video-only and says so
+    expect(schoolClaim('a claim', 'Making Up Time [05:11]')).toBe(`a claim (Making Up Time [05:11]) ${VIDEO_ONLY}`);
+    expect(schoolClaim('a claim', 'Making Up Time [01:03]', 'HB p.10')).toBe('a claim (Making Up Time [01:03]) (in the documents: HB p.10)');
+    expect(VIDEO_ONLY).toBe('(video, not in the documents)'); expect(VIDEO_ONLY_NOTE).toContain('video, not in the documents');
+  });
+  it('LESSON-008 the documents that do speak are cited with their rule numbers (REG II.H.1.d, V.A.1.a, V.E.3.a, V.H.3; HB p.7, p.10, p.13, p.15)', () => {
+    hasAll(lessonText(l), ['II.H.1.d(3)', 'REG V.A.1.a', 'REG V.E.3.a', 'REG V.H.3', 'HB p.7', 'HB p.10', 'HB p.13', 'HB p.15 tip 6']);
+  });
+  it('LESSON-008 the Reference page has a "Rally school" panel data set: the TA web form fields and the checkpoint facts, each with a video timestamp', () => {
+    expect(TA_FORM_FIELDS.map(f => f.id)).toEqual(['car', 'password', 'phone', 'stage', 'leg', 'instructions', 'time', 'cause', 'witnesses', 'done']);
+    for (const f of TA_FORM_FIELDS) { expect(f.cite, f.id).toMatch(TS); expect(f.note.length, f.id).toBeGreaterThan(10); }
+    expect(TA_FORM_FIELDS.find(f => f.id === 'password')!.inDocs).toBe(false); expect(TA_FORM_FIELDS.find(f => f.id === 'leg')!.note).toContain('Checkpoints passed + 1'); expect(TA_FORM_FIELDS.find(f => f.id === 'time')!.note).toContain('3:47 delayed, make up 7, claim 3:40');
+    const facts = CHECKPOINT_FACTS.map(f => f.fact).join('\n'); hasAll(facts, ['Green sign', 'Do nothing', 'Red sign', 'Stop and talk', '5 mph', 'Column D']);
+    for (const f of CHECKPOINT_FACTS) expect(f.cite, f.fact).toMatch(TS);
+  });
+});
+
+describe('LESSON-002 LESSON-003 LESSON-004 LESSON-006 and the recovery and calibration lessons carry the rally school additions', () => {
+  it('LESSON-002 teaches ICE, "mark", read-backs with "holding 35" and the rock-back stop count with "keep counting", and the printable driver\'s card is updated', () => {
+    const l = lesson('protocol'); const t = lessonText(l);
+    hasAll(t, ['ICE: identify, confirm, execute', 'I see it too', '"Mark."', 'holding 35', 'rock-back', 'keep counting', '0, 1, 2', 'coming in at 20, out 35, holding for nine', '9, 8, 7, 6', 'Rally School Part 2 [15:45]', '2026 Training Session [121:20]', 'video, not in the documents']);
+    const card = l.body.find((b): b is Extract<LessonBlock, { card: unknown }> => typeof b !== 'string' && 'card' in b)!;
+    expect(card.card.lines).toHaveLength(8); const c = card.card.lines.join(' '); hasAll(c, ['Holding 35', 'I see it too', 'mark', 'keep counting', 'GO', 'Stopped']);
+  });
+  it('LESSON-003 PREREAD-001 adds the Column D checkpoint number and arrival time, the pre-written chart losses and "page n of m" (and keeps the six notations)', () => {
+    const l = lesson('markup'); const t = lessonText(l);
+    expect(lists(l)[0]).toHaveLength(6);
+    hasAll(t, ['page 1 of 26', 'Column D', 'exact arrival time of day', '"-2.3"', '"10.2"', 'checkpoint number and arrival time', 'within 2 s', 'Classen, Rally School Part 1 [06:11]', 'video, not in the documents']);
+  });
+  it('LESSON-004 teaches position 1 = base + 1, launch at your own time minus the start loss, pull up only when the car ahead leaves, the 30-second warning and the count', () => {
+    const l = lesson('transits'); const t = lessonText(l); expect(l.check.options[l.check.answer]).toBe('2:22:00');
+    hasAll(t, ['Position 1 leaves at base + 1 minute', 'base 9:05:00 + position 27 min      = your time 9:32:00', 'launch = 9:32:00 - 3 s start loss   = 9:31:57', 'Nobody releases you', 'only after the car ahead of you has left on its own minute', 'pull up around it', 'Launch at your own time minus the car\'s standing-start net loss', 'About 30 seconds before the launch', 'last count lands on the launch second', 'Starting on Time [04:12]']);
+  });
+  it('LESSON-006 is the director\'s clock method: stopwatch TOD mode for time of day, clock for seconds, the loose minute hand and the one-minute mistake', () => {
+    const t = lessonText(lesson('which-timer'));
+    hasAll(t, ['stopwatch in its time-of-day (TOD) mode', 'the clock is used only for its second hand', 'a rather loose minute hand', 'one-minute mistake', 'second hand at about 55 or 56', 'between the numerals', 'a stopwatch TOD-mode read counts as a clock read']);
+  });
+  it('recovery lesson (MAKEUP-001): the 20 % rule, chunks, drop at the next sign, stop shortening and never inside a timed interval', () => {
+    const t = lessonText(lesson('recovery'));
+    hasAll(t, ['20 % over gains 12 s per minute', '5 x the seconds owed', 'running total', 'chunks', 'Drop the extra speed at the next speed-change sign', 'stop for 1 s of a 10 s pause and you gained 9 s', 'Stop shortening', 'Never make up time inside a stopwatch-timed interval', 'disturbed timed interval', 'Making Up Time [05:11]']);
+  });
+  it('calibration lesson (CAL-006): no live feedback, schedule correction, clicks = error x factor / 3600, double a 28-minute run\'s error for s/h', () => {
+    const t = lessonText(lesson('calibration'));
+    hasAll(t, ['No live feedback', 'the pace bar and the early/late cues are hidden', 'Clicks = error (s/h) x factor / 3600', 'double the error', 'one second every five minutes', '1 s per N minutes', '1 s per 7.0 min', 'Stock speedometer']);
+  });
+});
+
+describe('UI-037 the start card: your time, launch at your time minus the start loss (START-001)', () => {
+  it('UI-037 START-001 launchPlan prints "your time HH:MM:SS, launch at HH:MM:SS (minus N s)"', () => {
+    const p = launchPlan(9 * 3600 + 32 * 60, 3);
+    expect(p.text).toBe('your time 09:32:00, launch at 09:31:57 (minus 3 s)'); expect(p.launchTod).toBe(9 * 3600 + 31 * 60 + 57); expect(p.minus).toBe(3);
+    expect(launchPlan(hms(14, 10, 0), 1.5).text).toBe('your time 14:10:00, launch at 14:09:58 (minus 2 s)');   // 1.5 s rounds to whole seconds
+    expect(launchPlan(hms(8, 0, 0), 0).minus).toBe(0);
+  });
+  it('UI-037 START-001 the plan for a generated stage start and restart comes from the car\'s standing-start net loss (chart a)', () => {
+    const sc = generateStage(1, { ...PROFILES.fullStage!, asp: 17 });
+    const start = startLaunchFor(sc, 1)!; const first = sc.book[0]!;
+    expect(start.yourTime).toBe(first.restartTime); expect(start.loss).toBeCloseTo(accelLoss(first.speed ?? 30, sc.car), 0); expect(start.launchTod).toBe(Math.floor(first.restartTime!) - start.minus);
+    const rs = sc.book.find(i => i.section === 'restart')!; const rp = startLaunchFor(sc, rs.n)!; expect(rp.yourTime).toBe(rs.restartTime); expect(rp.text).toMatch(/^your time \d\d:\d\d:\d\d, launch at \d\d:\d\d:\d\d \(minus \d+ s\)$/);
+    expect(startLaunchFor(sc, 2 + sc.book.findIndex(i => i.section === 'finish'))).toBeNull();
+    expect(launchPlanFromInfo({ ownTime: hms(9, 32, 0), netLoss: 3, launchTime: hms(9, 31, 57) })!.text).toBe('your time 09:32:00, launch at 09:31:57 (minus 3 s)'); expect(launchPlanFromInfo(null)).toBeNull();
+  });
+  it('UI-037 START-001 the 30-second warning comes up 30 s before the launch and the visible count ends with GO exactly on the launch second', () => {
+    const L = hms(9, 31, 57);
+    expect(startCount(L - 40, L).active).toBe(false);
+    const w = startCount(L - 30, L); expect(w.phase).toBe('warning'); expect(w.warning).toBe(true); expect(w.banner).toContain('About 30 seconds'); expect(w.banner).toContain('09:31:57'); expect(w.beatText).toBeNull();
+    expect(startCount(L - 11, L).phase).toBe('warning');
+    const beats: string[] = []; for (let t = L - 12; t <= L + 2.5; t += 0.5) { const c = startCount(t, L); if (c.beatText !== null && beats[beats.length - 1] !== c.beatText) beats.push(c.beatText); }
+    expect(beats).toEqual(['10', '9', '8', '7', '6', '5', '4', '3', '2', '1', 'GO']);
+    expect(startCount(L - 1, L).beatText).toBe('1'); expect(startCount(L - 0.2, L).beatText).toBe('1'); expect(startCount(L, L).beatText).toBe('GO'); expect(startCount(L, L).phase).toBe('go');   // the last beat lands on the launch second
+    expect(startCount(L - 3, L).beatText).toBe('3'); expect(startCount(L - 3.4, L).beatText).toBe('4');
+    expect(startCount(L + 2, L).phase).toBe('done'); expect(startCount(L + 2, L).beatText).toBeNull();
+    expect(startCount(NaN, L).active).toBe(false); expect(startCount(L, null).active).toBe(false);
+  });
+  it('UI-037 START-001 the queue at the sign: wait while the car ahead is there, pull up when it has gone, go around it when it sits (never a minute early)', () => {
+    const t0 = hms(9, 30, 0);
+    expect(startQueueVm(null, t0, 3).state).toBe('none');
+    const waiting = startQueueVm({ carAheadAtSign: true, carAheadLeavesTod: t0 + 20, pulledUp: false, cars: [{ relative: 'ahead', atSign: true, sitting: false }] }, t0, 3); expect(waiting.state).toBe('waiting'); expect(waiting.canPullUp).toBe(false); expect(waiting.text).toContain('wait until it leaves on its minute'); expect(waiting.text).toContain('09:30:20');
+    expect(startQueueVm({ carAheadAtSign: true, carAheadLeavesTod: t0 + 20, cars: [] }, t0, 1).text).not.toContain('09:30:20');   // legal mode: no clock times
+    expect(startQueueVm({ carAheadAtSign: true, carAheadLeavesTod: t0 - 30, cars: [{ relative: 'ahead', sitting: true }] }, t0, 2).state).toBe('sitting');
+    const clear = startQueueVm({ carAheadAtSign: false, pulledUp: false, cars: [] }, t0, 2); expect(clear.state).toBe('clear'); expect(clear.canPullUp).toBe(true);
+    expect(startQueueVm({ carAheadAtSign: false, pulledUp: true, cars: [] }, t0, 2).state).toBe('pulledUp');
+  });
+});
+
+describe('UI-037 the TA form uses the TAF-001 fields and the TAF-002 arithmetic helper', () => {
+  it('UI-037 TAF-001 the web form: car, password, phone, stage, leg (auto-filled), instructions from/to, time in 10 s steps, cause, witnesses ahead and behind', () => {
+    const web = taFormFields('web').map(f => f.id);
+    expect(web).toEqual(['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-request', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind']);
+    expect(taFormFields('web').find(f => f.id === 'ta-leg')!.hint).toContain('filled in for you'); expect(taFormFields('web').find(f => f.id === 'ta-request')!.hint).toBe('in 10 s steps'); expect(TA_STEP).toBe(10);
+  });
+  it('UI-037 TAF-001 the classic paper toggle drops the password and the phone and adds a signature', () => {
+    const paper = taFormFields('paper').map(f => f.id);
+    expect(paper).not.toContain('ta-password'); expect(paper).not.toContain('ta-phone'); expect(paper).toContain('ta-signature'); expect(paper).toEqual(expect.arrayContaining(['ta-car', 'ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-request', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind']));
+  });
+  it('UI-037 TAF-002 the helper says measured = stopped + chart loss and to make up the odd seconds: delayed 3:47, make up 7, claim 3:40', () => {
+    const h = taHelper({ measuredDelay: 227, stoppedSeconds: 221, chartLoss: 6 });
+    expect(h.measured).toBe(227); expect(h.makeUp).toBe(7); expect(h.claim).toBe(220); expect(h.text).toBe('measured 3m47s = stopped 3m41s + chart loss 6 s; make up the odd 7 s, claim 3m40s.');
+    const e = taHelper({ measuredDelay: 227, measured: 227.4, makeUpToRound: 7, claim: 220, stoppedSeconds: 221, chartLoss: 6.4, otherDelay: 0 }); expect(e.makeUp).toBe(7); expect(e.claim).toBe(220);
+    expect(taHelper({ measuredDelay: 90 }).text).toBe('measured 1m30s = stopped time + chart stop-and-go loss; already a multiple of 10 s, claim 1m30s.');
+    expect(taHelper({ measuredDelay: 0 }).text).toBe('No delay measured: nothing to claim.');
+    expect(taHelper({ measuredDelay: 87.5, measured: 87.6, stoppedSeconds: 77.4, chartLoss: 10.2, makeUpToRound: 8, claim: 80, suggested: 30 }).text).toBe('measured 1m28s = stopped 1m17s + chart loss 10.2 s; make up the odd 8 s, claim 1m20s. The committee denies what you could have made up (V.H.5): suggested request 0m30s.');   // the engine\'s own numbers (TAF-002)
+    expect(taHelper({ measuredDelay: 100, stoppedSeconds: 60, chartLoss: 7, otherDelay: 33 }).text).toContain('+ drive-through delay 33 s');
+  });
+  it('UI-037 TAF-001 the cause is sent as the engine names it (train, tractor, schoolBus, construction, combine, accident) and the witnesses read "car 2 ahead, car 8 behind"', () => {
+    expect(taCauseId('stopped by a train')).toBe('train'); expect(taCauseId('a farm tractor')).toBe('tractor'); expect(taCauseId('a school bus')).toBe('schoolBus'); expect(taCauseId('giant combine')).toBe('combine'); expect(taCauseId('construction zone')).toBe('construction'); expect(taCauseId('accident scene')).toBe('accident'); expect(taCauseId('a cow')).toBe('a cow');
+    expect(taCauseLabel('schoolBus')).toBe('school bus'); expect(taCauseLabel('accident')).toBe('accident scene'); expect(taCauseLabel('emergency')).toBe('emergency speed'); expect(taCauseLabel('train')).toBe('train'); expect(taCauseLabel(null)).toBeNull();
+    expect(taWitnessText('2', '8')).toBe('car 2 ahead, car 8 behind'); expect(taWitnessText('car 2', '')).toBe('car 2 ahead'); expect(taWitnessText()).toBe('');
+  });
+});
+
+describe('UI-037 the ledger shows the running make-up total with the 10 % and 20 % options (MAKEUP-001)', () => {
+  it('UI-037 MAKEUP-001 4 s late at 35 mph: +10 % = 38.5 mph for 40 s (6 s per minute), +20 % = 42 mph for 20 s (12 s per minute), with the "drop at the next sign" reminder', () => {
+    const m = uiMakeUp(4, 35);
+    expect(m.owed).toBe(4); expect(m.direction).toBe('over');
+    expect(m.options.map(o => [o.pct, o.mph, o.seconds, o.perMinute])).toEqual([[10, 38.5, 40, 6], [20, 42, 20, 12]]);
+    expect(m.options[0]!.text).toBe('+10 %: 38.5 mph for 40 s (6 s per minute)'); expect(m.options[1]!.text).toBe('+20 %: 42 mph for 20 s (12 s per minute)');
+    expect(m.dropReminder).toContain('Drop the extra speed at the next speed-change sign'); expect(m.text).toContain('Owed 0m04s');
+    expect(m.chunks[0]).toEqual({ minutes: 1, gain10: 6, gain20: 12 }); expect(m.chunks[1]).toEqual({ minutes: 2, gain10: 12, gain20: 24 });
+  });
+  it('UI-037 MAKEUP-001 30 s at 40 mph: 44 mph for 300 s (5 min) or 48 mph for 150 s; early by 6 s drives under; a clear ledger has no options', () => {
+    const m = uiMakeUp(30, 40); expect(m.options.map(o => [o.mph, o.seconds])).toEqual([[44, 300], [48, 150]]);
+    const e = uiMakeUp(-6, 40); expect(e.direction).toBe('under'); expect(e.options[0]!.mph).toBe(36); expect(e.options[0]!.seconds).toBe(60);
+    const z = uiMakeUp(0, 40); expect(z.options).toEqual([]); expect(z.owed).toBe(0); expect(uiMakeUp(null, 40).direction).toBe('none');
+  });
+  it('UI-037 MAKEUP-001 a timed interval shows "do not make up time inside it" and a printed pause offers stop shortening (1 s of a 10 s pause gains 9 s)', () => {
+    expect(uiMakeUp(12, 40, { inTimedInterval: true }).timedWarning).toContain('do not make up time inside it'); expect(uiMakeUp(12, 40).timedWarning).toBeNull(); expect(uiMakeUp(0, 40, { inTimedInterval: true }).timedWarning).toBeNull();
+    expect(uiMakeUp(9, 40, { pause: 10 }).stopShortening).toContain('leave 9 s early'); expect(uiMakeUp(9, 40, { pause: 0 }).stopShortening).toBeNull();
+  });
+  it('UI-037 MAKEUP-001 inTimedInterval follows the last node crossed: a timed hold is active until its seconds are over', () => {
+    const sc = new ScenarioBuilder({ startTime: hms(8, 0, 0) }).start(30).advanceMiles(0.2).timedAt('timed hold', { holdSpeed: 30, seconds: 36, thenSpeed: 40 }).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
+    const timed = sc.book.find(i => i.timed)!; const ev = [{ tod: 100, s: 0, type: 'node', detail: { nodeId: timed.nodeId } }];
+    expect(inTimedInterval(sc, ev, 120)).toBe(true); expect(inTimedInterval(sc, ev, 100 + timed.timed!.seconds + (timed.pause ?? 0) + 1)).toBe(false); expect(inTimedInterval(sc, [], 120)).toBe(false);
+  });
+});
+
+describe('UI-037 the cockpit clock honours minuteAmbiguous (INST-001) and the watch TOD mode is the time-of-day source (INST-002)', () => {
+  it('UI-037 INST-001 within 5 s either side of the minute change the minute hand is drawn between two marks and no minute is resolved at rung <= 1', () => {
+    for (const sec of [55, 57, 59.5, 0, 2, 5]) {
+      const v = clockViewModel(hms(10, 14, 0) + sec - (sec >= 55 ? 60 : 0) + (sec >= 55 ? 60 : 0), 0, { rung: 1 });
+      expect(v.minuteAmbiguous, `sec ${sec}`).toBe(true); expect(v.minuteResolved, `sec ${sec}`).toBeNull();
+      expect((v.minuteDeg / 6) % 1, `sec ${sec}`).toBeCloseTo(0.5, 5);   // half way between two minute marks, never on one
+    }
+    const v = clockViewModel(hms(10, 14, 30), 0, { rung: 1 }); expect(v.minuteAmbiguous).toBe(false); expect(v.minuteResolved).toBe(14); expect(v.minuteDeg).toBeCloseTo((14 + 0.5) * 6, 3);
+    expect(minuteAmbiguousAt(hms(10, 14, 55))).toBe(true); expect(minuteAmbiguousAt(hms(10, 14, 54.9))).toBe(false); expect(minuteAmbiguousAt(hms(10, 15, 5))).toBe(true); expect(minuteAmbiguousAt(hms(10, 15, 5.1))).toBe(false);
+  });
+  it('UI-037 INST-001 the slop comes from rules.clockMinuteSlop and the engine\'s own flag wins; at rung >= 2 the hand is not hidden', () => {
+    expect(clockViewModel(hms(10, 14, 52), 0, { rung: 0, slop: 10 }).minuteAmbiguous).toBe(true); expect(clockViewModel(hms(10, 14, 52), 0, { rung: 0, slop: 5 }).minuteAmbiguous).toBe(false);
+    expect(clockViewModel(hms(10, 14, 30), 0, { rung: 0, engine: { minuteAmbiguous: true } }).minuteAmbiguous).toBe(true);
+    const r3 = clockViewModel(hms(10, 14, 58), 0, { rung: 3 }); expect(r3.minuteAmbiguous).toBe(false); expect(r3.minuteResolved).toBe(14);
+  });
+  it('UI-037 INST-001 the engine\'s own hand angle is drawn when the minute is readable, and the flag overrides it when not (observe().clock)', () => {
+    const eng = { hourAngle: 10, minuteAngle: 123.4, secondAngle: 5, minuteAmbiguous: false, hour: 9, minute: 20, second: 0 };
+    const a = clockViewModel(hms(9, 20, 30), 0, { rung: 0, engine: eng }); expect(a.minuteDeg).toBeCloseTo(123.4, 3); expect(a.minuteResolved).toBe(20); expect(a.minuteAmbiguous).toBe(false);
+    const b = clockViewModel(hms(9, 20, 59), 0, { rung: 1, engine: { ...eng, minuteAmbiguous: true, minute: null } }); expect(b.minuteAmbiguous).toBe(true); expect(b.minuteResolved).toBeNull(); expect((b.minuteDeg / 6) % 1).toBeCloseTo(0.5, 5);
+    const c = clockViewModel(hms(9, 20, 59), 0, { rung: 2, engine: { ...eng, minuteAmbiguous: true, minute: 20 } }); expect(c.minuteAmbiguous).toBe(false); expect(c.minuteResolved).toBe(20); expect(c.minuteDeg).toBeCloseTo(123.4, 3);   // rung 2: the engine resolves the minute
+  });
+  it('UI-037 INST-002 the digital watch\'s TOD mode shows the time of day and the M key toggles it', () => {
+    expect(new KeyMapper().keydown({ key: 'm' })).toEqual({ type: 'watch.mode' });
+    expect(todText(hms(9, 31, 57))).toBe('09:31:57.00');
+  });
+});
+
+describe('UI-037 the cockpit keys and driver lines (PROTO-001, START-001)', () => {
+  it('UI-037 PROTO-001 START-001 W warns the driver, Q pulls up, I identifies', () => {
+    const k = new KeyMapper(); expect(k.keydown({ key: 'w' })).toEqual({ type: 'call.warn' }); expect(k.keydown({ key: 'q' })).toEqual({ type: 'pullUp' }); expect(k.keydown({ key: 'i' })).toEqual({ type: 'identify' });
+    const t = KEY_HELP.map(x => `${x.keys}: ${x.does}`).join('\n'); hasAll(t, ['W: warn the driver', 'Q: pull up', 'I: ICE']);
+  });
+  it('UI-037 PROTO-001 the driver\'s new lines are classified: I see it too, mark, holding 35, the count echo', () => {
+    expect(driverLineKind({ text: 'I see it too' })).toBe('confirm'); expect(driverLineKind({ text: 'Mark.' })).toBe('mark'); expect(driverLineKind({ text: 'Okay, I\'m holding 35' })).toBe('holding'); expect(driverLineKind({ text: 'Keep counting' })).toBe('count');
+    expect(driverLineKind({ text: '9, 8, 7' })).toBe('count'); expect(driverLineKind({ text: '9', kind: 'readback' })).toBe('count'); expect(driverLineKind({ text: '0' })).toBe('count'); expect(driverLineKind({ text: 'Mark', kind: 'readback' })).toBe('mark'); expect(driverLineKind({ text: 'Holding 35', kind: 'readback' })).toBe('holding'); expect(driverLineKind({ text: 'whatever', kind: 'holding' })).toBe('holding'); expect(driverLineKind({ text: 'Right, 35.', kind: 'readback' })).toBe('readback'); expect(driverLineKind({ text: 'Which way?', kind: 'question' })).toBe('question'); expect(driverLineKind({ text: 'Going', kind: 'info' })).toBe('info');
+  });
+  it('UI-037 PROTO-001 at rung >= 2 the next-call prompt names the next sign, the turn and the speed; below rung 2 there is none', () => {
+    const sc = generateStage(1); const line = sc.book.findIndex(i => i.turn && i.turn !== 'S' && i.speed !== undefined) + 1; expect(line).toBeGreaterThan(1);
+    const p = nextCallPrompt(sc, line - 1, 2)!; expect(p).toMatch(/^Line \d+, next call: .*\.$/); expect(p).toMatch(/turn (left|right)|bear|acute|jog/); expect(p).toMatch(/\d+ after/);
+    expect(nextCallPrompt(sc, line - 1, 1)).toBeNull(); expect(nextCallPrompt(sc, line - 1, 0)).toBeNull(); expect(nextCallPrompt(sc, sc.book.length, 3)).toBeNull();
+  });
+});
+
+describe('UI-037 calibration hides the pace bar and cues, and offers the schedule correction (CAL-006)', () => {
+  const sc = generateStage(1);
+  it('UI-037 CAL-006 between the begin line and the last calibration point the run is a calibration run; before and after it is not', () => {
+    const cal = sc.book.filter(i => i.section === 'calibration'); expect(cal.length).toBeGreaterThanOrEqual(3);
+    const first = cal[0]!.n, last = cal[cal.length - 1]!.n;
+    expect(inCalibrationRun(sc, first - 1)).toBe(false); expect(inCalibrationRun(sc, first)).toBe(true); expect(inCalibrationRun(sc, last - 1)).toBe(true); expect(inCalibrationRun(sc, last)).toBe(false); expect(inCalibrationRun(sc, null)).toBe(false);
+  });
+  it('UI-037 CAL-006 the schedule correction: 5 s late in 25 min is 1 s per 5 min; the HB example 4.1 s in 28.7 min is 8.2 s per hour (double the error)', () => {
+    const a = uiSchedule(5, 25); expect(a.text).toBe('late 5 s in 25 min = 12 s per hour: gain 1 s per 5 min'); expect(a.everyMinutes).toBe(5); expect(a.perHour).toBe(12);
+    const b = uiSchedule(4.1, 28.72); expect(b.perHour).toBeCloseTo(8.6, 0); expect(b.text).toContain('1 s per 7 min');
+    const e = uiSchedule(-3, 28, 4057); expect(e.text).toContain('early 3 s'); expect(e.text).toContain('lose 1 s per'); expect(e.clicks).toBeCloseTo(Math.abs(e.perHour) * 4057 / 3600, 0);
+    expect(uiSchedule(0, 28).text).toBe('No error: no correction needed.');
+  });
+});
+
+describe('UI-037 the debrief lists oneMinuteMistake, timedIntervalDisturbed and late-launch findings separately (INST-002, MAKEUP-001, START-001)', () => {
+  const result = {
+    instrumentDiscipline: [{ kind: 'clockForTimeOfDay', line: 4, text: 'x' }],
+    findings: [
+      { kind: 'oneMinuteMistake', line: 12, text: 'Left the restart on 09:33 instead of 09:32.' }, { kind: 'timedIntervalDisturbed', line: 20, text: 'Made up 6 s inside the 36 s hold.' },
+      { kind: 'lateLaunch', line: 1, text: 'Launched 2.4 s after 09:31:57.' }, { kind: 'earlyLaunch', line: 12, text: 'Launched 1.9 s early.' },
+    ],
+    startDeltas: [{ line: 1, kind: 'start', ownTime: hms(9, 32, 0), netLoss: 3, launchTime: hms(9, 31, 57), actual: hms(9, 31, 59.4), delta: 2.4, warned: true, pulledUp: true, refusedPullUps: 1 }, { line: 12, kind: 'restart', ownTime: hms(11, 5, 0), netLoss: 2, launchTime: hms(11, 4, 58), actual: null, delta: null, warned: false, pulledUp: false, refusedPullUps: 0 }],
+  };
+  it('UI-037 INST-002 MAKEUP-001 START-001 the three kinds are listed separately, each with its line and text, and kept apart from the WATCH-009 findings', () => {
+    const v = v3Findings(result);
+    expect(v.oneMinuteMistake.map(f => f.line)).toEqual([12]); expect(v.timedIntervalDisturbed.map(f => f.line)).toEqual([20]); expect(v.lateLaunch.map(f => f.line)).toEqual([1]); expect(v.earlyLaunch.map(f => f.line)).toEqual([12]);
+    expect(v.other).toEqual([{ kind: 'clockForTimeOfDay', line: 4, text: 'x' }]); expect(v.all).toHaveLength(4); expect(v.summary).toBe('One-minute mistake x1, Timed interval disturbed x1, Late launch x1, Early launch x1');
+    expect(V3_KINDS).toEqual(['oneMinuteMistake', 'timedIntervalDisturbed', 'lateLaunch', 'earlyLaunch']);
+  });
+  it('UI-037 an engine that carries the kinds in instrumentDiscipline or one field per kind is read too; a clean run says so', () => {
+    expect(v3Findings({ instrumentDiscipline: [{ kind: 'oneMinuteMistake', line: 3, text: 't' }] }).oneMinuteMistake).toHaveLength(1);
+    const byField = v3Findings({ oneMinuteMistake: true, timedIntervalDisturbed: [{ line: 2, text: 'u' }], lateLaunch: 2 }); expect(byField.oneMinuteMistake).toHaveLength(1); expect(byField.timedIntervalDisturbed[0]!.text).toBe('u'); expect(byField.lateLaunch).toHaveLength(2);
+    const clean = v3Findings({}); expect(clean.all).toEqual([]); expect(clean.summary).toBe('No one-minute mistake, no disturbed timed interval, no late or early launch.'); expect(v3Findings(null).all).toEqual([]);
+  });
+  it('UI-037 START-001 the scorecard view-model carries them and the start deltas; the WATCH-009 block no longer counts them', () => {
+    const sc = scorecardViewModel({ ...({ score: { legs: [], raw: 0, ageFactor: 1, score: 0, aces: 0 } } as object), ...result, ta: { requests: [], scorecardAcked: null } } as never, null);
+    expect(sc.v3.lateLaunch).toHaveLength(1); expect(sc.discipline.findings.map(f => f.kind)).toEqual(['clockForTimeOfDay']);
+    const rows = startDeltaRows(result); expect(rows).toHaveLength(2); expect(rows[0]!.text).toBe('line 1 start: own time 09:32:00, launch 09:31:57, left 09:31:59 (+2.4 s)'); expect(rows[0]!.flagged).toBe(true);
+    expect(startDeltaRows({ startDeltas: [{ line: 1, kind: 'start', ownTime: 35580, launchTime: 35575.6, actual: 35580, delta: 4.4, warned: false }] })[0]!.text).toContain('launch 09:52:56');   // 35575.6 rounds to the second the start card shows
+    expect(rows[1]!.text).toContain('did not leave'); expect(rows[1]!.text).toContain('no warning to the driver'); expect(sc.startDeltas).toHaveLength(2);
+  });
+});
+
+describe('UI-037 pace cars ahead and behind are drawn in the road view when present (START-002)', () => {
+  it('UI-037 START-002 paceCarsFrom reads observe().paceCars: the car one minute ahead and the one behind; nothing when absent', () => {
+    const cars = paceCarsFrom({ paceCars: { ahead: { offsetSeconds: -60, position: 4, distanceFt: 900, errorSeconds: 1.5 }, behind: { offsetSeconds: 60, position: 6, distanceFt: -700, errorSeconds: -2 } } });
+    expect(cars.map(c => [c.side, c.distanceFt, c.label])).toEqual([['ahead', 900, 'car one minute ahead'], ['behind', 700, 'car one minute behind']]);
+    expect(paceCarsFrom({ paceCars: { ahead: null, behind: null } })).toEqual([]); expect(paceCarsFrom({})).toEqual([]); expect(paceCarsFrom(null)).toEqual([]);
   });
 });

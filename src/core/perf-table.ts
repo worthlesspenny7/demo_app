@@ -48,7 +48,7 @@ export function speedChangeLoss(vFrom: number, vTo: number, car: CarSpec): numbe
   if (vTo === 0) {
     const vi = mphToFps(vFrom); const line = 3000; let t = 0;
     c.v = vi; c.mode = 'cruise';
-    while ((c.mode as string) !== 'stopped' && t < 200) { c.step(DT, vi, line); t += DT; }
+    while ((c.mode as string) !== 'stopped' && t < 600) { c.step(DT, vi, line); t += DT; }
     return t - line / vi;
   }
   const vt = mphToFps(vTo); let t = 0;
@@ -69,7 +69,7 @@ export function stopLoss(vIn: number, vOut: number, car: CarSpec, turnCapMph?: n
   const line = 3000; // far enough to brake
   let t = 0;
   // approach and stop at the line
-  while ((c.mode as string) !== 'stopped' && t < 200) { c.step(DT, vi, line); t += DT; }
+  while ((c.mode as string) !== 'stopped' && t < 600) { c.step(DT, vi, line); t += DT; }
   // accelerate to vOut (capped through the 60 ft turn zone if turning)
   const cap = turnCapMph !== undefined ? mphToFps(turnCapMph) : Infinity;
   while (c.v < vo - 0.15 && t < 400) { c.step(DT, c.s < line + 60 ? Math.min(vo, cap) : vo, null); t += DT; }
@@ -133,13 +133,18 @@ export interface PerfTable {
   stopGo: Matrix;
   /** (c) TURNS time lost: IN rows x OUT columns for the car's apex speed. */
   turns: Matrix;
+  /** SPEED-001: the speeds (mph, ascending) the charts cover: 10..55 for a model car, the table's own speeds (Packard 15..55) for a table-driven one. */
+  speeds: number[];
+  /** SPEED-001: speeds that are extrapolated, not printed (Packard 55). Empty for model cars. */
+  extrapolated: number[];
   /** Derived accessors (old layout): `${in}>${out}` -> stop loss; ramp lead; `${90|45}:${in}>${out}` -> turn loss. */
   stop: Record<string, number>;
   lead: Record<string, number>;
   turn: Record<string, number>;
 }
 /** Speeds of the model-driven charts (IN rows / OUT columns). */
-export const CHART_SPEEDS = [15, 20, 25, 30, 35, 40, 45, 50, 55];
+/** SPEED-001: 10 to 55 mph in steps of 5. */
+export const CHART_SPEEDS = [10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 /** Speeds used by the older reference tables. */
 export const SPEEDS = [20, 25, 30, 35, 40, 45, 50];
 
@@ -170,7 +175,7 @@ export function buildPerfTable(car: CarSpec): PerfTable {
       turn[`45:${v}>${w}`] = round1(turnLoss(45, v, w, car));
     }
   }
-  const out: PerfTable = { accel, stopGo, turns, stop, lead, turn };
+  const out: PerfTable = { accel, stopGo, turns, speeds: stopGo.speeds.slice(), extrapolated: [...(car.extrapolated ?? [])], stop, lead, turn };
   tableCache.set(car, out);
   return out;
 }

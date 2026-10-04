@@ -118,3 +118,35 @@ export const SPEED_CHANGE_ROWS: { rule: string; where: string; when: string }[] 
   { rule: 'VII.E.2.d', where: 'Delayed change (interval is the first item in Column C)', when: 'The interval starts at the sign, landmark or intersection point of the row (E.2.b or E.2.c).' },
   { rule: 'HB p.12', where: 'Your car on a speed change', when: 'Split the speed change at the sign: cross at the midpoint speed (35 to 30: cross at 32.5 and keep slowing). The gain and loss cancel.' },
 ];
+
+/**
+ * "Rally school" reference panel (LESSON-008, TAF-001): the 2026 Time Allowance web form fields and the checkpoint facts, each with its video and caption timestamp.
+ * `inDocs` says whether the regulations or the handbook also say it; a false entry is video-only and the panel labels it.
+ */
+export interface TaFormField { id: string; field: string; example: string; note: string; cite: string; /** where the field comes from */ form: 'web 2026' | 'paper' | 'both'; inDocs: boolean }
+export const TA_FORM_FIELDS: TaFormField[] = [
+  { id: 'car', field: 'Car number', example: '99', note: 'Your car number, not your start position. A wrong car number is not allowed (REG V.H.6).', cite: '2026 Training Session [110:28]; Time Delay Form [02:41]', form: 'both', inDocs: true },
+  { id: 'password', field: 'Password', example: '4 digits', note: 'The four-digit password the web form asks for.', cite: '2026 Training Session [110:28]', form: 'web 2026', inDocs: false },
+  { id: 'phone', field: 'Phone number', example: 'the number used for time allowances', note: 'Your phone stays out of reach while driving (REG II.H.1.i): file at lunch or at the finish.', cite: '2026 Training Session [110:28], [59:59]', form: 'web 2026', inDocs: false },
+  { id: 'stage', field: 'Stage', example: '2', note: 'What day of the rally it is: the second day is stage 2.', cite: 'Time Delay Form [02:41]', form: 'paper', inDocs: false },
+  { id: 'leg', field: 'Leg', example: '5', note: 'Checkpoints passed + 1: passed checkpoint 4, you are on leg 5. The simulator fills it in.', cite: 'Time Delay Form [02:41]', form: 'both', inDocs: false },
+  { id: 'instructions', field: 'Instruction numbers, from / to', example: '102 to 103', note: '"The most important part": the instruction numbers the delay happened between.', cite: '2026 Training Session [110:28]; Time Delay Form [02:41]', form: 'both', inDocs: true },
+  { id: 'time', field: 'Time', example: '3m40s', note: 'In multiples of 10 s (REG V.H.3, V.H.6). Measured delay = stopped time + chart stop-and-go loss; make up the odd seconds first: 3:47 delayed, make up 7, claim 3:40.', cite: 'Time Delay Form [01:38], [02:10], [04:44]', form: 'both', inDocs: false },
+  { id: 'cause', field: 'Cause', example: 'train, tractor, school bus, construction, combine', note: 'Never a flat tire, oversleeping, getting lost or a breakdown (REG V.H.1).', cite: 'Time Delay Form [00:04]; Rally School Part 2 [05:43]', form: 'both', inDocs: true },
+  { id: 'witnesses', field: 'Witnesses (cars ahead / behind)', example: 'car 2 ahead, car 8 behind', note: 'List witnesses, especially for delays over 1m00s (REG V.H.5).', cite: 'Time Delay Form [02:41]', form: 'both', inDocs: true },
+  { id: 'done', field: 'Red "done" button', example: 'end of the day', note: 'Prints the scorecard; needed whether or not you made a request. Filed twice a day: at lunch and at the finish, within 15 minutes of the TA point.', cite: '2026 Training Session [110:28]', form: 'web 2026', inDocs: false },
+];
+export const TA_FORM_NOTE = 'The 2026 web form takes the first six fields; the paper sheets (older rally schools, 2024) add the stage, the cause and the witnesses and are handed to an official at lunch or at the finish. Regulation V.H.3 only says "by the method printed in the day\'s instructions".';
+
+export interface CheckpointFact { fact: string; cite: string; doc: string | null }
+export const CHECKPOINT_FACTS: CheckpointFact[] = [
+  { fact: 'Green sign = timing checkpoint. Do nothing: "the minimum that you need to do at a green sign is nothing." You are not told your score.', cite: 'Rally School Part 1 [04:08], [05:39]', doc: 'REG V.A.1.a' },
+  { fact: 'Red sign = observation checkpoint (a STOP sign held on the ground). Stop and talk to the worker: equipment inspection, collecting Time Allowances, the finish.', cite: 'Rally School Part 1 [02:37], [03:07]', doc: 'REG V.A.1.b' },
+  { fact: 'Never stop within sight of a green checkpoint and never go slower than 5 mph (30 s).', cite: 'Rally School Part 2 [35:33]', doc: 'REG V.E.3.a' },
+  { fact: 'Wave, smile, honk, run your headlights; do not talk to the crew.', cite: '2026 Training Session [64:10]', doc: 'REG V.A.1.a(2)' },
+  { fact: 'Write the checkpoint number and your arrival time of day to the second in Column D.', cite: 'Rally School Part 1 [06:11]; 2026 Training Session [105:53]', doc: null },
+  { fact: 'Four or five checkpoint crews: at least four or five timing checkpoints a day, always one in the morning, and one can come minutes after you think you are done.', cite: 'Rally School Part 1 [07:42]; Rally School Part 2 [36:10], [36:40]', doc: null },
+  { fact: 'No timing checkpoint before the first time-of-day restart; the warm-up and the calibration run are unscored.', cite: 'Rally School Part 1 [42:57]', doc: 'REG V.B.2' },
+  { fact: 'Each leg starts from scratch at the green sign: you are on time for the next leg the instant you cross it. Early and late do not cancel.', cite: 'Rally School Part 1 [13:25], [15:59]', doc: 'HB p.13' },
+  { fact: 'Late cap 2 minutes, early cap 5 minutes; more than 30 minutes late counts as missed; the final observation checkpoint (the finish) must be checked in at.', cite: 'Rally School Part 1 [17:00], [52:19], [53:22]', doc: 'REG V.E.1, V.E.2' },
+];

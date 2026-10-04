@@ -31,8 +31,16 @@ Owner is hands-off until ~Sunday afternoon 2026-10-04/05.
 - [ ] Re-validate education against the two documents (agent), push
 - Josh's standing instruction: the organizers' documents win over his own preferences. Hence: digital stopwatch with lap/split + TOD by default (HB p.5 'a necessity'), analog dash clock; teach which device for which purpose (LESSON-006, WATCH-008/009, DRILL-026). Dad has no protocol yet: teach best practices. YouTube transcripts (.vtt) may arrive
 
+## Phase V (2026-10-04): rally school video transcripts supplied by Josh
+- [x] 13 transcripts in docs/research/transcripts (raw .vtt + cleaned txt); analyses 10a/10b/10c; synthesis + decisions in docs/research/10-rally-school-videos.md; OPEN-QUESTIONS updated (Q17/20/23/24/25 answered)
+- [x] Screenshot plan: docs/research/transcripts/screenshots.txt (86 cues) + scripts/grab-frames.sh; Josh fills urls.txt and uploads frames
+- [x] Spec V3 (INST, START, TAF, MAKEUP, PROTO, SPEED, CAL-006, LOST, PREREAD, CHART-006, CPX, LESSON-008, UI-037)
+- [x] Core V3 (ENGINE 3.0.0): loose minute hand + director's setup, start queue/launch/pace cars, 2026 TA web form fields + paper mode + measured = stopped + chart loss, make-up ledger (10 %/20 %, chunks, drops, disturbed-interval finding), callout protocol lines, speeds 10-55 with 48, no live feedback in calibration, lost doctrine in D10, pre-read checkpoint notes, D06 4-run tool, 4-6 checkpoints/day
+- [x] UI/lessons V3: LESSON-008 "What the rally school adds" (every claim cited by video + mm:ss), LESSON-002/003/004/006 rewritten, start card with count landing on the launch second, TA form fields, make-up ledger, ambiguous clock rendering, pace cars, calibration cue suppression, new keys W/Q/I/X
+- [x] Verification: tsc clean, 447 unit, 51 e2e, build clean, 262/262 specs
+
 ## Current step
-Phase IV complete and verified. Open items: Josh's Ford measurements (Q12/Q22), YouTube transcripts (Q13), ASP + 30-min pre-read on the built-in stage route, GR emergency signs (backlog). Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
+Phase V complete and verified. Open items: Josh's Ford measurements (Q12/Q22) and 6 V vs 12 V; video frames from scripts/grab-frames.sh (then compare the book renderer with the real 2026 page); Dad's own protocol preferences once he has played; GR emergency signs (backlog); a fresh playability pass on V3. Everything from both re-validation reports is closed except the design-level items listed in docs/playtest/VALIDATION.md (Dad personality, pace-aid at Bronze). Optional: a third playability pass on this build. Pushes to origin succeed (remote still named demo_app; GitHub redirects).
 Spec coverage: `npm run spec:check` should report 0 missing (BACKLOG section excluded).
 
 ## Environment constraints (this session)

@@ -23,7 +23,7 @@ class OracleWithTA implements Bot {
 function oracleRun(sc: Scenario) { const sim = new Simulator(sc); const r = runBot(sim, new OracleWithTA(sim, new OracleBot(sim)), 8 * 3600); return { sim, r }; }
 
 describe('generator', () => {
-  it('GEN-001 generateStage(seed) is deterministic and valid (nodes sorted by s, instructions reference existing nodes, every leg has exactly one timing CP, speeds are multiples of 5 in 20..55 (STAGE-007))', () => {
+  it('GEN-001 generateStage(seed) is deterministic and valid (nodes sorted by s, instructions reference existing nodes, every leg has exactly one timing CP, speeds are multiples of 5 in 20..55, or 48 (STAGE-007, SPEED-001))', () => {
     for (const seed of [1, 2, 3]) {
       const a = generateStage(seed, PROFILES.fullStage), b = generateStage(seed, PROFILES.fullStage);
       expect(JSON.stringify(a)).toBe(JSON.stringify(b));
@@ -37,7 +37,7 @@ describe('generator', () => {
       let prev = 0;
       for (const leg of ghost.legs) { expect(a.book.some(i => { const s = nodeById(a.course, i.nodeId).s; return s > prev && s < leg.cpS; })).toBe(true); prev = leg.cpS; }
       for (const ins of a.book) {
-        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v % 5).toBe(0); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); }
+        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v === 48 || v % 5 === 0).toBe(true); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); }
         for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined && !ins.transit && ins.section !== 'calibration' && ins.section !== 'start') expect(SPEEDS.includes(v)).toBe(true);
       }
     }
@@ -49,14 +49,14 @@ describe('generator', () => {
     for (const seed of [1, 2, 3, 4, 5]) {
       const sc = stage(seed);
       expect(sc.book.length).toBeGreaterThanOrEqual(150); expect(sc.book.length).toBeLessThanOrEqual(260);
-      const cps = timingCps(sc); expect(cps.length).toBeGreaterThanOrEqual(4); expect(cps.length).toBeLessThanOrEqual(7);
+      const cps = timingCps(sc); expect(cps.length).toBeGreaterThanOrEqual(4); expect(cps.length).toBeLessThanOrEqual(6);   // CPX-001
       const cal = sc.book.filter(i => i.section === 'calibration');
       expect(cal.length).toBeGreaterThanOrEqual(4); expect(cal.length).toBeLessThanOrEqual(7); // the begin line plus 3-6 calibration points (STAGE-001)
       // >= 15 miles at 50 mph with perfect interval/cumulative times printed
       const calS = cal.map(i => nodeById(sc.course, i.nodeId).s);
       expect((calS[calS.length - 1]! - calS[0]!) / FT_MI).toBeGreaterThanOrEqual(15);
       expect(cal.every(i => i.perfectInterval !== undefined && i.perfectCumulative !== undefined)).toBe(true);
-      expect(cal[cal.length - 1]!.perfectCumulative!).toBeGreaterThan(15 * 3600 / 50);
+      const calSpeed = Number((sc.tags ?? []).find(t => t.startsWith('calibration:speed:'))!.split(':')[2]); expect(cal[cal.length - 1]!.perfectCumulative!).toBeGreaterThan(15 * 3600 / calSpeed);
       const restarts = sc.book.filter(i => i.section === 'restart');
       expect(restarts.length).toBe(2); // after the calibration transit and after the lunch transit
       const lunch = restarts[1]!; expect(lunch.restartTime).toBeDefined();

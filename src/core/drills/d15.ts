@@ -8,6 +8,7 @@ import type { Instruction, Scenario, TurnDir } from '../course.js';
 import type { Drill } from './types.js';
 import { tiers, tierOf, base, aspForSeed, bookStyleFor } from './common.js';
 import { driverScale, headlineTip, legErrors, meanAbs, starsFromMeanAbs, instrumentFindingLines } from './rubrics.js';
+import { gradeCheckpointNotes, gradeChartLossNotes } from './preread.js';
 
 /** Rows per page of this drill's printed book (UI-029): the layout below is hand-built for six, so the scenario carries rowsPerPage = 6 (other books use 7-8). */
 export const ROWS_PER_PAGE = 6;
@@ -126,13 +127,19 @@ export const D15: Drill = {
       }
     }
     const pct = (k: NotationId): number => tally[k].total ? tally[k].good / tally[k].total : 1;
-    const ids = Object.keys(tally) as NotationId[]; const worst = Math.min(...ids.map(pct));
+    const ids = Object.keys(tally) as NotationId[];
+    // PREREAD-001: checkpoint arrival times ("CP3 09:14:22", within 2 s) and chart losses beside stops and turns (within 1 s); graded only when the player wrote them
+    const cpN = gradeCheckpointNotes(r), clN = gradeChartLossNotes(r, sc); const extra = [cpN, clN].filter(g => g.attempted && g.total > 0);
+    const worst = Math.min(...ids.map(pct), ...extra.map(g => g.good / g.total));
     const markStars: 0 | 1 | 2 | 3 = worst >= 0.9 ? 3 : worst >= 0.7 ? 2 : worst >= 0.5 ? 1 : 0;
     const errs = legErrors(r); const mean = meanAbs(errs); const k = driverScale(sc.driver.skill);
     const exec: 1 | 2 | 3 = r.offCourseCount > 0 ? 1 : starsFromMeanAbs(mean, [8 * k, 16 * k, 1e9]) >= 3 ? 3 : starsFromMeanAbs(mean, [8 * k, 16 * k, 1e9]) >= 2 ? 2 : 1;
     const stars = Math.min(markStars, exec) as 0 | 1 | 2 | 3;
     const summary = ids.map(i => `${NOTATION_NAMES[i]} ${tally[i].good}/${tally[i].total}`).join('; ');
     const feedback = [`Notations: ${summary}.`, markStars === 0 && ids.every(i => tally[i].good === 0) ? 'No pre-read marks were made before the start: use the 30 minutes (HB p.15: carry the speed, write the speeds not shown, flag every "comes quick", then the pauses and the restart and transit times).' : 'Triage order: pauses and stops first (chart pause time), restart and transit times second, speeds and "comes quick" third.', ...miss.slice(0, 8)];
+    if (cpN.attempted) feedback.push(`Checkpoint times (PREREAD-001): ${cpN.good}/${cpN.total} within 2 s.`, ...cpN.lines.slice(0, 3));
+    else feedback.push('Optional (PREREAD-001): number each timing checkpoint and write its exact arrival time in Column D ("CP3 09:14:22", within 2 s), and pre-write the chart loss beside stops and turns ("10.2", "-2.3", within 1 s).');
+    if (clN.attempted) feedback.push(`Chart losses beside stops and turns (PREREAD-001): ${clN.good}/${clN.total} within 1 s.`, ...clN.lines.slice(0, 3));
     if (exec < markStars) feedback.push(r.offCourseCount ? 'Cold run: you went off course; markings do not help if the turn is missed.' : `Cold run: leg errors averaged ${mean.toFixed(1)} s, which holds the stars down.`);
     feedback.push(headlineTip(r, sc), ...instrumentFindingLines(r.instrumentDiscipline.filter(f => f.kind === 'clockForTimeOfDay')).slice(0, 1));
     return { score: Math.round(worst * 100), stars, headline: `${summary}; cold run ${mean.toFixed(1)} s mean error`, feedback };

@@ -5,7 +5,7 @@ import { accelLoss } from '../../core/perf-table.js';
 import { formatClock, formatElapsed } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
 import { stopwatchViewModel } from '../viewmodels/stopwatch.js';
-import { clockViewModel } from '../viewmodels/clock.js';
+import { clockViewModel, type EngineClock } from '../viewmodels/clock.js';
 import { speedoViewModel } from '../viewmodels/speedo.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
 import { bookRows, signBox, landmarkLabel, ROWS_PER_PAGE } from '../viewmodels/book.js';
@@ -13,7 +13,8 @@ import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, esc }
 import { chartGrids, type ChartGrid } from '../viewmodels/charts.js';
 import { holdCardFor, openTransitCard, type HoldCard } from '../viewmodels/cockpitinfo.js';
 import { digitalWatchViewModel, SplitTracker } from '../viewmodels/digitalwatch.js';
-import { taFormVm, taNoteText, taRounding } from '../viewmodels/ta.js';
+import { taFormVm, taNoteText, taRounding, taFormFields, taHelper, taCauseId, taWitnessText, TA_CAUSES, TA_STEP, type TaFormMode } from '../viewmodels/ta.js';
+import { inTimedInterval, startQueueVm, startLaunchFor, launchPlanFromInfo, startCount, makeUpPlan, assignedAfter, scheduleCorrection, inCalibrationRun, nextCallPrompt, driverLineKind, paceCarsFrom, type LaunchPlan, type StartCountVm } from '../viewmodels/v3.js';
 import { formatInterval } from '../../core/griid.js';
 import { effectiveScale, simAdvance, nextScale, SCALE_STEPS } from '../viewmodels/timescale.js';
 import { KeyMapper, KEY_HELP, type KeyCommand } from '../viewmodels/keys.js';
@@ -131,10 +132,23 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     chartsBody.innerHTML = `<p class="muted">${policy.computedCard ? `Line ${line}: ${sp.vIn ?? 0} in / ${sp.vOut ?? '?'} out is highlighted.` : 'Legal mode: find your own pair.'}</p>${grids.map(chartHtml).join('')}`;
   }
   // UI-031: the Time Allowance point form (TA-005)
-  let taCollapsed = false; let taBuiltFor: string | null = null; let taSig = '';
+  let taCollapsed = false; let taBuiltFor: string | null = null; let taSig = ''; let taMode: TaFormMode = scenario.rules.taMode === 'paper' ? 'paper' : 'web'; const taDraft: Record<string, string> = {};
   const taPanel = el('div', { class: 'ta-panel', id: 'ta-panel' }); taPanel.style.display = 'none';
   const taField = (id: string): HTMLInputElement | null => taPanel.querySelector(`#${id}`) as HTMLInputElement | null;
   const cpCardBox = el('div', { class: 'cpcard', id: 'cpcard' }); cpCardBox.style.display = 'none'; roadWrap.append(cpCardBox);
+  // UI-037 / START-001: the start card (your time, launch time), the 30-second warning banner and the visible count; one on the road at a restart, one in the pre-read box
+  const roadStart = el('div', { class: 'startcard road-start', id: 'startcard-road' }); roadStart.style.display = 'none'; roadWrap.append(roadStart);
+  type StartParts = { plan: HTMLElement; queue: HTMLElement; warn: HTMLElement; count: HTMLElement };
+  const startCardParts = (host: HTMLElement): StartParts => {
+    const sfx = host === roadStart ? '-road' : '';
+    const plan = el('div', { class: 'launch-plan mono', id: `launch-plan${sfx}` });
+    const queue = el('div', { class: 'start-queue', id: `start-queue${sfx}` });
+    const warn = el('div', { class: 'start-warning', id: `start-warning${sfx}`, role: 'status' }); warn.style.display = 'none';
+    const count = el('div', { class: 'start-count', id: `start-count${sfx}`, 'aria-live': 'assertive' }); count.style.display = 'none';
+    host.append(plan, queue, warn, count); return { plan, queue, warn, count };
+  };
+  const roadStartParts = startCardParts(roadStart);
+  let preStartParts: StartParts | null = null;
   const preread = el('div', { class: 'preread', id: 'preread' });
 
   // UI-033: the stopwatch follows Settings.watch (digital lap/split by default), the dash clock is always analog with no numeric time of day (REG II.H.1.d(1))
@@ -150,14 +164,17 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const dwStart = dwBtn('dw-start', 'Start', 'Space: start / stop', { type: 'watch.toggle' }); const dwLap = dwBtn('dw-lap', 'Lap', 'L: lap (split)', { type: 'watch.lap' });
   const dwRecall = dwBtn('dw-recall', 'Recall', 'R: release the split, then cycle the last 10 laps', { type: 'watch.recall' }); const dwReset = dwBtn('dw-reset', 'Reset', 'only while stopped (Shift+R forces)', { type: 'watch.reset' });
   dwMode.onclick = () => handle({ type: 'watch.mode' });
+  lcdEl.onclick = () => handle({ type: 'clock.read' });   // click the LCD in TOD mode: read the time of day off the watch
+  lcdEl.title = 'in TOD mode: click (or K) to note a time-of-day read';
   const dwLaps = el('div', { class: 'dw-laps', id: 'laps' });
-  const dwatch = el('div', { class: 'dwatch', id: 'stopwatch' }, el('div', { class: 'dw-top' }, dwMode, dwInd), lcdEl, el('div', { class: 'dw-btns' }, dwStart, dwLap, dwRecall, dwReset), dwLaps);
+  const dwHint = el('div', { class: 'dw-hint muted', id: 'dw-hint' }, 'TOD (M) is your time of day: the director\'s source. The clock is for its second hand.');
+  const dwatch = el('div', { class: 'dwatch', id: 'stopwatch' }, el('div', { class: 'dw-top' }, dwMode, dwInd), lcdEl, dwHint, el('div', { class: 'dw-btns' }, dwStart, dwLap, dwRecall, dwReset), dwLaps);
   const splitTracker = new SplitTracker();
   const instruments = el('div', { class: 'instruments' },
     el('div', { class: 'instrument' }, clockCanvas, clockCap),
     el('div', { class: 'instrument' }, ...(digitalSw ? [dwatch, swCap] : [swCanvas, swCap, laps])),
     el('div', { class: 'instrument' }, spCanvas, spCap));
-  clockCanvas.onclick = () => { act({ type: 'clock.read' }); flash('Clock read noted'); };
+  clockCanvas.onclick = () => { act({ type: 'clock.read', source: 'clock' }); flash('Clock read noted'); };
   const left = el('div', { class: 'left' }, roadWrap, instruments, preread, taPanel);   // the TA form floats over the road and the clock; its header collapses it
   const hintScale = el('span', { class: 'chip', id: 'hint-scale' }, '1x');
   const hintBar = el('div', { class: 'hintbar', id: 'hintbar', title: 'objective and the keys that matter' },
@@ -171,6 +188,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   // drawer
   const callout = el('span', { class: 'callout', id: 'callout' });
   const promptWrap = el('span', { id: 'prompt' });
+  const nextCallEl = el('span', { class: 'next-call', id: 'next-call', title: 'the next call to make (aids rung 2 and 3)' });
   const notesBox = el('div', { class: 'box' }, el('h4', {}, 'Lapboard notes'));
   const noteInput = el('input', { type: 'text', placeholder: 'note… Enter to keep', style: 'width:100%' }) as HTMLInputElement;
   noteInput.onkeydown = e => {
@@ -181,12 +199,19 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   const notesList = el('div', { class: 'mono', style: 'font-size:12px' }); notesBox.append(noteInput, notesList);
   const cardTitle = el('h4', {}, 'Perf card'); const chartsBtn = el('button', { id: 'charts-btn', class: 'mini', title: 'C: the three handbook charts' }, 'Charts'); chartsBtn.onclick = () => setCharts(!showCharts);
   const cardBox = el('div', { class: 'box', id: 'perfcard' }, el('div', { class: 'cardhead' }, cardTitle, chartsBtn)); const cardBody = el('div', {}); cardBox.append(cardBody);
-  const ledgerBox = el('div', { class: 'box', id: 'ledgerbox' }, el('h4', {}, 'Ledger (E) and time allowance (T)')); const ledgerBody = el('div', {}); ledgerBox.append(ledgerBody);
+  const ledgerBox = el('div', { class: 'box', id: 'ledgerbox' }, el('h4', {}, 'Ledger (E) and time allowance (T)')); const ledgerBody = el('div', {});
+  // MAKEUP-001: log each chunk you make up; the running total falls with it
+  const chunkIn = el('input', { type: 'number', step: '1', min: '0', placeholder: 's', id: 'makeup-chunk', style: 'width:64px', title: 'seconds you have just made up' }) as HTMLInputElement;
+  const chunkBtn = el('button', { id: 'makeup-log', class: 'mini' }, 'Log chunk');
+  const chunkRow = el('div', { class: 'chunkrow', id: 'makeup-chunkrow' }, el('span', { class: 'muted' }, 'Made up a chunk: '), chunkIn, chunkBtn); chunkRow.style.display = 'none';
+  chunkIn.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter') chunkBtn.click(); if (e.key === 'Escape') chunkIn.blur(); };
+  chunkBtn.onclick = () => { const n = Number(chunkIn.value); if (!(n > 0)) { flash('Enter the seconds you made up'); return; } const cur = sim.observe({ peek: true }); const base = cur.ledgerEntries?.length ? cur.ledgerEntries : (cur.ledger ? [{ seconds: cur.ledger, source: 'ledger' }] : []); act({ type: 'ledger.set', entries: [...base, { seconds: -n, source: 'made up' }] }); chunkIn.value = ''; renderNow(); };
+  ledgerBox.append(ledgerBody, chunkRow);
   const logBox = el('div', { class: 'box log' }, el('h4', {}, 'Driver')); const logBody = el('div', { id: 'driverlog' }); logBox.append(logBody);
   const lapboard = el('div', { class: `lapboard${hasCal ? ' with-cal' : ''}` }, ledgerBox, cardBox, notesBox, logBox);
   if (hasCal) lapboard.append(calibrationBox());
   const drawer = el('div', { class: 'drawer' },
-    el('div', { class: 'bar' }, el('span', { class: 'muted' }, 'Callout:'), callout, promptWrap, el('span', { class: 'muted', style: 'margin-left:auto' }, `${scenario.car.name} · ${scenario.driver.name} (${scenario.driver.skill}) · ${scenario.speedo.kind} speedo · aids rung ${rung}${rung <= 1 ? ' (legal: no digital readouts)' : ''}`)),
+    el('div', { class: 'bar' }, el('span', { class: 'muted' }, 'Callout:'), callout, promptWrap, nextCallEl, el('span', { class: 'muted', style: 'margin-left:auto' }, `${scenario.car.name} · ${scenario.driver.name} (${scenario.driver.skill}) · ${scenario.speedo.kind} speedo · aids rung ${rung}${rung <= 1 ? ' (legal: no digital readouts)' : ''}`)),
     lapboard);
   cockpit.append(hintBar, left, book, drawer, helpBox, chartsBox);
   root.replaceChildren(cockpit);
@@ -231,6 +256,17 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       ann.setCard(card); act({ type: 'card.set', card }); flash(`Card set (${Object.keys(card).length} speeds): calls are now mapped through it`);
     };
     cardRow.append(setC); box.append(cardRow);
+    // CAL-006: a stock speedometer cannot be adjusted: correct by schedule from the measured error ("1 s per N minutes")
+    const errIn = el('input', { type: 'number', step: '0.1', placeholder: 'error s (+late)', id: 'cal-err', style: 'width:96px', title: 'seconds late (+) or early (-) at the end of the run' }) as HTMLInputElement;
+    const runIn = el('input', { type: 'number', step: '0.1', placeholder: 'run min', id: 'cal-run', style: 'width:70px', value: '28', title: 'length of the run in minutes' }) as HTMLInputElement;
+    const sched = el('span', { class: 'mono', id: 'cal-schedule' }, '');
+    const calcSched = (): void => {
+      const e = Number(errIn.value), m = Number(runIn.value);
+      sched.textContent = errIn.value === '' ? 'Schedule correction (stock speedometer): enter the error and the run length.' : scheduleCorrection(e, m).text;
+    };
+    errIn.oninput = calcSched; runIn.oninput = calcSched; calcSched();
+    for (const i of [errIn, runIn]) i.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') i.blur(); };
+    box.append(el('div', { class: 'schedrow' }, el('span', { class: 'muted' }, 'Schedule: '), errIn, runIn, sched));
     for (const i of [k, ...inputs.values()]) i.onkeydown = e => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') i.blur(); };
     return box;
   }
@@ -262,7 +298,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       }
       case 'watch.recall': if (digitalSw) act({ type: 'watch.recall' }); else flash('Recall is a digital-watch key'); break;
       case 'watch.mode': if (digitalSw) act({ type: 'watch.mode' }); else flash('The analog stopwatch has no time-of-day mode: read the dash clock'); break;
-      case 'clock.read': act({ type: 'clock.read' }); flash('Clock read noted'); break;
+      case 'clock.read': { const fromWatch = digitalSw && obs.stopwatch.mode === 'tod'; act(fromWatch ? { type: 'clock.read', source: 'stopwatch' } : { type: 'clock.read' }); flash(fromWatch ? 'Watch TOD read noted' : 'Clock read noted'); break; }   // INST-002: a read of the watch's TOD mode counts as a clock read
       case 'charts': setCharts(!showCharts); break;
       case 'bezel': act({ type: 'watch.bezel', seconds: (obs.stopwatch.bezel ?? 0) + cmd.delta }); break;   // the digital watch keeps the index too: the road view's countdown aid uses it
       case 'call.turn': act({ type: 'call.turn', dir: cmd.dir }); break;
@@ -287,10 +323,28 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
         else promptFor('Time allowance (seconds)', v => act({ type: 'ta.declare', seconds: v }));
         break;
       }
+      case 'count': { countingStop = !countingStop; lastCountSent = null; flash(countingStop ? 'Counting the stop out loud: 9 ... 1, GO, and on 0, 1, 2 until the car goes' : 'Stop count off'); break; }
+      case 'call.warn': { act({ type: 'call.warn' }); flash('Told the driver: about 30 seconds'); break; }
+      case 'pullUp': {
+        const sq = startQueueVm(obs.startQueue, obs.tod, rung);
+        act({ type: 'pullUp' });   // the engine refuses it while the car ahead is still at the sign and counts the refusal
+        flash(sq.state === 'waiting' ? 'Refused: the car ahead is still at the sign. Wait until it leaves on its minute.' : sq.state === 'none' ? 'There is no start sign here.' : 'Pulled up to the sign: wait for your launch time.');
+        break;
+      }
+      case 'identify': promptText('Identify: what to look for (the driver answers "I see it too")', obs.nextCall?.call ?? '', t => act({ type: 'call.identify', text: t })); break;
       case 'ledger': promptFor('Ledger: seconds late (+) / early (-)', v => act({ type: 'ledger.set', seconds: v })); break;
       case 'buffer': break;
     }
     renderNow();
+  }
+  function promptText(labelText: string, dflt: string, cb: (t: string) => void): void {
+    const inp = el('input', { type: 'text', placeholder: labelText, value: dflt, style: 'width:300px' }) as HTMLInputElement;
+    inp.onkeydown = e => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { const v = inp.value.trim(); if (v) cb(v); else flash('Nothing to identify: type what to look for'); promptWrap.replaceChildren(); root.focus(); renderNow(); }
+      if (e.key === 'Escape') { promptWrap.replaceChildren(); root.focus(); }
+    };
+    promptWrap.replaceChildren(inp); inp.focus(); inp.select();
   }
   function promptFor(labelText: string, cb: (v: number) => void): void {
     const inp = el('input', { type: 'text', inputmode: 'decimal', placeholder: labelText, style: 'width:260px' }) as HTMLInputElement;
@@ -352,22 +406,34 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   // ---------- UI-031 Time Allowance point form ----------
   function buildTaPanel(vm: ReturnType<typeof taFormVm>): void {
     const first = vm.legs.find(l => l.measured > 0) ?? vm.legs[0];
-    taPanel.innerHTML = `<div class="ta-head"><b>${esc(vm.title)}</b><span class="mono" id="ta-count"></span><button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
+    const mode: TaFormMode = taMode;
+    const has = (id: string): boolean => taFormFields(mode).some(f => f.id === id);
+    const draft = (id: string, dflt = ''): string => escapeHtml(taDraft[id] ?? dflt);
+    const carDefault = String((scenario as unknown as { carNumber?: number | string }).carNumber ?? '');
+    taPanel.innerHTML = `<div class="ta-head"><b>${esc(mode === 'paper' ? 'Time Delay Form (classic paper sheet)' : vm.title)}</b><span class="mono" id="ta-count"></span><label class="ta-paper-toggle" title="the older paper sheet handed to an official at lunch or at the finish; practice only"><input type="checkbox" id="ta-paper" ${mode === 'paper' ? 'checked' : ''}> classic paper</label><button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
       <div class="ta-body" id="ta-body">
-        <p class="muted ta-help">Requests are taken for 15 minutes after the TA point, in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
+        <p class="muted ta-help">${mode === 'paper' ? 'The paper sheet (older rally schools): fill it in at the stop, hand it to an official at lunch or at the finish. ' : 'The 2026 web form, filed at the TA point within 15 minutes; the red button at the end of the day prints the scorecard. '}Time in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
+        <div class="ta-helper mono" id="ta-helper"></div>
         <table class="ta-legs" id="ta-legs"></table>
-        <div class="ta-form">
-          <label>Leg <select id="ta-leg">${vm.legs.map(l => `<option value="${l.legIndex}">${l.legIndex}</option>`).join('')}</select></label>
+        <div class="ta-form" id="ta-form">
+          ${has('ta-car') ? `<label>Car number <input id="ta-car" type="text" inputmode="numeric" value="${draft('ta-car', carDefault)}"></label>` : ''}
+          ${has('ta-password') ? `<label>Password <input id="ta-password" type="password" inputmode="numeric" maxlength="4" placeholder="4 digits" value="${draft('ta-password')}"></label>` : ''}
+          ${has('ta-phone') ? `<label>Phone <input id="ta-phone" type="tel" placeholder="registered number" value="${draft('ta-phone')}"></label>` : ''}
+          ${has('ta-stage') ? `<label>Stage <input id="ta-stage" type="number" min="0" step="1" value="${draft('ta-stage')}"></label>` : ''}
+          <label title="checkpoints passed + 1, filled in for you">Leg (auto) <select id="ta-leg">${vm.legs.map(l => `<option value="${l.legIndex}">${l.legIndex}</option>`).join('')}</select></label>
           <label>Delay (s) <input id="ta-delay" type="number" min="0" step="1" value="${first ? Math.round(first.measured) : ''}"></label>
           <label>Made up (s) <input id="ta-madeup" type="number" min="0" step="1" value="${first ? Math.round(first.recoverable) : ''}"></label>
-          <label>Request (s) <input id="ta-request" type="number" min="0" step="1" value="${first ? first.suggested : ''}"></label>
+          <label title="in multiples of 10 s">Time (s) <input id="ta-request" type="number" min="0" step="${TA_STEP}" placeholder="10 s steps" value="${first ? first.suggested : ''}"></label>
           <span id="ta-round" class="ta-round"></span>
           <label>From instruction <input id="ta-from" type="number" min="1" step="1" value="${first?.fromLine ?? ''}"></label>
           <label>to <input id="ta-to" type="number" min="1" step="1" value="${first?.toLine ?? ''}"></label>
-          <label class="wide">Cause <input id="ta-cause" type="text" placeholder="a farm tractor, a train, an accident scene"></label>
-          <label class="wide">Witness <input id="ta-witness" type="text" placeholder="name or car number"></label>
+          <label class="wide">Cause <input id="ta-cause" type="text" list="ta-causes" placeholder="train, tractor, school bus, construction, combine" value="${draft('ta-cause', first?.cause ?? '')}"></label>
+          <datalist id="ta-causes">${TA_CAUSES.map(c => `<option value="${c}">`).join('')}</datalist>
+          <label title="witness: the car ahead">Car ahead <input id="ta-witness-ahead" type="text" placeholder="car number" value="${draft('ta-witness-ahead')}"></label>
+          <label title="witness: the car behind">Car behind <input id="ta-witness-behind" type="text" placeholder="car number" value="${draft('ta-witness-behind')}"></label>
+          ${has('ta-signature') ? `<label class="wide">Signature <input id="ta-signature" type="text" value="${draft('ta-signature')}"></label>` : ''}
           <div class="ta-pattern mono" id="ta-pattern"></div>
-          <button id="ta-submit" class="primary">File request</button>
+          <button id="ta-submit" class="primary">${mode === 'paper' ? 'Hand in the sheet' : 'File request'}</button>
         </div>
         <div id="ta-filed" class="ta-filed"></div>
         <div id="ta-ack"></div>
@@ -375,31 +441,48 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const legSel = taField('ta-leg') as unknown as HTMLSelectElement;
     if (first) legSel.value = String(first.legIndex);
     const num = (id: string): number => Number(taField(id)?.value ?? '');
+    const txt = (id: string): string => taField(id)?.value ?? '';
+    const advice = (leg: number): ReturnType<Simulator['taAdvice']> => sim.taAdvice(leg);
     const measuredOf = (leg: number): number => taFormVm(sim.observe({ peek: true }).ta, l => sim.taAdvice(l)).legs.find(l => l.legIndex === leg)?.measured ?? 0;
+    const witness = (): string => taWitnessText(txt('ta-witness-ahead'), txt('ta-witness-behind'));
     const refresh = (): void => {
       const leg = Number(legSel.value); const req = num('ta-request');
       const rd = taRounding(req, measuredOf(leg));
       const r = taPanel.querySelector('#ta-round'); if (r) { r.textContent = rd.text; r.classList.toggle('adj', rd.changed); }
-      const pat = taPanel.querySelector('#ta-pattern'); if (pat) pat.textContent = taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: rd.adjusted, cause: taField('ta-cause')?.value, witness: taField('ta-witness')?.value });
+      const pat = taPanel.querySelector('#ta-pattern'); if (pat) pat.textContent = taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: rd.adjusted, cause: txt('ta-cause'), witness: witness() });
+      let h = ''; try { h = taHelper(advice(leg)).text; } catch { h = ''; }
+      const he = taPanel.querySelector('#ta-helper'); if (he) he.textContent = h;   // TAF-002: measured = stopped + chart loss, make up the odd seconds
     };
     const fillFor = (leg: number): void => {
       const l = taFormVm(sim.observe({ peek: true }).ta, x => sim.taAdvice(x)).legs.find(x => x.legIndex === leg); if (!l) return;
       legSel.value = String(leg);
       (taField('ta-delay') as HTMLInputElement).value = String(Math.round(l.measured)); (taField('ta-madeup') as HTMLInputElement).value = String(Math.round(l.recoverable)); (taField('ta-request') as HTMLInputElement).value = String(l.suggested);
       (taField('ta-from') as HTMLInputElement).value = l.fromLine === null ? '' : String(l.fromLine); (taField('ta-to') as HTMLInputElement).value = l.toLine === null ? '' : String(l.toLine);
+      if (l.cause) { (taField('ta-cause') as HTMLInputElement).value = l.cause; taDraft['ta-cause'] = l.cause; }   // the cause the engine saw (a train, a tractor, ...)
       refresh();
     };
-    for (const id of ['ta-delay', 'ta-madeup', 'ta-request', 'ta-from', 'ta-to', 'ta-cause', 'ta-witness']) {
-      const f = taField(id)!; f.addEventListener('input', refresh);
+    for (const id of ['ta-car', 'ta-password', 'ta-phone', 'ta-stage', 'ta-delay', 'ta-madeup', 'ta-request', 'ta-from', 'ta-to', 'ta-cause', 'ta-witness-ahead', 'ta-witness-behind', 'ta-signature']) {
+      const f = taField(id); if (!f) continue;
+      f.addEventListener('input', () => { taDraft[id] = f.value; refresh(); });
       f.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') f.blur(); if (e.key === 'Enter') (taPanel.querySelector('#ta-submit') as HTMLButtonElement).click(); });
     }
     legSel.addEventListener('change', () => fillFor(Number(legSel.value))); legSel.addEventListener('keydown', e => e.stopPropagation());
     (taPanel.querySelector('#ta-legs') as HTMLElement).onclick = e => { const b = (e.target as HTMLElement).closest('button[data-leg]') as HTMLElement | null; if (b) fillFor(Number(b.dataset.leg)); };
     (taPanel.querySelector('#ta-toggle') as HTMLElement).onclick = () => { taCollapsed = !taCollapsed; };
+    const paper = taPanel.querySelector('#ta-paper') as HTMLInputElement; paper.onchange = () => { taMode = paper.checked ? 'paper' : 'web'; taBuiltFor = null; taSig = ''; };
     (taPanel.querySelector('#ta-submit') as HTMLButtonElement).onclick = () => {
       const leg = Number(legSel.value), seconds = num('ta-request'), fromLine = Math.round(num('ta-from')), toLine = Math.round(num('ta-to'));
-      if (!(seconds > 0) || !(fromLine >= 1) || !(toLine >= fromLine)) { flash('Fill in the request (seconds) and the instruction numbers it happened between'); return; }
-      act({ type: 'ta.request', legIndex: leg, seconds, fromLine, toLine, note: taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: seconds, cause: taField('ta-cause')?.value, witness: taField('ta-witness')?.value }) });
+      if (!(seconds > 0) || !(fromLine >= 1) || !(toLine >= fromLine)) { flash('Fill in the time (seconds) and the instruction numbers it happened between'); return; }
+      if (taMode === 'web' && txt('ta-password') !== '' && !/^\d{4}$/.test(txt('ta-password'))) { flash('The password is four digits'); return; }
+      // TAF-001: the web form's fields travel with the request; blank ones are listed by the engine (the request is still filed)
+      const asNum = (id: string): number | undefined => { const v = txt(id).trim(); return v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined; };
+      const ahead = txt('ta-witness-ahead').trim(), behind = txt('ta-witness-behind').trim();
+      const a: Action = { type: 'ta.request', legIndex: leg, seconds, fromLine, toLine,
+        note: taNoteText({ delay: num('ta-delay') || 0, madeUp: num('ta-madeup') || 0, request: seconds, cause: txt('ta-cause'), witness: witness() }),
+        ...(asNum('ta-car') !== undefined ? { carNumber: asNum('ta-car') } : {}), ...(taMode === 'web' && txt('ta-password') ? { password: txt('ta-password') } : {}), ...(taMode === 'web' && txt('ta-phone') ? { phone: txt('ta-phone') } : {}),
+        ...(asNum('ta-stage') !== undefined ? { stage: asNum('ta-stage') } : {}), ...(txt('ta-cause').trim() ? { cause: taCauseId(txt('ta-cause')) } : {}),
+        ...(ahead || behind ? { witnesses: { ...(ahead ? { ahead } : {}), ...(behind ? { behind } : {}) } } : {}) };
+      act(a);
       renderNow();
     };
     refresh();
@@ -408,7 +491,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const vm = taFormVm(o.ta, leg => sim.taAdvice(leg));
     if (!vm.visible) { taPanel.style.display = 'none'; taBuiltFor = null; return; }
     taPanel.style.display = ''; taPanel.classList.toggle('collapsed', taCollapsed);
-    const built = `${o.ta.windowEndsTod}|${vm.legs.map(l => l.legIndex).join(',')}`;
+    const built = `${o.ta.windowEndsTod}|${vm.legs.map(l => l.legIndex).join(',')}|${taMode}`;
     if (taBuiltFor !== built) { taBuiltFor = built; taSig = ''; buildTaPanel(vm); }
     const count = taPanel.querySelector('#ta-count'); if (count) count.textContent = `window ${vm.countdown} left`;
     const sig = JSON.stringify([vm.legs.map(l => [l.measured, l.recoverable, l.suggested, l.fromLine, l.toLine, l.filed?.adjusted ?? null]), vm.requests.length, vm.ackAvailable, vm.acked]);
@@ -434,6 +517,76 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const n = Math.min(bookLen, le + 1);
     if (p.currentLine !== n) act({ type: 'line.set', n });
   }
+  // ---------- UI-037 / MAKEUP-001 / CAL-006: the ledger ----------
+  function ledgerHtml(o: Observation): string {
+    const calRun = inCalibrationRun(scenario, o.driver.lastExecutedLine);
+    const ledgerLine = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div>`;
+    const taLine = `<div class="muted">${o.ta.hasTaPoints ? (o.ta.windowOpen ? 'TA window open: file the request in the form on the road view (T).' : 'Held by a train, an accident scene or emergency speed? At the yellow TA box press T for the form (15 minutes).') : 'Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.'}</div>`;
+    // CAL-006: no early/late cue at any rung during the calibration run: the navigator does the math afterwards
+    const paceLine = calRun ? '<div class="muted" id="cal-nofeedback">Calibration run: no early/late feedback. Hold the speed, lap each point, do the math after.</div>'
+      : o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${escapeHtml(paceAidText(o.aids.earlyLate, sim.waitReason))}</b></div>` : '';
+    // MAKEUP-001: the running total with the 10 % and 20 % options in mph and seconds, and the reminder to drop the extra at the next sign
+    const entries = o.ledgerEntries ?? [];
+    const owed = typeof o.makeUpTotal === 'number' && entries.length ? o.makeUpTotal : o.ledger;   // MAKEUP-001: the running total of the make-up entries
+    const nextIns = scenario.book[o.driver.lastExecutedLine ?? 0];
+    const mk = makeUpPlan(owed, assignedAfter(scenario, o.driver.lastExecutedLine), { inTimedInterval: inTimedInterval(scenario, sim.events, o.tod), pause: nextIns?.pause ?? null });
+    let makeUp = '';
+    const run = sim.makeUp;   // the engine saw a call at least 8 % over the assigned speed: a make-up in progress
+    const runLine = run ? `<div class="muted" id="makeup-running">Make-up in progress: ${run.calledMph} mph, +${run.pct} % over ${run.assigned}, for ${Math.max(0, Math.round(o.tod - run.sinceTod))} s: about ${Math.max(0, Math.round((o.tod - run.sinceTod) * run.pct / 100))} s made up so far. Drop it at the next speed-change sign.</div>` : '';
+    if (!calRun && mk.owed !== 0) {
+      makeUp = `<div class="makeup" id="makeup"><div><b>Make-up total: <span class="mono" id="makeup-owed">${mk.owed > 0 ? '+' : ''}${Math.round(mk.owed)} s</span></b> <span class="muted">(${mk.direction === 'over' ? 'drive over' : 'drive under'}, in chunks)</span></div>`
+        + (entries.length ? `<div class="muted" id="makeup-entries">${entries.map(e => `${escapeHtml(e.source)} ${e.seconds > 0 ? '+' : ''}${e.seconds}`).join(', ')}</div>` : '')
+        + runLine
+        + (mk.options.length ? `<table class="makeup-opts" id="makeup-opts"><tbody>${mk.options.map(x => `<tr data-pct="${x.pct}"><td>${mk.owed < 0 ? '-' : '+'}${x.pct} %</td><td class="mono">${x.mph} mph</td><td class="mono">${x.seconds} s</td><td class="muted">${x.perMinute} s per minute</td></tr>`).join('')}</tbody></table>` : '')
+        + `<div class="muted" id="makeup-chunks">Chunks: ${mk.chunks.map(c => `${c.minutes} min = ${c.gain10} s (+10 %) / ${c.gain20} s (+20 %)`).join('; ')}</div>`
+        + `<div class="makeup-drop" id="makeup-drop">${escapeHtml(mk.dropReminder)}</div>`
+        + (mk.timedWarning ? `<div class="danger" id="makeup-timed">${escapeHtml(mk.timedWarning)}</div>` : '')
+        + (mk.stopShortening ? `<div class="muted" id="makeup-stop">${escapeHtml(mk.stopShortening)}</div>` : '')
+        + '</div>';
+    }
+    return ledgerLine + taLine + paceLine + makeUp;
+  }
+
+  // ---------- UI-037 / START-001: the start card, the 30-second warning and the count ----------
+  /** The start (pre-read) or the restart the car is waiting at: your time, launch time, and the count relative to the launch second. */
+  function activeLaunch(o: Observation): { plan: LaunchPlan; line: number } | null {
+    if (!policy.computedCard) return null;   // the numbers are the answer sheet: legal runs (rung <= 1) work the launch out themselves
+    const info = launchPlanFromInfo(o.launch);   // the engine's own launch plan (START-001): own time, net loss, launch time
+    if (info && o.launch) return { plan: info, line: o.launch.line };
+    if (o.phase === 'preread') { const plan = startLaunchFor(scenario, 1); return plan ? { plan, line: 1 } : null; }
+    if (o.phase === 'running' && o.stoppedAtLine && sim.waitReason === 'hold') { const plan = startLaunchFor(scenario, o.stoppedAtLine); return plan ? { plan, line: o.stoppedAtLine } : null; }
+    return null;
+  }
+  let lastCount: StartCountVm | null = null;
+  // PROTO-001: the navigator's count (the engine's driver echoes each number and says "keep counting" past zero)
+  let countingStop = false; let lastCountSent: number | null = null; const startBeatsSent = new Set<number>();
+  function renderStartCard(o: Observation): void {
+    const al = activeLaunch(o);
+    const cnt = al ? startCount(o.tod, al.plan.launchTod) : null; lastCount = cnt;
+    const atSign = o.phase === 'preread' || (o.phase === 'running' && !!o.stoppedAtLine && sim.waitReason === 'hold');
+    const q = atSign ? startQueueVm(o.startQueue, o.tod, rung) : null;
+    const paint = (parts: StartParts, show: boolean): void => {
+      parts.queue.textContent = show && q ? q.text : ''; parts.queue.dataset.state = show && q ? q.state : '';
+      if (!show || !al || !cnt) { parts.plan.textContent = ''; parts.warn.style.display = 'none'; parts.count.style.display = 'none'; return; }
+      parts.plan.textContent = `Line ${al.line}: ${al.plan.text}`;
+      parts.warn.style.display = cnt.warning ? '' : 'none'; if (cnt.banner) parts.warn.textContent = cnt.banner;
+      parts.count.style.display = cnt.beatText !== null ? '' : 'none'; if (cnt.beatText !== null) { parts.count.textContent = cnt.beatText; parts.count.dataset.beat = cnt.beatText; parts.count.className = `start-count${cnt.phase === 'go' ? ' go' : ''}`; }
+    };
+    const onRoad = o.phase !== 'preread' && atSign;
+    paint(roadStartParts, onRoad); roadStart.style.display = onRoad && (al || (q && q.state !== 'none')) ? '' : 'none';
+    if (preStartParts) paint(preStartParts, o.phase === 'preread');
+  }
+  function sendCounts(o: Observation, dwellSoFar: number): void {
+    // the start count: after W (the 30-second warning) each visible beat 10 ... 1 is the navigator's count to the driver
+    const al = activeLaunch(o);
+    if (al && o.launch?.warned && lastCount && lastCount.phase === 'counting' && lastCount.beat !== null && !startBeatsSent.has(lastCount.beat)) { startBeatsSent.add(lastCount.beat); act({ type: 'count', n: lastCount.beat }); }
+    if (!al) startBeatsSent.clear();
+    // the stop count: from the rock-back down the card dwell to zero, then 1, 2, ... while the car has not gone
+    if (countingStop && o.stoppedAtLine && o.carStopped && policy.computedCard) {
+      const pc = cachedCard(o.stoppedAtLine); const total = pc?.stop ? Math.round(pc.stop.dwell) : null;
+      if (total !== null) { const el = Math.floor(Math.max(0, dwellSoFar)); const n = el <= total ? total - el : el - total; if (n !== lastCountSent) { lastCountSent = n; act({ type: 'count', n }); } }
+    } else if (!o.stoppedAtLine) lastCountSent = null;
+  }
   function renderNow(): void { autoFollow(); obs = sim.observe(); for (const m of obs.driver.messages) driverLog.push(m); if (obs.stoppedAtLine && stopWaitTod === null) stopWaitTod = obs.tod; else if (!obs.stoppedAtLine) stopWaitTod = null; draw(obs); }
   function draw(o: Observation): void {
     const w = roadWrap.clientWidth || 600, h = roadWrap.clientHeight || 240;
@@ -444,7 +597,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const pending = o.driver.pendingTurn ? `turn ${o.driver.pendingTurn}` : keys.buffer ? `speed ${keys.buffer}…` : finishAsk;
     // pace aid: at a STOP show how long to wait (rung 3) or only early / late (rung 2), not the raw count to zero (PT-02 BUG-10)
     const dwellSoFar = stopWaitTod !== null ? o.tod - stopWaitTod : 0;
-    let pace: number | null = o.aids.earlyLate ?? null; let paceMode: 'seconds' | 'arrow' | 'wait' = 'seconds'; let waitMoreS: number | null = null;
+    const calRun = inCalibrationRun(scenario, o.driver.lastExecutedLine);   // CAL-006: no pace bar, no early/late cue and no countdown cue during the calibration run
+    let pace: number | null = calRun ? null : (o.aids.earlyLate ?? null); let paceMode: 'seconds' | 'arrow' | 'wait' = 'seconds'; let waitMoreS: number | null = null;
     if (o.stoppedAtLine && pace !== null) {
       if (rung >= 3) {
         const pc = cachedCard(o.stoppedAtLine);
@@ -453,7 +607,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
         paceMode = waitMoreS === null ? 'arrow' : 'wait';
       } else paceMode = 'arrow';
     }
-    if (rctx) drawRoad(rctx, o, w, h, theme, { pendingCallout: pending, driverLine: lastLine ? lastLine.text : null, pace, paceMode, waitMore: waitMoreS, countdown: o.aids.countdown ?? null, offCourseHint: o.offCourseHint, showDistances: policy.digitalReadouts });
+    if (rctx) drawRoad(rctx, o, w, h, theme, { pendingCallout: pending, driverLine: lastLine ? lastLine.text : null, pace, paceMode, waitMore: waitMoreS, countdown: calRun ? null : (o.aids.countdown ?? null), offCourseHint: o.offCourseHint, showDistances: policy.digitalReadouts, paceCars: paceCarsFrom(o).filter(c => !(c.side === 'ahead' && o.ahead.some(f => f.kind === 'car'))), gaining: !!o.cues?.gainingOnCarAhead });
     // instruments: sized from the pane they live in, so a window resize re-lays them out
     const instH = instruments.clientHeight || 240; const instW = instruments.clientWidth || 600;
     const swSize = Math.round(clamp(Math.min(instH - 96, instW * 0.36), 110, 400)); const clSize = Math.round(clamp(Math.min(swSize * 0.8, (instW - swSize) / 2 - 18, instH - 56), 80, 300)); const spSize = Math.round(clamp(Math.min(swSize * 0.7, (instW - swSize) / 2 - 18, instH - 56), 70, 260));
@@ -476,9 +630,11 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
       swCap.innerHTML = `${policy.digitalReadouts ? `<b id="lcd">${escapeHtml(swVm.digital)}</b> ` : ''}${sw.running ? '<span class="ok">running</span>' : 'stopped'} · bezel ${escapeHtml(sw.bezel.toFixed(1))} s${policy.digitalReadouts ? ` (${escapeHtml(sw.bezelRemaining.toFixed(1))} to go)` : ''}`;
       laps.replaceChildren(...swVm.lapRows.flatMap((r, i) => [el('span', { class: i === 0 ? 'cur' : '' }, `L${r.n}`), el('span', { class: i === 0 ? 'cur' : '' }, r.text), el('span', {}, `+${r.split}`)]));
     }
-    const cvm = clockViewModel(o.tod, o.bezel);
+    const cvm = clockViewModel(o.tod, o.bezel, { rung, slop: o.rules.clockMinuteSlop, engine: (o.clock as EngineClock | undefined) ?? null });   // INST-001: the loose minute hand
     { const cctx = prepare(clockCanvas, clSize, clSize); if (cctx) drawClock(cctx, cvm, clSize, theme); }
-    clockCap.innerHTML = `official start ${escapeHtml(formatClock(o.startTime))}`;   // no numeric time of day at any aids rung (REG II.H.1.d(1))
+    clockCanvas.dataset.minuteAmbiguous = String(cvm.minuteAmbiguous);
+    if (digitalSw) dwMode.classList.toggle('attn', cvm.minuteAmbiguous && sw.mode !== 'tod');
+    clockCap.innerHTML = `official start ${escapeHtml(formatClock(o.startTime))}${cvm.minuteAmbiguous ? '<div class="clock-warn" id="clock-warn">minute hand is between marks: read the minute on the watch (TOD, M)</div>' : ''}`;   // no numeric time of day at any aids rung (REG II.H.1.d(1))
     const svm = speedoViewModel(o.speedo.reading, 100);
     const pctx = prepare(spCanvas, spSize, spSize); if (pctx) drawSpeedo(pctx, svm, spSize, theme, o.driver.targetIndicated);
     spCap.innerHTML = `${policy.digitalReadouts ? `<b>${escapeHtml(svm.text)}</b> mph · ` : ''}${o.driver.targetIndicated !== null ? `holding ${escapeHtml(String(o.driver.targetIndicated))}` : 'no speed called'}`;
@@ -493,6 +649,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     scaleBtns.querySelectorAll('button[data-scale]').forEach(b => { (b as HTMLButtonElement).style.outline = Number((b as HTMLElement).dataset.scale) === requested ? '2px solid var(--accent)' : ''; });
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     if (flashUntil && performance.now() > flashUntil) { chipMsg.style.display = 'none'; flashUntil = 0; }
+    renderStartCard(o);
+    sendCounts(o, dwellSoFar);
     // pre-read overlay
     if (o.phase === 'preread') {
       preread.style.display = '';
@@ -502,12 +660,14 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     // drawer
     callout.textContent = keys.buffer ? `${keys.buffer}_ (Enter calls it)` : o.driver.pendingTurn ? `turn ${o.driver.pendingTurn} pending` : o.driver.targetIndicated !== null ? `holding ${o.driver.targetIndicated}` : '-';
     if (finishAsk) callout.textContent = `${finishAsk}`;
+    nextCallEl.textContent = o.nextCall !== undefined ? (o.nextCall ? `Next call: ${o.nextCall.text}` : '') : (nextCallPrompt(scenario, o.driver.lastExecutedLine, rung) ?? '');   // PROTO-001: at rung >= 2 the reminder of the next call
     if (keys.modifiers.length) callout.textContent += `  [${keys.modifiers.join('')}+arrow]`;
-    ledgerBody.innerHTML = `<div>Ledger: <b class="mono">${o.ledger === null ? 'not set' : escapeHtml((o.ledger > 0 ? '+' : '') + o.ledger + ' s')}</b> <span class="muted">(E)</span></div><div class="muted">${o.ta.hasTaPoints ? (o.ta.windowOpen ? 'TA window open: file the request in the form on the road view (T).' : 'Held by a train, an accident scene or emergency speed? At the yellow TA box press T for the form (15 minutes).') : 'Hazard held you? Time it on the watch and press T to declare a TA before the checkpoint.'}</div>${o.aids.earlyLate !== undefined ? `<div>Pace aid: <b class="mono">${escapeHtml(paceAidText(o.aids.earlyLate, sim.waitReason))}</b></div>` : ''}`;
+    ledgerBody.innerHTML = ledgerHtml(o);
+    chunkRow.style.display = ledgerBody.querySelector('#makeup') ? '' : 'none';
     renderPerfCard(o, dwellSoFar);
     renderTa(o); renderCharts(o);
     notesList.innerHTML = o.notes.slice(-4).map(n => `<div>· ${escapeHtml(n)}</div>`).join('');
-    logBody.innerHTML = driverLog.slice(-6).map(m => `<div class="${m.kind === 'question' ? 'q' : ''}"><span class="muted mono">${policy.digitalReadouts ? escapeHtml(formatClock(m.tod)) : ''}</span> ${escapeHtml(m.text)}</div>`).join('') || '<div class="muted">Dad has not said anything yet.</div>';
+    logBody.innerHTML = driverLog.slice(-8).map(m => { const k = driverLineKind(m); return `<div class="${m.kind === 'question' ? 'q' : ''} dl dl-${k}" data-kind="${k}"><span class="muted mono">${policy.digitalReadouts ? escapeHtml(formatClock(m.tod)) : ''}</span> ${escapeHtml(m.text)}</div>`; }).join('') || '<div class="muted">Dad has not said anything yet.</div>';
     renderBook(o);
     // CP card (DEBRIEF-004)
     if (sim.events.length > seenEvents) {
@@ -519,20 +679,24 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   }
   function buildPreread(): void {
     const dep = el('button', { class: 'primary', id: 'depart' }, 'Depart now (D)'); dep.onclick = () => { if (blockedBySave()) return; act({ type: 'start' }); renderNow(); };
+    const warnBtn = el('button', { id: 'warn-driver', title: 'W: tell the driver "about 30 seconds"' }, 'Warn the driver (W)'); warnBtn.onclick = () => handle({ type: 'call.warn' });
+    const pullBtn = el('button', { id: 'pull-up', title: 'Q: pull up to the start sign, once the car ahead has left' }, 'Pull up (Q)'); pullBtn.onclick = () => handle({ type: 'pullUp' });
     const skip = el('button', { id: 'skip' }, 'Fast-forward to the start time'); skip.onclick = () => { if (blockedBySave()) return; act({ type: 'skipPreread' }); renderNow(); };
     const v0 = scenario.book[0]?.speed; let accel = ''; if (v0) { try { accel = ` Your car loses about ${accelLoss(v0, scenario.car).toFixed(1)} s getting up to ${v0} mph, so depart a few seconds early.`; } catch { accel = ''; } }
-    const generic = `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one. The ghost leaves exactly on the second.${accel}`;
+    const generic = `Official start ${formatClock(scenario.startTime)}. Read the book on the right: highlight pauses, write the GO time (pause minus your car's stop/start loss) next to each one. The ghost leaves exactly on the second.${accel} Nobody releases you: wait for your time, launch your standing-start loss early, and expect the driver's warning about 30 seconds before.`;
     const keysRow = el('div', { class: 'keys3' }); for (const [k, d] of hint.keys) keysRow.append(el('div', {}, el('kbd', {}, k), ' ', d));
     const rs = restartLines(scenario);
+    const preStart = el('div', { class: 'startcard' }); preStartParts = startCardParts(preStart);
     preread.append(el('div', { class: 'box' },
       resumeBanner(),
       el('h2', {}, drill ? `${drill.id}: ${drill.title}` : scenario.name),
+      preStart,
       el('p', { class: 'objective' }, el('b', {}, 'Objective: '), objective),
       el('div', { class: 'keys-title muted' }, 'The keys that matter'), keysRow,
       el('p', {}, hint.preread ?? generic),
       rs.length ? el('p', { class: 'accent' }, rs.map(r => `Line ${r.line}: ${r.label}`).join(' · ')) : null,
       el('div', { class: 'big', id: 'countdown' }),
-      el('div', { style: 'display:flex;gap:8px;justify-content:center;margin-top:10px' }, dep, skip),
+      el('div', { style: 'display:flex;gap:8px;justify-content:center;margin-top:10px;flex-wrap:wrap' }, pullBtn, warnBtn, dep, skip),
       el('p', { class: 'muted', style: 'margin-top:8px' }, 'Space starts the stopwatch; most navigators start it on the official second and run it as time-of-day all day.')));
   }
   /** N4: the cockpit pre-read offers the saved run of this drill: Resume restores it exactly as Home does, Start fresh discards it. */
@@ -567,6 +731,8 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (!card) { cardBody.innerHTML = ''; return; }
     const parts: string[] = [`<div><b>Line ${line}</b>: ${escapeHtml(card.text)}</div>`];
     const hold: HoldCard | null = policy.computedCard ? (holdCardFor(scenario, sim, line, o.asp) ?? openTransitCard(scenario, sim, o.driver.lastExecutedLine)) : null;   // UI-032: an open exact transit keeps its recorded IN time on the card
+    const lp = policy.computedCard ? startLaunchFor(scenario, line) : null;   // START-001: your time, launch at your time minus the standing-start loss
+    if (lp) parts.push(`<div class="launchcard" id="launchcard"><b>Launch</b> <span class="mono">${esc(lp.text)}</span><div class="muted">Warn the driver about 30 s before; count so the last count lands on the launch second.</div></div>`);
     if (hold) parts.push(`<div class="holdcard ${hold.kind}" id="holdcard"><b>${escapeHtml(hold.title)}</b><div class="mono">${escapeHtml(hold.text)}</div></div>`);
     if (card.restart) {
       parts.push(`<div class="accent">Not a stop: call go so the car leaves at the out-time${card.restart.accel !== null ? ` minus the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);
@@ -575,7 +741,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
         const s = card.stop; const more = waitMore(s, dwellSoFar);
         if (s.chart) parts.push(`<div class="chartline" id="chartline">Chart (b) Stop &amp; Go: ${s.vIn} in / ${s.vOut} out = sit <b class="mono">${s.chart.chart.toFixed(1)}</b> s for a 15 s stop${s.pause !== 15 ? `; this pause is ${s.pause} s: sit <b class="mono">${s.chart.sit.toFixed(1)}</b> s` : ''}</div>`);
         parts.push(`<div>Stop ${s.vIn} in / ${s.vOut} out${s.cap !== undefined ? ` (turn capped at ${s.cap} mph)` : ''}: loss <b class="mono">${s.loss.toFixed(1)}</b> s → dwell <b class="mono">${s.dwell.toFixed(1)}</b> s after "Stopped" <span class="muted">(set the bezel with ] )</span></div>`);
-        if (o.stoppedAtLine === line && more !== null) parts.push(`<div class="stopnow">dwell so far <b class="mono">${Math.max(0, dwellSoFar).toFixed(1)}</b> s · ${more > 0.05 ? `wait <b class="mono">${more.toFixed(1)}</b> more s` : '<b class="ok">go now (G)</b>'}</div>`);
+        if (o.stoppedAtLine === line && more !== null) parts.push(`<div class="stopcount muted" id="stopcount">Count it out loud for the driver: <kbd>X</kbd> (${countingStop ? '<b>counting</b>' : 'off'}); say "coming in at ${s.vIn}, out ${s.vOut}, holding for ${Math.round(s.dwell)}" first.</div><div class="stopnow">dwell so far <b class="mono">${Math.max(0, dwellSoFar).toFixed(1)}</b> s · ${more > 0.05 ? `wait <b class="mono">${more.toFixed(1)}</b> more s` : '<b class="ok">go now (G)</b>'}</div>`);
       } else if (card.stopNoPause) parts.push(`<div>STOP without pause: loss ${card.stopNoPause.loss.toFixed(1)} s is yours to recover.</div>`);
       if (card.timed) parts.push(`<div>Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, call ${card.timed.then} at <b class="mono">${card.timed.call.toFixed(1)}</b> s (lead ${card.timed.lead.toFixed(1)})</div>`);
       else if (card.speedChange) parts.push(`<div>Speed ${card.speedChange.from} → ${card.speedChange.to}: call it <b class="mono">${card.speedChange.lead.toFixed(1)}</b> s before the landmark (${card.speedChange.ft} ft)</div>`);
@@ -594,6 +760,11 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     cardBody.innerHTML = parts.join('');
   }
   function currentScale(o: Observation): number {
+    const base = baseScale(o);
+    const al = activeLaunch(o); if (al && base > 0) { const left = al.plan.launchTod - o.tod; if (left <= 40 && left > -3) return Math.min(base, 1); }   // the count runs in real time
+    return base;
+  }
+  function baseScale(o: Observation): number {
     const nearest = o.ahead.length ? Math.min(...o.ahead.map(f => f.approxDistanceFt)) : null;
     const hazard = o.ahead.some(f => f.kind === 'slow' || f.kind === 'construction' || f.gateDown || f.signalColor === 'red');
     return effectiveScale({ requested, paused, phase: o.phase, carStopped: o.carStopped, waitingForGo: o.driver.waitingForGo, nearestFeatureFt: nearest, hazardActive: hazard, countdownSeconds: o.aids.countdown ?? null, bezelRemaining: o.stopwatch.running && o.stopwatch.kind === 'analog' ? o.stopwatch.bezelRemaining : null, lockedTo1x });

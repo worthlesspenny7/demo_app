@@ -101,7 +101,23 @@ export class OracleBot implements Bot {
         near = goTod !== null ? goTod - sim.tod <= 120 : d / v <= 120; break;
       }
     }
-    if (near) { this.lastGlance = sim.tod; sim.act({ type: 'clock.read' }); }
+    if (near) { this.lastGlance = sim.tod; this.readClock(); }
+    else if (sim.watch.kind === 'digital' && sim.watch.mode === 'tod' && sim.tod - this.lastGlance > 30) sim.act({ type: 'watch.mode', mode: 'chrono' });
+  }
+  /** INST-002 the director's setup: time of day from the stopwatch's TOD mode (the clock's minute hand is loose near the top of a minute), seconds from the second hand. */
+  private readClock(): void {
+    const sim = this.sim;
+    if (sim.watch.kind === 'digital') { if (sim.watch.mode !== 'tod') sim.act({ type: 'watch.mode', mode: 'tod' }); sim.act({ type: 'clock.read', source: 'stopwatch' }); }
+    else sim.act({ type: 'clock.read' });
+  }
+  /** START-001: pull up to the line once the car ahead has left, and give the driver the "about 30 seconds" warning before the launch time. */
+  private pulled = new Set<number>(); private warned = new Set<number>(); private seenDrops = 0;
+  private procedure(): void {
+    const sim = this.sim; if (this.o.ignoreLosses) return;
+    const li = sim.launchInfo(); if (!li) return;
+    const ins = sim.sc.book.find(i => i.n === li.line); if (!ins) return;
+    if (!this.pulled.has(li.line) && !sim.startQueue(ins).carAheadAtSign) { this.pulled.add(li.line); sim.act({ type: 'pullUp' }); }
+    if (!this.warned.has(li.line) && sim.tod >= li.launchTime - 30) { this.warned.add(li.line); sim.act({ type: 'call.warn', seconds: 30 }); }
   }
   /** The calibration run: restart the stopwatch at the asterisk, lap at every calibration point, and work out k from the printed cumulative time (CAL-001). */
   private calibrate(): void {
@@ -127,6 +143,8 @@ export class OracleBot implements Bot {
     const sim = this.sim; const sc = sim.sc; const car = sim.car;
     this.flush();
     this.glance();
+    this.procedure();
+    if (sim.phase === 'finished' && sc.rules.taMode === 'paper') this.declareTA();
     if (sim.phase === 'preread') {
       const v0 = sc.book[0]!.speed ?? this.plans[0]!.transitMph ?? 30;
       const lead = this.o.ignoreLosses ? 0 : accelLoss(v0, sc.car);
@@ -225,7 +243,7 @@ export class OracleBot implements Bot {
       for (const leg of st.eligibleLegs) {
         if (this.taDone.has(leg)) continue; this.taDone.add(leg);
         const adv = sim.taAdvice(leg); const amount = Math.min(Math.floor(adv.measuredDelay / 10) * 10, Math.ceil(adv.possible / 10) * 10);
-        if (amount > 0) this.act({ type: 'ta.request', legIndex: leg, seconds: amount, fromLine: adv.fromLine ?? 1, toLine: adv.toLine ?? adv.fromLine ?? 1, note: `Delayed ${Math.round(adv.measuredDelay)} s by a train or accident scene. Made up ${Math.round(adv.recoverable)} s.` });
+        if (amount > 0) this.act({ type: 'ta.request', legIndex: leg, seconds: amount, fromLine: adv.fromLine ?? 1, toLine: adv.toLine ?? adv.fromLine ?? 1, note: `Delayed ${Math.round(adv.measuredDelay)} s by a train or accident scene. Made up ${Math.round(adv.recoverable)} s.`, carNumber: 1, password: '1939', phone: '555-0100', stage: 1, cause: adv.cause ?? 'train', witnesses: { ahead: 2, behind: 4 } });
       }
       if (st.endOfStage && !sim.scorecardAcked) this.act({ type: 'scorecard.ack' });
       return;
@@ -249,6 +267,8 @@ export class OracleBot implements Bot {
     for (const p of this.plans) { if (p.s <= car.s) assigned = p.ins.timed ? (this.timedPending?.called ? p.ins.timed.thenSpeed : p.ins.timed.holdSpeed) : p.ins.speed ?? assigned; else { nextD = p.s - car.s; nextPlan = p; break; } }
     if (assigned === null) return;
     const pace = sim.pace();
+    // MAKEUP-001: the simulator dropped the "+%" at a speed change: start over and re-apply it on the new assigned speed
+    if (this.seenDrops !== sim.makeUpDrops) { this.seenDrops = sim.makeUpDrops; this.recovering = null; }
     // keep the pace-making speed until close to the next line, unless that line needs a stop, a turn or a speed change worked precisely
     const delicate = !!nextPlan && (nextPlan.ins.pause !== undefined || (nextPlan.ins.turn !== undefined && nextPlan.ins.turn !== 'S') || nextPlan.ins.timed !== undefined || (nextPlan.ins.speed !== undefined && nextPlan.ins.speed !== assigned) || isHoldIns(nextPlan.ins) || nextPlan.ins.section === 'finish' || (sim.sc.course.nodes.find(n => n.id === nextPlan!.ins.nodeId)?.control ?? 'none') !== 'none');
     const nearEvent = nextD < (delicate ? 900 : 300) || car.mode !== 'cruise';
@@ -310,5 +330,6 @@ export function makeBot(name: BotName, sim: Simulator, seed = 1): Bot | null {
 export function runBot(sim: Simulator, bot: Bot | null, maxSeconds = 12 * 3600): ReturnType<Simulator['result']> {
   let t = 0;
   while (sim.phase !== 'finished' && t < maxSeconds) { bot?.onTick(sim); sim.step(0.1); t += 0.1; }
+  if (bot && sim.phase === 'finished' && sim.sc.rules.taMode === 'paper') bot.onTick(sim);   // TAF-001 paper sheets are handed in at the red checkpoint stop, which is the finish
   return sim.result();
 }

@@ -7,6 +7,7 @@ export type KeyCommand =
   | { type: 'call.turn'; dir: TurnDir }
   | { type: 'call.go' } | { type: 'call.stop' } | { type: 'call.uturn' } | { type: 'call.pass' }
   | { type: 'ta' } | { type: 'ledger' } | { type: 'depart' }
+  | { type: 'call.warn' } | { type: 'pullUp' } | { type: 'identify' } | { type: 'count' }
   | { type: 'line'; delta: number } | { type: 'line.home' } | { type: 'line.end' }
   | { type: 'call.speed'; mph: number } | { type: 'nudge'; delta: number }
   | { type: 'scale'; delta: 1 | -1 } | { type: 'pause' }
@@ -70,6 +71,10 @@ export class KeyMapper {
       case 'n': return { type: 'line', delta: shift ? -1 : 1 };
       case 'd': return { type: 'depart' };
       case 'e': return { type: 'ledger' };
+      case 'w': return { type: 'call.warn' };   // START-001: "about 30 seconds" to the driver
+      case 'q': return { type: 'pullUp' };      // START-001: pull up to the sign once the car ahead has left
+      case 'x': return { type: 'count' };       // PROTO-001: count the stop out loud (the driver echoes it, "keep counting")
+      case 'i': return { type: 'identify' };    // PROTO-001: ICE, identify what to look for
       case '.': return { type: 'scale', delta: 1 };
       default: return null;
     }
@@ -85,5 +90,6 @@ export const KEY_HELP: { keys: string; does: string }[] = [
   { keys: 'T', does: 'Time Allowance form (at a TA point)' }, { keys: 'N / Shift+N', does: 'next / previous line' }, { keys: 'Home / End', does: 'first / last line' },
   { keys: 'digits, Enter', does: 'call that speed' }, { keys: '+ / -', does: 'nudge speed by 1 mph' },
   { keys: 'D', does: 'depart (start the leg)' }, { keys: 'E', does: 'set the ledger (early/late)' },
+  { keys: 'W', does: 'warn the driver: about 30 seconds to the launch' }, { keys: 'Q', does: 'pull up to the start sign (refused while the car ahead is still there)' }, { keys: 'X', does: 'count the stop out loud: 9 ... 1, GO, then 0, 1, 2 (the driver echoes; "keep counting")' }, { keys: 'I', does: 'ICE: identify the next sign (the driver answers "I see it too")' },
   { keys: ', / .', does: 'time scale down / up' }, { keys: 'Esc', does: 'pause' },
 ];

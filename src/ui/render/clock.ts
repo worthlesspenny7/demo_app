@@ -17,7 +17,8 @@ export function drawClock(ctx: CanvasRenderingContext2D, vm: ClockVm, size: numb
   for (let i = 1; i <= 12; i++) { const [x, y] = polar(cx, cy, rd * 0.74, i * 30); label(ctx, String(i), x, y, Math.max(10, rd * 0.17), '#111', '700'); }
   label(ctx, 'TIME OF DAY', cx, cy + rd * 0.42, Math.max(7, rd * 0.08), '#555', '600');
   hand(ctx, cx, cy, vm.hourDeg, rd * 0.55, Math.max(3, rd * 0.05), '#111', rd * 0.08);
-  hand(ctx, cx, cy, vm.minuteDeg, rd * 0.86, Math.max(2.5, rd * 0.035), '#111', rd * 0.1);
+  // INST-001: a loose minute hand near the minute change is drawn between two marks and a little lighter: its minute cannot be read (use the stopwatch TOD mode)
+  hand(ctx, cx, cy, vm.minuteDeg, rd * 0.86, Math.max(2.5, rd * 0.035), vm.minuteAmbiguous ? '#6b6b6b' : '#111', rd * 0.1);
   hand(ctx, cx, cy, vm.secondDeg, rd * 0.92, Math.max(1, rd * 0.012), th.danger, rd * 0.15);
   ctx.beginPath(); ctx.arc(cx, cy, Math.max(2.5, rd * 0.03), 0, Math.PI * 2); ctx.fillStyle = th.danger; ctx.fill();
 }

@@ -70,10 +70,12 @@ export interface GenProfile {
   bookStyle?: 'example' | 'race';
   /** GRIID-012: probability that a row whose assigned speed is unchanged omits it, as real sheets do (about one row in ten overall; Trophy Run #40, #53, #57, #73, #74). Default 0.3, about one row in twelve overall on top of the rows that never carry one; 0 prints every speed. */
   omitUnchangedSpeedProbability?: number;
+  /** TAF-002: long rural segments may hold a Time-Allowance-qualifying delay (tractor, school bus, construction zone, combine) instead of the plain slow vehicle. Default false. */
+  delayCauses?: boolean;
 }
 
-/** STAGE-007: multiples of 5 from 15 to 55; 20 is the common town speed, 50 and 55 are highway speeds. */
-export const SPEEDS: readonly number[] = [20, 25, 30, 35, 40, 45, 50, 55];
+/** STAGE-007 / SPEED-001: multiples of 5 from 15 to 55, and 48 ("on quite a few occasions", 10a 2026 58:56); 20 is the common town speed, 50 and 55 are highway speeds. */
+export const SPEEDS: readonly number[] = [20, 25, 30, 35, 40, 45, 48, 50, 55];
 const TOWN_SPEEDS: readonly number[] = [20, 25, 30, 35];
 const RURAL_SPEEDS: readonly number[] = [30, 35, 40, 45, 50, 55];
 const FT_MI = 5280;
@@ -89,6 +91,8 @@ const COST = { stop: 0.5, stopNoPause: 7, signalRed: 10, trainHit: 12, yield: 6,
 /** Oracle recovery: +2 mph over the assigned speed (+5 when more than 6 s late), only when > 900 ft from the next instruction node. */
 function recoveryPerFt(speedMph: number, debt: number): number { const d = debt > 6 ? 5 : 2; return 0.65 * (1 / mphToFps(speedMph) - 1 / mphToFps(speedMph + d)); } // ~65 % efficient in practice
 const MAX_DEBT_AT_CP = 2.5;
+/** CPX-001: the last checkpoint of the final timed portion is a late surprise, less than this many seconds (7m30s of the 10 allowed) before "End timed portion". */
+const LATE_SURPRISE_S = 450;
 
 interface Item {
   at: number;             // ft from leg start
@@ -104,7 +108,7 @@ interface Item {
   speedAfter: number;
   signal?: { redSeconds: number; greenSeconds: number; offset: number };
   train?: { durationSeconds: number; hit: boolean };
-  slow?: { at: number; speedMph: number; lengthFt: number; passWindowAfterFt: number };
+  slow?: { at: number; speedMph: number; lengthFt: number; passWindowAfterFt: number; /** TAF-002: a qualifying cause instead of the plain slow vehicle */ cause?: 'tractor' | 'combine' | 'construction' | 'schoolBus' };
   trapId?: string;
   cpAfterFt?: [number, number];
   town: boolean;
@@ -134,6 +138,8 @@ class Generator {
   private readonly r: Rng;
   /** Own stream for the cosmetic speed omission, so the layout, traps and timing of a seed do not depend on it. */
   private readonly omitRng: Rng;
+  /** Own stream for the V3 choices (calibration speed 55, delay causes) so the layout of a seed stays what the rest of the draws make it. */
+  private readonly v3Rng: Rng;
   private readonly b: ScenarioBuilder;
   private readonly tags: string[];
   private speed = 35;
@@ -162,8 +168,9 @@ class Generator {
   constructor(readonly seed: number, readonly profile: GenProfile, private readonly kind: 'leg' | 'stage') {
     this.r = rng(`gen:${kind}:${seed}`);
     this.omitRng = rng(`gen-omit:${kind}:${seed}`);
+    this.v3Rng = rng(`gen-v3:${kind}:${seed}`);
     const wanted = profile.cpCount ?? profile.legs;
-    this.legs = kind === 'leg' ? 1 : wanted > 0 ? wanted : this.r.int(4, 7);
+    this.legs = kind === 'leg' ? 1 : wanted > 0 ? wanted : Math.min(6, this.r.int(4, 7));   // CPX-001: 4-6 timing checkpoints a day
     this.tags = [`gen:${profile.name ?? kind}`, `seed:${seed}`];
     this.b = new ScenarioBuilder({
       id: `gen-${profile.name ?? kind}-${seed}`, name: `${profile.name ?? kind} #${seed}`, seed, startTime: profile.startTime ?? 8 * 3600,
@@ -239,8 +246,9 @@ class Generator {
     const w = Array.from({ length: points }, () => 0.7 + r.next()); const wsum = w.reduce((x, y) => x + y, 0);
     const gaps = w.map(x => calMiles * x / wsum);
     const t1miles = r.int(25, 60) / 10; const t1sec = Math.ceil(t1miles / 30 * 3600 / 60) * 60;
-    b.calibrationRun({ miles: calMiles, speed: 50, points, gaps, allowanceExtraSeconds: 60 * r.int(2, 5), thenTransit: { exact: false, seconds: t1sec } });
-    this.tags.push(`calibration:miles:${calMiles.toFixed(1)}:points:${points}`);
+    const calSpeed = this.v3Rng.chance(0.35) ? 55 : 50;   // SPEED-001: 55 appears in the warm-up / calibration / transit part of the 2026 stages
+    b.calibrationRun({ miles: calMiles, speed: calSpeed, points, gaps, allowanceExtraSeconds: 60 * r.int(2, 5), thenTransit: { exact: false, seconds: t1sec } });
+    this.tags.push(`calibration:miles:${calMiles.toFixed(1)}:points:${points}`, `calibration:speed:${calSpeed}`);
     b.advanceMiles(t1miles - 0.3);   // the last row of the transit sits 0.3 mi from its end: it prints the "(0m35s)" guide (HB p.26 #11)
     const bear = r.pick(['BL', 'BR'] as const);
     this.instruction({ exits: EXITS.wye(bear), sightDistance: 600, label: 'Y' }, { turn: bear });
@@ -392,6 +400,7 @@ class Generator {
       let slow: Item['slow'] | undefined;
       if (this.profile.slowTraffic && !inTown && !calm && gap >= 7920 && this.r.chance(0.35) && this.speed >= 40) {
         slow = { at: lastInsAt + 400, speedMph: this.speed - 10, lengthFt: this.r.int(1000, 1600), passWindowAfterFt: 500 };
+        if (this.profile.delayCauses) { const c = this.v3Rng.pick(['tractor', 'combine', 'construction', 'schoolBus'] as const); slow.cause = c; if (c === 'tractor' || c === 'combine') slow.speedMph = Math.max(10, Math.min(slow.speedMph, c === 'tractor' ? 20 : 15)); }
       }
       // distractors (GEN-006): from the card, or a generic one with trapDensity probability
       const at = pos + gap;
@@ -470,10 +479,12 @@ class Generator {
     return { node: { ...d.node, exits: d.node.exits?.map(e => ({ ...e })) }, beforeFt: this.r.int(d.minBeforeFt, d.maxBeforeFt), why: d.why };
   }
 
+  /** SPEED-001: on rural roads a 45 or 50 is sometimes 48 ("on quite a few occasions"); a separate stream, so the layout draws of a seed stay the same. */
+  private maybe48(town: boolean, v: number, avoid?: number): number { return !town && (v === 45 || v === 50) && v !== avoid && this.v3Rng.chance(0.22) && this.speed !== 48 ? 48 : v; }
   private pickSpeed(town: boolean, mustChange: boolean): number {
     const pool = (town ? TOWN_SPEEDS : RURAL_SPEEDS).filter(s => !mustChange || s !== this.speed);
     const near = pool.filter(s => Math.abs(s - this.speed) <= 15);
-    return this.r.pick(near.length ? near : pool);
+    return this.maybe48(town, this.r.pick(near.length ? near : pool));
   }
 
   private hintFor(gap: number, kind: LineType, has: string | undefined): string | undefined {
@@ -605,7 +616,7 @@ class Generator {
 
   private pickSpeedExcept(town: boolean, except: number): number {
     const pool = (town ? TOWN_SPEEDS : RURAL_SPEEDS).filter(s => s !== except && Math.abs(s - except) <= 15);
-    return this.r.pick(pool.length ? pool : SPEEDS.filter(s => s !== except));
+    return this.maybe48(town, this.r.pick(pool.length ? pool : SPEEDS.filter(s => s !== except)), except);
   }
 
   private signalSpec(): Item['signal'] {
@@ -624,7 +635,7 @@ class Generator {
         if (it.slow && x > it.slow.at && x < it.slow.at + it.slow.lengthFt + 300) return false;
       }
       // SIM-021: the sim ends 30 min after the last perfect CP time, so the final CP sits in the tail of the last leg
-      if (lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600)) return false;
+      if (lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600 || this.tailSeconds(items, x) > LATE_SURPRISE_S)) return false;
       return x >= Math.max(600, minX) && this.debtAt(items, x) <= MAX_DEBT_AT_CP;
     };
     const nextAfter = (it: Item): number => items.find(j => j.at > it.at)?.at ?? last.at;
@@ -668,7 +679,7 @@ class Generator {
           else if (it.at - x < it.needBefore) return false;
           if (it.slow && x > it.slow.at && x < it.slow.at + it.slow.lengthFt + 300) return false;
         }
-        return x >= minX && !(lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600));
+        return x >= minX && !(lastLeg && (last.at - x > 8 * FT_MI || x < this.lastCalmFromAt + 600 || this.tailSeconds(items, x) > LATE_SURPRISE_S));
       };
       let bestX = -1, bestDebt = Infinity;
       for (let x = 600; x < last.at - BEFORE.control; x += 100) { if (!geomOk(x)) continue; const d = this.debtAt(items, x); if (d < bestDebt - 1e-9 || (lastLeg && d <= bestDebt + 0.1)) { bestDebt = d; bestX = x; } }
@@ -679,6 +690,23 @@ class Generator {
     if (choice.mode === 'afterStop') this.afterStopPlaced = true;
     this.tags.push(`cp:cp${this.cpNo + 1}:debt:${this.debtAt(items, choice.at).toFixed(1)}`);
     return choice;
+  }
+
+  /**
+   * CPX-001: seconds from a checkpoint at `x` to the end of the timed portion, at the assigned speeds (printed pauses counted), including the
+   * 0.55 mi that the closing "End timed portion" line is placed after the last row.
+   */
+  private tailSeconds(items: Item[], x: number): number {
+    let v = this.carry.length ? this.carrySpeed : this.legStartSpeed;
+    for (const it of [...this.carry, ...items]) { if (it.at > x) break; if (it.ins) v = it.speedAfter; }
+    let pos = x, t = 0; const fps = (mph: number): number => mphToFps(Math.max(5, mph));
+    for (const it of items) {
+      if (it.at <= x) continue;
+      t += (it.at - pos) / fps(v); pos = it.at;
+      if (it.ins?.pause) t += it.ins.pause;
+      if (it.ins) v = it.speedAfter;
+    }
+    return t + (0.55 * FT_MI) / fps(v);
   }
 
   /** Uncompensated seconds the oracle still carries when it reaches `x` (costs minus recovery room, never negative). */
@@ -724,7 +752,12 @@ class Generator {
     let prevAt = 0, cpDone = false;
     for (const it of items) {
       if (!cpDone && cp.at <= it.at) { b.advanceFt(cp.at - prevAt); prevAt = cp.at; this.emitCheckpoint(cp, items); cpDone = true; }
-      if (it.slow) b.hazard({ kind: 'slow', s: legStart + it.slow.at, speedMph: it.slow.speedMph, lengthFt: it.slow.lengthFt, passWindowAfterFt: it.slow.passWindowAfterFt });
+      if (it.slow) {
+        const sl = it.slow; const hs = legStart + sl.at;
+        if (sl.cause === 'schoolBus') { const g = buildGhost(b.build()); b.hazard({ kind: 'schoolBus', s: hs, startTod: ghostTimeAt(g, hs) - 25, durationSeconds: this.v3Rng.int(40, 90) }); this.tags.push(`delay:schoolBus:${this.lineNo + 1}`); }
+        else if (sl.cause) { b.hazard({ kind: sl.cause, s: hs, speedMph: sl.speedMph, lengthFt: sl.lengthFt }); this.tags.push(`delay:${sl.cause}:${this.lineNo + 1}`); }
+        else b.hazard({ kind: 'slow', s: hs, speedMph: sl.speedMph, lengthFt: sl.lengthFt, passWindowAfterFt: sl.passWindowAfterFt });
+      }
       b.advanceFt(it.at - prevAt); prevAt = it.at;
       if (it.ins) {
         this.instruction(it.node, this.maybeOmitSpeed(it.ins));

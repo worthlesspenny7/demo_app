@@ -355,3 +355,35 @@ html.print-card-only .printcard .noprint { display: none; }
 /* UI-035 collapsed debrief sections */
 details.fold > summary { cursor: pointer; font-weight: 700; font-size: 15px; padding: 2px 0; list-style-position: inside; }
 details.fold[open] > summary { margin-bottom: 8px; }
+
+/* ---------- V3 UI (UI-037): start card, warning, count, make-up ledger, TA web form, loose minute hand ---------- */
+.startcard { text-align: center; }
+.startcard.road-start { position: absolute; z-index: 7; left: 50%; top: 46px; transform: translateX(-50%); width: min(480px, calc(100% - 24px)); background: rgba(20,26,34,0.94); color: #f2f4f7; border: 2px solid var(--accent); border-radius: 10px; padding: 8px 12px; pointer-events: none; }
+.startcard .launch-plan { font-size: 13px; color: var(--accent); }
+.startcard .start-warning { margin: 6px 0 2px; padding: 5px 10px; border-radius: 8px; background: var(--warn); color: #141414; font-weight: 700; font-size: 13px; }
+.startcard .start-count { margin-top: 4px; font-family: var(--mono); font-size: 54px; font-weight: 800; line-height: 1.05; color: var(--accent2); }
+.startcard .start-count.go { color: var(--ok); }
+.launchcard { margin-top: 4px; padding: 4px 6px; border-left: 3px solid var(--accent2); background: var(--panel-2); font-size: 12px; }
+.makeup { margin-top: 6px; padding: 5px 7px; border-left: 3px solid var(--accent); background: var(--panel-2); font-size: 12px; }
+.makeup table { width: 100%; border-collapse: collapse; margin: 3px 0; } .makeup td { padding: 1px 4px; border-bottom: 1px solid var(--line); }
+.makeup .makeup-drop { color: var(--accent); margin-top: 3px; }
+.dl-confirm, .dl-mark, .dl-holding, .dl-count { border-left: 2px solid var(--accent2); padding-left: 4px; }
+.dl-mark { font-weight: 700; } .dl-count { color: var(--accent); font-family: var(--mono); }
+.next-call { margin-left: 10px; padding: 1px 8px; border-radius: 6px; background: var(--panel-2); color: var(--accent2); font-size: 12px; }
+.next-call:empty { display: none; }
+.dw-hint { font-size: 10px; line-height: 1.25; }
+.modechip.attn { background: var(--accent); color: #141414; animation: flash 1.2s ease-in-out infinite; }
+.clock-warn { font-size: 11px; color: var(--warn); font-weight: 700; }
+.ta-panel .ta-paper-toggle { font-size: 11px; display: inline-flex; align-items: center; gap: 3px; color: #99a5b8; }
+.ta-panel .ta-helper { margin: 4px 0; padding: 3px 6px; border-left: 3px solid #4fd1c5; background: #212c3b; font-size: 11px; }
+.ta-form input[type="password"], .ta-form input[type="tel"] { flex: 1; min-width: 0; }
+.finding-group { margin: 4px 0; } .finding-group.bad > b { color: var(--danger); } .finding-group ul { margin: 2px 0 0 18px; }
+.lesson-h { margin-top: 14px; color: var(--accent); }
+.schedrow { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+.start-queue { margin-top: 4px; font-size: 12px; color: var(--muted); } .startcard .start-queue[data-state="waiting"], .startcard .start-queue[data-state="sitting"] { color: var(--warn); } .startcard .start-queue[data-state="clear"] { color: var(--ok); }
+.startcard .start-queue:empty { display: none; }
+.chunkrow { margin-top: 4px; font-size: 12px; display: flex; gap: 6px; align-items: center; }
+.ta-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.ta-form label { min-width: 0; }
+.ta-form label input, .ta-form label select { flex: 0 1 96px; min-width: 0; width: auto; max-width: 58%; }
+.ta-form label.wide input { flex: 1 1 auto; max-width: none; }

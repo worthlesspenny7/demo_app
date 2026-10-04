@@ -13,6 +13,8 @@ import { D01 } from './d01.js';
 import { D18, D11, D12, D13, setDayFallback } from './staged.js';
 import type { Drill, Rubric } from './types.js';
 import { basicRubric, legErrors, meanAbs } from './rubrics.js';
+import { lostProcedure, LOST_GUIDANCE } from './lost.js';
+import { formatClock } from '../units.js';
 
 export { setGenerator } from './common.js';
 // ---------- D03 pause arithmetic ----------
@@ -88,7 +90,7 @@ const D09: Drill = {
 
 // ---------- D10 course following in motion ----------
 const D10: Drill = {
-  id: 'D10', title: 'Course following with distractors', objective: 'Fifteen instructions with driveways, gravel roads and misleading signs: stay on course; time is secondary.', skills: ['P7', 'P8'], minutes: 8, kind: 'drive',
+  id: 'D10', title: 'Course following with distractors', objective: 'Fifteen instructions with driveways, gravel roads and misleading signs: stay on course; time is secondary. If you do go wrong, run the lost doctrine: stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course.', skills: ['P7', 'P8'], minutes: 8, kind: 'drive',
   tiers: tiers(), unlock: [],
   scenario(seed, t) { const tier = tierOf(D10, t); const r = rng(seed); const b = base('D10', 'Course following', seed, tier, { excursionFt: 1500 }).start(35);
     for (let i = 0; i < 12; i++) {
@@ -105,7 +107,20 @@ const D10: Drill = {
     // make every turn instruction match its route exit
     for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; if (n.exits && ins.turn) { const route = n.exits.find(e => e.isRoute)!; const nt = Math.abs(route.angle) < 20 ? 'S' : Math.abs(route.angle) < 60 ? (route.angle < 0 ? 'BL' : 'BR') : route.angle < 0 ? 'L' : 'R'; if (nt !== ins.turn) { ins.turn = nt; ins.text = describeInstruction({ turn: nt, speed: ins.speed, pause: ins.pause, hint: ins.hint }, { control: n.control, exits: n.exits, sign: n.sign, label: n.label }); } } }
     return sc; },
-  rubric(r) { const stars: 0 | 1 | 2 | 3 = r.offCourseCount === 0 ? (meanAbs(legErrors(r)) <= 10 ? 3 : 2) : r.offCourseCount === 1 ? 1 : 0; return { score: r.offCourseCount, stars, headline: `${r.offCourseCount} off-course excursions`, feedback: [r.offCourseCount ? 'Confirm the landmark (shape, side, text) before the leading edge; driveways, lots and gravel are not roads.' : 'On course all the way. Now add the clock.'] }; },
+  rubric(r) {
+    // LOST-001: a wrong turn is scored on the doctrine too: stopwatch at the turn-around, the doubled time written within 2 s
+    const lost = lostProcedure(r);
+    const base: 0 | 1 | 2 | 3 = r.offCourseCount === 0 ? (meanAbs(legErrors(r)) <= 10 ? 3 : 2) : r.offCourseCount === 1 ? 1 : 0;
+    const proc = lost.length > 0 && lost.every(x => x.watchStarted && x.ok);
+    const stars = (r.offCourseCount === 1 && proc ? 2 : base) as 0 | 1 | 2 | 3;
+    const feedback = [r.offCourseCount ? 'Confirm the landmark (shape, side, text) before the leading edge; driveways, lots and gravel are not roads.' : 'On course all the way. Now add the clock.'];
+    if (r.offCourseCount) {
+      for (const x of lost) feedback.push(`Lost (LOST-001): turn-around ${formatClock(x.turnAroundTod)}, back at the junction ${formatClock(x.rejoinTod)}: doubled = ${x.doubled.toFixed(1)} s. ${x.watchStarted ? 'The stopwatch was started at the turn-around.' : 'Start the stopwatch at the turn-around.'} ${x.noted === null ? 'You wrote no lost time ("lost 94").' : x.ok ? `Your ${x.noted} s is within 2 s.` : `Your ${x.noted} s is more than 2 s off.`}`);
+      if (!lost.length) feedback.push('You never called the turn-around while off course: when you know you are lost, say "turn around", start the stopwatch, and double it.');
+      feedback.push(LOST_GUIDANCE);
+    }
+    return { score: r.offCourseCount, stars, headline: `${r.offCourseCount} off-course excursions${lost.length ? `, lost time ${lost.map(x => (x.ok ? 'doubled within 2 s' : 'not doubled')).join(', ')}` : ''}`, feedback };
+  },
 };
 
 // ---------- D14 mental math (static) ----------

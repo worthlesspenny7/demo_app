@@ -5,6 +5,7 @@ import { app, el } from '../state.js';
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
 export function renderBlock(b: LessonBlock): HTMLElement {
   if (typeof b === 'string') return el('p', {}, b);
+  if ('heading' in b) return el('h3', { class: 'lesson-h' }, b.heading);
   if ('list' in b) { const l = el(b.ordered ? 'ol' : 'ul', { class: 'lesson-list' }); for (const t of b.list) l.append(el('li', {}, t)); return l; }
   if ('pre' in b) return el('figure', { class: 'lesson-pre' }, el('pre', {}, b.pre.join('\n')), b.caption ? el('figcaption', { class: 'cite' }, b.caption) : null);
   if ('table' in b) {

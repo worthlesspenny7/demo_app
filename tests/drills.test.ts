@@ -9,7 +9,7 @@ import { STOCK_1939_SPEEDO } from '../src/core/builder.js';
 import { DRIVER_EXPERT } from '../src/core/course.js';
 import { OracleBot, runBot } from '../src/agent/bots.js';
 import { headlineTip } from '../src/core/drills/rubrics.js';
-import { dwellFor, buildPerfTable, matrixAt } from '../src/core/perf-table.js';
+import { dwellFor, buildPerfTable, matrixAt, stopLoss } from '../src/core/perf-table.js';
 import { FORD_1939, PACKARD_1936, nodeById, instructionS } from '../src/core/course.js';
 import { formatClock } from '../src/core/units.js';
 import { formatInterval } from '../src/core/griid.js';
@@ -219,8 +219,9 @@ describe('DRILL-023 D06 Build your charts', () => {
   const d = drillById('D06')!;
   it('DRILL-023 three sections of three IN/OUT pairs (stop & go, accel/decel, turns), the first accel pair from a standstill', () => {
     for (let seed = 1; seed <= 5; seed++) {
-      const pairs = chartPairs(d.scenario(seed, 0).tags); expect(pairs.length).toBe(9);
+      const pairs = chartPairs(d.scenario(seed, 0).tags); expect(pairs.length).toBe(10);
       for (const k of ['stopGo', 'accel', 'turn'] as const) expect(pairs.filter(p => p.kind === k).length).toBe(3);
+      expect(pairs.filter(p => p.kind === 'stopMid').length).toBe(1);   // CHART-006: the stop-in-the-middle run
       expect(pairs.find(p => p.kind === 'accel')!.vIn).toBe(0);
     }
   });
@@ -229,10 +230,10 @@ describe('DRILL-023 D06 Build your charts', () => {
     expect(m.get('stopGo:30>40')).toBe(8.4); expect(m.get('turn:40>35')).toBe(4); expect(m.get('accel:0>40')).toBe(4.5); expect(m.get('accel:40>30')).toBe(1.2); expect(m.get('stopGo:25>35')).toBe(10.1);
     for (const tier of [0, 1, 2]) {
       const sc = d.scenario(2, tier); const perf = buildPerfTable(sc.car); const pairs = chartPairs(sc.tags);
-      const note = (p: typeof pairs[number], off: number): string => `${p.kind === 'stopGo' ? 'stopgo' : p.kind} ${p.vIn}>${p.vOut} = ${(matrixAt(p.kind === 'stopGo' ? perf.stopGo : p.kind === 'accel' ? perf.accel : perf.turns, p.vIn, p.vOut) + off).toFixed(1)}`;
+      const note = (p: typeof pairs[number], off: number): string => `${p.kind === 'stopGo' ? 'stopgo' : p.kind} ${p.vIn}>${p.vOut} = ${((p.kind === 'stopMid' ? Math.round(stopLoss(p.vIn, p.vOut, sc.car) * 10) / 10 : matrixAt(p.kind === 'stopGo' ? perf.stopGo : p.kind === 'accel' ? perf.accel : perf.turns, p.vIn, p.vOut)) + off).toFixed(1)}`;
       const run = (n: number, off: number) => { const sim = new Simulator(sc); pairs.slice(0, n).forEach(p => sim.act({ type: 'note', text: note(p, off) })); return d.rubric(runBot(sim, new OracleBot(sim)), sc); };
-      expect(run(9, 0.7).stars, `tier ${tier}`).toBe(3);   // within 1 s
-      expect(run(9, 1.6).stars).toBe(0);                  // 1.6 s off everywhere
+      expect(run(10, 0.7).stars, `tier ${tier}`).toBe(3);   // within 1 s
+      expect(run(10, 1.6).stars).toBe(0);                  // 1.6 s off everywhere
       expect(run(7, 0).stars).toBe(2); expect(run(4, 0).stars).toBe(1); expect(run(2, 0).stars).toBe(0);
     }
   });

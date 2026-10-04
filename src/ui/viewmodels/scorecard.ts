@@ -7,6 +7,7 @@ import type { Scenario } from '../../core/course.js';
 import type { LegScore } from '../../core/scoring.js';
 import { formatClock } from '../../core/units.js';
 import { formatInterval } from '../../core/griid.js';
+import { v3Findings, startDeltaRows, type V3FindingsVm, type StartDeltaRow } from './v3.js';
 
 export type LegFlag = 'ace' | 'late-cap' | 'early-cap' | 'missed' | '';
 export interface ScorecardLeg {
@@ -43,6 +44,10 @@ export interface ScorecardVm {
   aces: number;
   dnf: boolean; dnfReason: string; banner: string;
   discipline: { findings: InstrumentFinding[]; clean: boolean; summary: string };
+  /** INST-002 / MAKEUP-001 / START-001: the one-minute mistake, the disturbed timed interval and the late launch, listed separately from the WATCH-009 findings. */
+  v3: V3FindingsVm;
+  /** START-001: every start / restart against its launch time. */
+  startDeltas: StartDeltaRow[];
 }
 
 const mmss = (s: number): string => formatInterval(Math.abs(s));
@@ -92,7 +97,8 @@ export function scorecardViewModel(result: StageResult | null | undefined, scena
   const taRequests = taRequestRows(result);
   const year = scenario?.car?.year ?? null;
   const af = score?.ageFactor ?? 1;
-  const findings = result?.instrumentDiscipline ?? [];
+  const v3 = v3Findings(result);
+  const findings = (result?.instrumentDiscipline ?? []).filter(f => !(['oneMinuteMistake', 'timedIntervalDisturbed', 'lateLaunch', 'earlyLaunch'] as string[]).includes(String(f.kind)));
   const dnf = !!score?.dnf;
   return {
     legs, caps, capsText: `Late legs are capped at ${mmss(caps.late)}, early legs at ${mmss(caps.early)}; a missed checkpoint scores ${mmss(caps.missed)}.`,
@@ -100,6 +106,7 @@ export function scorecardViewModel(result: StageResult | null | undefined, scena
     items, raw: score?.raw ?? 0, ageFactor: af, ageYear: year, ageText: `${af.toFixed(3)}${year !== null ? ` (${year})` : ''}`,
     score: score?.score ?? 0, scoreText: (score?.score ?? 0).toFixed(2), aces: score?.aces ?? 0,
     dnf, dnfReason: score?.dnfReason ?? '', banner: dnf ? `DNF / FNS: ${score?.dnfReason ?? 'the final checkpoint was missed'}. The stage is excluded from championship awards.` : '',
+    v3, startDeltas: startDeltaRows(result),
     discipline: { findings, clean: findings.length === 0, summary: findings.length === 0 ? 'Clean: every timing action used the right instrument.' : `${findings.length} instrument finding${findings.length === 1 ? '' : 's'}: use the clock for time of day, the stopwatch for intervals.` },
   };
 }

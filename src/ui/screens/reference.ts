@@ -1,5 +1,5 @@
 /** Reference: seconds per mile, recovery factors, pause arithmetic, CAMEO legend, GI definitions, rules with citations, and the LESSON-005 pages: penalties (REG V.E), TA procedure (V.H), age factors (V.D), Column C syntax (VII.B.3.c(4)), speed-change positions (VII.E.2) and the handbook's Packard charts. */
-import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_STEPS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, type ChartData } from '../../../content/reference-data.js';
+import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_STEPS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, TA_FORM_FIELDS, TA_FORM_NOTE, CHECKPOINT_FACTS, type ChartData } from '../../../content/reference-data.js';
 import { FORD_1939 } from '../../core/course.js';
 import { stopLoss, rampLead, accelLoss, SPEEDS } from '../../core/perf-table.js';
 import { cameoSvg } from '../viewmodels/cameo.js';
@@ -44,7 +44,18 @@ function regPanels(): HTMLElement[] {
   age.append(grid);
   const pack = el('div', { class: 'panel', id: 'ref-packard', style: 'grid-column:1/3' }, el('h3', {}, `The three handbook charts: ${PACKARD_LABEL}`), el('p', { class: 'muted' }, 'Net seconds, IN speed in the rows and OUT speed in the columns. Teams make their own charts (HB Appendix B); a rookie with no time may use these as-is ("better than nothing"). The 1939 Ford card above is the sim\'s own car.'));
   for (const c of PACKARD_CHARTS) pack.append(el('h3', { style: 'margin-top:12px' }, `${c.title} (${PACKARD_LABEL})`), el('p', { class: 'cite' }, c.note), chartTable(c));
-  return [pen, ta, colc, spd, age, pack];
+  return [pen, ta, ...schoolPanels(), colc, spd, age, pack];
+}
+
+/** LESSON-008: the "Rally school" panel: the 2026 TA web form fields and the checkpoint facts, each with its video and timestamp; video-only items are labelled. */
+function schoolPanels(): HTMLElement[] {
+  const label = (inDocs: boolean): string => (inDocs ? '' : ' (video, not in the documents)');
+  const panel = el('div', { class: 'panel', id: 'ref-rally-school', style: 'grid-column:1/3' }, el('h3', {}, 'Rally school'), el('p', { class: 'muted' }, 'From the official rally school videos (see the lesson "What the rally school adds"). Each row names its video and caption timestamp; where only a video says it, the row is labelled.'),
+    el('h3', { id: 'ref-ta-form', style: 'margin-top:10px' }, 'The Time Allowance web form'), el('p', { class: 'muted' }, TA_FORM_NOTE),
+    rt(['Field', 'Example', 'What to put', 'Source'], TA_FORM_FIELDS.map(f => [el('span', { 'data-field': f.id }, `${f.field} [${f.form}]`), f.example, `${f.note}${label(f.inDocs)}`, el('span', { class: 'cite' }, f.cite)])),
+    el('h3', { id: 'ref-checkpoints', style: 'margin-top:12px' }, 'The checkpoint facts'), el('p', { class: 'muted' }, 'Green = do nothing, red = stop, never under 5 mph in sight of a green one.'),
+    rt(['Fact', 'Source', 'Also in the documents'], CHECKPOINT_FACTS.map(f => [f.fact, el('span', { class: 'cite' }, f.cite), f.doc ?? '(video, not in the documents)'])));
+  return [panel];
 }
 
 export function renderReference(root: HTMLElement): void {

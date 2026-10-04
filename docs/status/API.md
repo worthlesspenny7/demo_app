@@ -30,3 +30,62 @@ Actions (all validated by `validateAction`; refusals never throw, they log `ta.r
 - Generator: `GenProfile` gains `skeleton:'day'`, `pauseOnStopProbability`, `pauseOnSignalProbability`, `freeZoneProbability`, `endTimed`, `asp`, `timeZone`, `bookStyle`; speeds 20..55.
 - Charts: `buildPerfTable(car)` -> `{accel, stopGo, turns: Matrix, stop, lead, turn}` (`Matrix = {speeds, rows[in][out]}`); `PACKARD_1936` (table-driven), `KNOWN_CARS`, `apexSpeed`, `matrixAt`, `speedChangeLoss`; `CarSpec.tables`, `CarSpec.turnZoneFt`. Calibration: `adjustFactor`, `timewiseAdjustment`, `clicksPerSecondPerHour`.
 - Stopwatch: default kind is digital (`DEFAULT_WATCH`); `Stopwatch.{mode, setMode, toggleMode, lapTable, isFrozen, recall(now), reset(now, force)}`.
+
+## V3 core additions (ENGINE_VERSION 3.0.0; see SPECS.md "V3: FROM THE RALLY SCHOOL VIDEOS")
+Everything below is additive except where marked "changed". Names are exact. Tests: tests/v3-core.test.ts (one or more per spec id).
+
+### Rules (`scenario.rules`, DEFAULT_RULES)
+- `clockMinuteSlop` (default 5): seconds either side of the minute change within which the dash clock's minute hand is ambiguous (INST-001).
+- `taMode` (`'web'` default | `'paper'`): the 2026 web form after the TA point window, or the classic paper sheets handed in at a red (observation) checkpoint stop with no window (TAF-001).
+
+### Actions (all validated by `validateAction`; `ACTION_LIST` has them)
+- `pullUp`: move up to the line (start or a restart hold). Refused (driver message "Not yet: the car ahead is still at the sign", event `pullUp.refused`) while the car one minute ahead is still at the sign; event `pullUp` when accepted. Optional: `start` / `call.go` work without it. (START-001)
+- `call.warn {seconds?}`: the "about 30 seconds" warning before a launch time; driver "About 30 seconds, got it"; event `call.warn {line, seconds, toLaunch}`. If the navigator has not warned within 45 s of the launch time the driver asks once ("Give me about 30 seconds before we go", kind `readback`, event `launch.expect`). (START-001)
+- `call.identify {text}`: ICE identify; driver "I see it too" (kind `readback`); at the next sign / landmark crossed within 180 s he says "Mark" (event `mark {nodeId, identified}`). (PROTO-001)
+- `count {n}`: one number of the stop count (integer, -1000..1000); echoed by the driver as a `readback` message; event `count {n}`. When the navigator has said go but the driver has not (waiting on traffic) the driver says "Keep counting" once, at the first count >= 0, and the count continues (0, 1, 2) until he goes. `call.go` into a traffic wait now also says "Keep counting". (PROTO-001)
+- `clock.read {source?: 'clock' | 'stopwatch'}`: `source: 'stopwatch'` reads the digital watch's TOD mode; it counts as a clock read in WATCH-009 only while the watch is in TOD mode (otherwise a driver message and no read). `instrumentLog[]` entries gain `source`. (INST-002)
+- `ledger.set {seconds?, entries?: {seconds, source}[]}`: `entries` is the running make-up list (<= 200 entries, `source` <= 40 chars); `seconds` defaults to their total. `ledgerLog[]` gains `makeUpTotal`. (MAKEUP-001)
+- `ta.request` gains optional `carNumber`, `password` (4 digits, else the action is rejected), `phone`, `stage`, `cause`, `witnesses {ahead?, behind?}`; recorded on the `TaRequestRecord` with `missingFields` (carNumber, password, phone, stage, cause left blank; informational, the request is still filed). (TAF-001)
+
+### Observation additions
+- `clock {hourAngle, minuteAngle, secondAngle, minuteAmbiguous, hour, minute, second}`: degrees clockwise from 12; `minute` is `null` while `minuteAmbiguous` at aids rung <= 1 (the stopwatch TOD mode reads the unambiguous time). (INST-001)
+- `launch {line, kind: 'start'|'restart', ownTime, speed, netLoss, launchTime, secondsToLaunch, warned} | null`: present in the preread and while stopped at a time-of-day restart; `launchTime = ownTime - netLoss`, `netLoss` = chart (a) 0 -> speed (`accelLoss`). (START-001)
+- `startQueue {cars: {position, relative: 'ahead'|'behind', leavesTod, atSign, sitting}[], carAheadAtSign, carAheadLeavesTod, pulledUp} | null`: seeded cars queued at the sign (the car ahead leaves on its minute plus a seeded 0-3 s, sometimes 12-35 s: go around it). (START-001)
+- `paceCars {ahead, behind}` (each `{offsetSeconds: -60|60, position, distanceFt, errorSeconds}` or `null`) and `cues {gainingOnCarAhead}`; the car ahead is also in `ahead[]` as `{kind: 'car', label: 'Car one minute ahead', paceCar: {offsetSeconds: -60, gaining}}`. Only with `scenario.asp >= 1`; aids rung >= 1 shows them whenever they are within 5280 ft, rung 0 only in occasional 45 s windows (about 30 %); `gainingOnCarAhead` is true while the gap to the car ahead has closed by more than 16 ft in 8 s. The cars follow the ghost 60 s ahead / behind with a seeded error (<= about 6 s, slow drift). Suppressed during the calibration run. (START-002)
+- `ledgerEntries`, `makeUpTotal`. (MAKEUP-001)
+- `nextCall {line, call, text} | null`: aids rung >= 2 only: the expected next navigator call (`call.turn L`, `call.speed 45`, `call.go`, `call.stop`), once per line within 700 ft; also event `nextCall {line, call, text}` in `result().events`. (PROTO-001)
+- `ta.mode`, `ta.atRedCheckpoint`; in paper mode `ta.windowOpen` mirrors `atRedCheckpoint` and `eligibleLegs` = every completed leg. (TAF-001)
+- `ahead[]` feature kinds `tractor`, `combine`, `schoolBus`, `car` (see Hazards). `aids.earlyLate`, `aids.countdown` and `aids.cumulativePerfectAtNextLine` are absent between the first and last calibration point of the calibration run at every rung (CAL-006).
+
+### Simulator API
+- `sim.launchInfo(ins?)`, `sim.startQueue(ins)`: as in `observe()`; `sim.legNumberFor(tod?)` = timing checkpoints passed at `tod` + 1 (TAF-001).
+- `sim.taAdvice(leg)` gains `stoppedSeconds` (wheels-stop to go at qualifying stops), `chartLoss` (`stopLoss(vIn, vOut)` for those stops), `otherDelay` (drive-through zones), `measured` (= stopped + chart loss + other, to 0.1 s), `makeUpToRound` (the odd seconds, `round(measured) % 10`), `claim` (`floor(measured / 10) * 10`: "delayed 3:47, made up 7, claim 3:40"), `cause` (`train | tractor | schoolBus | construction | combine | accident | emergency | null`). `suggested` / `possible` / `recoverable` keep their meaning. **Changed:** a train stop's delay (`taQualifying`) is now stopped time + the chart stop-and-go loss, so the committee measures what the car really lost (the make-up estimate is for the whole delay, once). Exports `TA_CAUSES`.
+- `sim.taStops[]`, `sim.taCause`, `sim.ledgerEntries`, `sim.startDeltas`, `sim.debriefFindings`, `sim.makeUp` ({pct, assigned, calledMph, sinceTod} | null), `sim.makeUpDrops`.
+- Make-up (MAKEUP-001): a `call.speed` at least 8 % (and 3 mph) over the assigned speed in force (a lead call of the coming speed within 1500 ft is not one) is a make-up in progress (event `makeUp.begin`, `makeUp.end`). At a line that changes the assigned speed, a navigator who has not called the new speed gets it ("Assigned speed is 45 now: dropping the extra", event `makeUp.dropped`, `makeUpDrops++`); the OracleBot starts its recovery over and re-applies the extra on the new speed.
+- Hazards (TAF-002): `{kind: 'tractor' | 'combine', s, speedMph, lengthFt}` (slow zones, no pass) and `{kind: 'schoolBus', s, startTod, durationSeconds}` (blocking: a car arriving while the bus is stopped waits 40 ft behind it, driver messages "School bus stopped with its red lights on..." / "The bus is moving, going"). Tractor, combine, **construction** (changed: it now qualifies) and school-bus delays are Time-Allowance qualifying; `slow` stays non-qualifying.
+
+### StageResult additions
+- `startDeltas[]`: `{line, kind: 'start'|'restart', ownTime, netLoss, launchTime, actual, delta, warned, pulledUp, refusedPullUps}` for every start and restart (`actual`/`delta` null when it never happened); `delta = actual - launchTime`, + late. (START-001)
+- `findings[]` (`DebriefFinding {kind, line, text, seconds?}`): `oneMinuteMistake` (a start / restart / exact-transit OUT 50-70 s off its time: the minute was misread), `lateLaunch` (> 2 s after the launch time, not a one-minute mistake), `earlyLaunch` (> 3 s before it), `timedIntervalDisturbed` (the car was run over the assigned speed, 3 s+, during a timed interval while a make-up was called). They are separate from `instrumentDiscipline`. (INST-002, MAKEUP-001, START-001)
+- `engineVersion` is `'3.0.0'`; a recorded run from 2.0.0 is refused by `replay`.
+
+### Helpers
+- `src/core/ledger.ts`: `makeUpPlan(seconds, assigned)` -> `{plus10: {mph, seconds}, plus20: {mph, seconds}}` (+10 % for 10 x the seconds, +20 % for 5 x; 4 s at 35 = 38.5 mph for 40 s or 42 mph for 20 s), `makeUpTotal(entries)`, `MAKEUP_RATES` ({plus10: 6, plus20: 12} s per minute), `scheduleCorrection(errorSeconds, runSeconds)` -> `"1 s per N min"` (`"no correction"` at 0), `scheduleCorrectionMinutes(...)` -> N | null, `LedgerEntry`.
+- `src/core/stopwatch.ts`: `RallyClock(slop = 5, looseness = 0)` with `hands(now)` -> `ClockHands`, `minuteAmbiguous(now)`.
+- `src/core/perf-table.ts`: `CHART_SPEEDS` = 10..55 by 5; `PerfTable.speeds`, `PerfTable.extrapolated` (Packard: `[55]`); `CarSpec.extrapolated`; `PACKARD_1936` keeps its printed 15-50 exactly and gains linearly extrapolated 55 cells. The approach loops of `speedChangeLoss` / `stopLoss` run to 600 s (the 10 mph cells used to read -4.5).
+- Drills (`src/core/drills`): `d16Plan(seed, trap = false)`; `preread.ts`: `parseCpNotes`, `gradeCheckpointNotes(result)`, `gradeChartLossNotes(result, sc)`, `chartLossFor(sc, ins, speeds)`, `lossNumbers`, `lineSpeeds(sc)`; `lost.ts`: `lostProcedure(result)`, `parseLostNote`, `LOST_GUIDANCE`; `d06.ts`: `ChartKind` gains `'stopMid'`, `parseChartRuns(notes, driver?)` -> `Map<key, {runs, outliers, value, driver}>`, `parseChartNotes(notes, driver?)`, `driverOf(tags)`, `driverCar(car, driver)`; `departures.ts`: `startFeedback(result)`.
+
+### Drills
+- D16 (INST-002): at aids rung <= 1 (Silver, Gold) the exact transit begins exactly 2m00s after the start, so IN + 20m00s lands on a minute change (tags `trap:oneMinute:<line>` on the OUT and the restart lines); rubric lists `startDeltas` and the findings; a `lateLaunch` caps three stars at two. Checkpoint notes "CP3 09:14:22" (`line.annotate`, any time) are graded within 2 s when written.
+- D15 (PREREAD-001): optional checkpoint times (within 2 s) and chart losses pre-written beside stops and turns (`loss 10.2`, `-2.3`; within 1 s); counted in the stars only when attempted, otherwise an "Optional (PREREAD-001)" hint.
+- D10 (LOST-001): a wrong turn is graded on the doctrine: `watch.start` within 3 s of `call.uturn` and a note `lost N` (or `lost m:ss`) within 2 s of 2 x (rejoin - turn-around); one excursion with the procedure right is 2 stars (was 1).
+- D06 (CHART-006): ten pairs (stop-in-the-middle `chart:stopMid:vIn>vOut` added), speeds to 55 (Packard 55 flagged "extrapolated"), notes `stopgo 30>40 runs 8.4 8.6 8.5 8.5` averaged, negative runs flagged and dropped, `A:` / `B:` / `driver B` note tags against the scenario tag `driver:A|B` (Bronze is always A; B drives a hidden variant car), stars by fraction of pairs (>= 88 % / 66 % / 33 %).
+- D08b `committeeView` adds the chart loss to a train delay (TAF-002).
+
+### Generator
+- `GenProfile.delayCauses` (default false): long rural segments hold a tractor, combine, construction zone or school bus instead of the plain slow vehicle (tags `delay:<cause>:<line>`).
+- Days have 4-6 timing checkpoints by default (CPX-001; an explicit `cpCount` is honoured) and the last checkpoint of the final timed portion is placed less than 7m30s before "End timed portion" (`LATE_SURPRISE_S`).
+- Speeds: 45 / 50 on rural roads become 48 about one time in five (own random stream, so layouts keep their draws); the calibration run is 55 mph on about a third of the days (tags `calibration:speed:50|55`).
+
+### Bots
+- OracleBot: reads the time of day from the digital stopwatch's TOD mode (`watch.mode tod`, `clock.read {source:'stopwatch'}`), back to chrono when no time of day is near (INST-002); `pullUp` once the car ahead has left and `call.warn` 30 s before every launch time (START-001); files the TA form completely (car number, password, phone, stage, cause, witnesses) and, in paper mode, at the finish's red checkpoint stop (`runBot` gives the bot one more tick at the finish); starts its make-up over after a dropped "+%".

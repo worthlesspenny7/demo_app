@@ -93,18 +93,21 @@ test('UI-031 the TA form appears at a TA point on a generated day stage and the 
   const secs = (t: string): number => { const m = /(\d+):(\d\d)/.exec(t)!; return Number(m[1]) * 60 + Number(m[2]); };
   expect(secs(first) - secs(later)).toBeGreaterThanOrEqual(60);                                      // counting down in sim time
   expect(await page.locator('#ta-legs tbody tr').count()).toBeGreaterThanOrEqual(2);                // leg list from sim.taAdvice
-  // the form: leg 3 carries a measured delay, the suggestion fills the request, the live rounding shows the adjustment
+  // the form: leg 3 carries a measured delay (TAF-002: stopped time + the chart stop-and-go loss), the suggestion fills the request, the live rounding shows the adjustment
+  const adv = await page.evaluate(() => { const a = window.__rally!.sim.taAdvice(3); return { measured: a.measuredDelay, recoverable: a.recoverable, suggested: a.suggested }; });
+  const mmss = (x: number): string => `${Math.floor(Math.round(x) / 60)}m${String(Math.round(x) % 60).padStart(2, '0')}s`;
+  expect(adv.suggested).toBeGreaterThan(0);
   await expect(page.locator('#ta-leg')).toHaveValue('3');
-  await expect(page.locator('#ta-request')).toHaveValue('50');
-  await page.locator('#ta-request').fill('47');
-  await expect(page.locator('#ta-round')).toContainText(/0m47s adjusted to 0m[45]0s/);
-  await page.locator('#ta-request').fill('50');
+  await expect(page.locator('#ta-request')).toHaveValue(String(adv.suggested));
+  await page.locator('#ta-request').fill(String(adv.suggested + 7));
+  await expect(page.locator('#ta-round')).toContainText(new RegExp(`${mmss(adv.suggested + 7)} adjusted to \\d+m\\d0s`));
+  await page.locator('#ta-request').fill(String(adv.suggested));
   await page.locator('#ta-cause').fill('a farm tractor');
-  await expect(page.locator('#ta-pattern')).toContainText(/Delayed 1m29s by a farm tractor\. Made up 0m29s\. Request 0m50s\./);
+  await expect(page.locator('#ta-pattern')).toContainText(`Delayed ${mmss(adv.measured)} by a farm tractor. Made up ${mmss(adv.recoverable)}. Request ${mmss(adv.suggested)}.`);
   await page.locator('#ta-submit').click();
-  await expect(page.locator('#ta-filed')).toContainText(/Leg 3: 0m50s/);
+  await expect(page.locator('#ta-filed')).toContainText(`Leg 3: ${mmss(adv.suggested)}`);
   const filed = await page.evaluate(() => window.__rally!.observe().ta.requests);
-  expect(filed.length).toBe(1); expect(filed[0]!.adjusted).toBe(50); expect(filed[0]!.status).toBe('filed');
+  expect(filed.length).toBe(1); expect(filed[0]!.adjusted).toBe(adv.suggested); expect(filed[0]!.status).toBe('filed');
   await page.evaluate(() => window.__rally!.advance(900));
   await expect(page.locator('#ta-panel')).toBeHidden();                                              // the window closed
 });

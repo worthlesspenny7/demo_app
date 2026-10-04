@@ -125,8 +125,8 @@ describe('stage structure (STAGE-001..008)', () => {
       let prev = 0; for (const p of pts) { expect(Math.round(p.perfectCumulative! * 10)).toBeCloseTo(p.perfectCumulative! * 10, 6); expect(p.perfectInterval!).toBeCloseTo(p.perfectCumulative! - prev, 6); prev = p.perfectCumulative!; }
       const official = Math.ceil(prev / 60) * 60; const allowance = begin.transit!.seconds;
       expect(allowance - official).toBeGreaterThanOrEqual(120); expect(allowance - official).toBeLessThanOrEqual(300); expect(allowance % 60).toBe(0);
-      expect(columnCLines(begin)).toEqual([formatInterval(allowance), '50 MPH', '* 0m00.0s']); expect(columnCLines(pts[0]!)[0]).toMatch(/^\d+m\d\d\.\ds$/);
-      const g = buildGhost(sc); expect(ghostTimeAt(g, nodeById(sc.course, cal[cal.length - 1]!.nodeId).s) - ghostTimeAt(g, nodeById(sc.course, begin.nodeId).s)).toBeCloseTo(miles * 3600 / 50, 0);
+      const calSpeed = Number((sc.tags ?? []).find(t => t.startsWith('calibration:speed:'))!.split(':')[2]); expect([50, 55]).toContain(calSpeed); expect(columnCLines(begin)).toEqual([formatInterval(allowance), `${calSpeed} MPH`, '* 0m00.0s']); expect(columnCLines(pts[0]!)[0]).toMatch(/^\d+m\d\d\.\ds$/);
+      const g = buildGhost(sc); expect(ghostTimeAt(g, nodeById(sc.course, cal[cal.length - 1]!.nodeId).s) - ghostTimeAt(g, nodeById(sc.course, begin.nodeId).s)).toBeCloseTo(miles * 3600 / calSpeed, 0);
       expect(sc.checkpoints.some(c => c.kind === 'timing' && c.s <= nodeById(sc.course, cal[cal.length - 1]!.nodeId).s)).toBe(false); // free zone: nothing scored
     }
     // the team's measured k from the run: a speedometer reading 1 % high makes the actual intervals ~1 % longer
@@ -137,10 +137,10 @@ describe('stage structure (STAGE-001..008)', () => {
     expect(calibrationFactor(iv)).toBeGreaterThan(0.98); expect(calibrationFactor(iv)).toBeLessThan(1.001);
   });
 
-  it('STAGE-007 assigned speeds are multiples of 5 from 15 to 55, and a SPEED LIMIT sign never posts a limit below the assigned speed', () => {
+  it('STAGE-007 assigned speeds are multiples of 5 from 15 to 55 (plus 48, SPEED-001), and a SPEED LIMIT sign never posts a limit below the assigned speed', () => {
     const seen = new Set<number>();
     for (const seed of [1, 2, 3, 4, 5]) for (const ins of day(seed).book) {
-      for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v % 5).toBe(0); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); seen.add(v); }
+      for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v === 48 || v % 5 === 0).toBe(true); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); seen.add(v); }
     }
     expect(seen.has(20)).toBe(true); expect(seen.has(55)).toBe(true);
     const sc = day(3); for (const ins of sc.book) { const m = nodeById(sc.course, ins.nodeId).sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1])).toBeGreaterThanOrEqual(ins.speed); }

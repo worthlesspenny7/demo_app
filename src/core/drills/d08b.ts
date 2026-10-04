@@ -5,6 +5,7 @@ import { buildGhost, ghostTimeAt } from '../ghost.js';
 import { rng } from '../rng.js';
 import { formatInterval } from '../griid.js';
 import { mphToFps } from '../units.js';
+import { stopLoss } from '../perf-table.js';
 import type { StageResult } from '../sim.js';
 import type { Drill } from './types.js';
 import { tiers, tierOf, base, T0 } from './common.js';
@@ -28,8 +29,10 @@ export function committeeView(r: StageResult, sc: Scenario): LegDelay[] {
     if (reason === 'signal' && !sc.rules.taForSignals) return;
     const rel = r.events.slice(i + 1).find(x => x.type === 'release'); if (!rel) return;
     const node = nodeById(sc.course, String(e.detail!.nodeId)); const ins = sc.book.find(b => b.nodeId === node.id);
-    const delay = Math.max(0, rel.tod - e.tod - (reason === 'signal' ? ins?.pause ?? 0 : 0));
     let v = 0; for (const b of sc.book) { if (nodeById(sc.course, b.nodeId).s > node.s) break; v = b.timed ? b.timed.holdSpeed : b.speed ?? v; }
+    // TAF-002: a train delay is the time stopped plus the chart stop-and-go loss for the speeds
+    const chart = reason === 'train' && v > 0 ? stopLoss(v, ins?.timed ? ins.timed.holdSpeed : ins?.speed ?? v, sc.car) : 0;
+    const delay = Math.max(0, rel.tod - e.tod - (reason === 'signal' ? ins?.pause ?? 0 : 0)) + chart;
     const cp = timing.find(c => c.s > node.s);
     const rec = cp && v > 0 ? Math.min(delay, (cp.s - node.s) / mphToFps(v) * 0.1) : 0;
     const a = legs.get(leg) ?? { measured: 0, recoverable: 0 }; a.measured += delay; a.recoverable += rec; legs.set(leg, a);

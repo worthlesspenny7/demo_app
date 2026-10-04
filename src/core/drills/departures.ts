@@ -21,6 +21,17 @@ export interface Departure {
 
 const KIND_LABEL: Record<Departure['kind'], string> = { start: 'Start', restart: 'Restart', transitOut: 'Exact-transit OUT', promoted: 'Lunch departure' };
 
+/** START-001: one line per start / restart against its launch time (own time minus the standing-start net loss), plus the debrief findings it produced. */
+export function startFeedback(r: StageResult): string[] {
+  const out: string[] = [];
+  for (const d of r.startDeltas ?? []) {
+    if (d.actual === null || d.delta === null) { out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): never left.`); continue; }
+    out.push(`${d.kind === 'start' ? 'Start' : 'Restart'} (line ${d.line}): your time ${formatClock(d.ownTime)}, launch ${formatClock(d.launchTime)} (minus ${d.netLoss.toFixed(1)} s), left ${formatClock(d.actual)} (${d.delta > 0 ? '+' : ''}${d.delta.toFixed(1)} s against the launch time${d.warned ? '' : '; no 30-second warning was given'}).`);
+  }
+  for (const f of r.findings ?? []) if (f.kind === 'oneMinuteMistake' || f.kind === 'lateLaunch' || f.kind === 'earlyLaunch') out.push(f.text);
+  return out;
+}
+
 export function departuresOf(r: StageResult, sc: Scenario): Departure[] {
   const out: Departure[] = []; const ev = r.events; const book = sc.book;
   const mk = (kind: Departure['kind'], ins: Instruction, target: number, actual: number | null, lead: number): void => {

@@ -77,11 +77,43 @@ export class Stopwatch {
   }
 }
 
+/** INST-001: what the dash clock's three hands show at an instant. Angles are degrees clockwise from 12. */
+export interface ClockHands {
+  hourAngle: number; minuteAngle: number; secondAngle: number;
+  /** The minute hand is within `slop` seconds of a minute change: the navigator cannot tell the minute just ended from the one just begun. */
+  minuteAmbiguous: boolean;
+  /** Whole seconds read off the second hand (0..59). */
+  second: number;
+  /** Hour (0..23) and minute (0..59) of the time of day. The resolved minute is the truth; callers withhold it while `minuteAmbiguous` (aids rung <= 1). */
+  hour: number; minute: number;
+}
+
 export class RallyClock {
   /** Bezel index position in seconds-of-minute (0..59). */
   bezel = 0;
+  /**
+   * @param slop seconds either side of the minute change within which the loose minute hand is ambiguous (rules.clockMinuteSlop, default 5)
+   * @param looseness hidden offset (s) of the minute hand against the second hand: the hand sits a little ahead of or behind its tick
+   */
+  constructor(readonly slop = 5, readonly looseness = 0) {}
   tod(now: number): number { return now; }
   setBezel(seconds: number): void { this.bezel = ((Math.round(seconds) % 60) + 60) % 60; }
   /** Seconds until the second hand reaches the bezel index. */
   bezelRemaining(now: number): number { const sec = now % 60; const r = ((this.bezel - sec) % 60 + 60) % 60; return r < 1e-6 || r > 60 - 1e-6 ? 0 : r; }
+  /** Seconds since the last minute change (0 <= x < 60). */
+  private secOfMinute(now: number): number { return ((now % 60) + 60) % 60; }
+  /** INST-001: ambiguous when the second hand is within `slop` s before or after 12 o'clock. */
+  minuteAmbiguous(now: number): boolean { const sec = this.secOfMinute(now); return this.slop > 0 && (sec < this.slop - 1e-9 || sec > 60 - this.slop + 1e-9); }
+  hands(now: number): ClockHands {
+    const day = ((now % 86400) + 86400) % 86400; const sec = this.secOfMinute(now);
+    const minuteOfDay = Math.floor(day / 60);
+    return {
+      hourAngle: Math.round(((day / 3600) % 12) * 30 * 1000) / 1000,
+      minuteAngle: Math.round((((day + this.looseness) / 60) % 60) * 6 * 1000) / 1000,
+      secondAngle: Math.round(sec * 6 * 1000) / 1000,
+      minuteAmbiguous: this.minuteAmbiguous(now),
+      second: Math.floor(sec + 1e-9),
+      hour: Math.floor(minuteOfDay / 60), minute: minuteOfDay % 60,
+    };
+  }
 }

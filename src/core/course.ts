@@ -96,7 +96,15 @@ export interface SlowHazard { kind: 'slow'; s: number; speedMph: number; lengthF
 export interface ConstructionHazard { kind: 'construction'; s: number; speedMph: number; lengthFt: number }
 /** Accident scene (V.H.1): the car is held to `speedMph` through the zone; the delay it causes is Time-Allowance qualifying. */
 export interface AccidentHazard { kind: 'accident'; s: number; speedMph: number; lengthFt: number }
-export type Hazard = SignalHazard | TrainHazard | SlowHazard | ConstructionHazard | AccidentHazard;
+/**
+ * TAF-002 / 10c Time Delay Form: delays the committee names (tractor, school bus, construction, combine) are Time-Allowance qualifying.
+ * `tractor` and `combine` hold the car to `speedMph` through the zone (slow); `schoolBus` blocks the lane: while the bus is stopped
+ * (`startTod` .. `startTod + durationSeconds`) a car arriving at `s` waits behind it (blocking).
+ */
+export interface TractorHazard { kind: 'tractor'; s: number; speedMph: number; lengthFt: number }
+export interface CombineHazard { kind: 'combine'; s: number; speedMph: number; lengthFt: number }
+export interface SchoolBusHazard { kind: 'schoolBus'; s: number; startTod: number; durationSeconds: number }
+export type Hazard = SignalHazard | TrainHazard | SlowHazard | ConstructionHazard | AccidentHazard | TractorHazard | CombineHazard | SchoolBusHazard;
 
 export interface CarSpec {
   name: string;
@@ -112,11 +120,14 @@ export interface CarSpec {
   turnZoneFt?: number;
   /** Table-driven charts (CHART-002): when present, perf-table functions read these instead of simulating the model. */
   tables?: CarTables;
+  /** SPEED-001: speeds (mph) of `tables` that are extrapolated, not printed (Packard: 55). */
+  extrapolated?: number[];
 }
 
 /** Handbook-layout chart matrices (IN speed rows x OUT speed columns, tenths of a second). */
 export interface Matrix { speeds: number[]; rows: Record<number, Record<number, number>> }
 export interface CarTables { accel: Matrix; stopGo: Matrix; turns: Matrix }
+/** SPEED-001: speeds a car's own chart does not print but the simulator extends (the Packard's printed 15-50 mph, extended to 55); flagged so the UI can mark them. */
 
 export type SpeedoKind = 'timewise' | 'mechanical';
 export interface SpeedoSpec {
@@ -164,6 +175,10 @@ export interface RulesConfig {
   taMaxRequestSeconds: number;
   /** Digital stopwatch: seconds a lap split stays frozen before the display releases itself; 0 = hold until recall (WATCH-008). */
   splitHoldSeconds: number;
+  /** INST-001: the analog dash clock's minute hand is ambiguous this many seconds either side of the minute change (default 5). */
+  clockMinuteSlop: number;
+  /** TAF-001: 'web' = the 2026 web form after the TA point window; 'paper' = the older sheets handed in at any red (observation) checkpoint stop, no window (practice only). */
+  taMode: 'web' | 'paper';
 }
 
 export interface AidsConfig {
@@ -222,7 +237,7 @@ export const DEFAULT_RULES: RulesConfig = {
   maxLate: 120, maxEarly: 300, missedCheckpoint: 180, missedCpLateMinutes: 30,
   sightZonePenalty: 30, observationMissPenalty: 180,
   earlyDepartureMinutes: 5, earlyDeparturePenalties: [60, 300],
-  trophyRunCounts: false, taOverDeclareTolerance: 10, taForSignals: false, taGranularitySeconds: 10, taMaxRequestSeconds: 1770, splitHoldSeconds: 5,
+  trophyRunCounts: false, taOverDeclareTolerance: 10, taForSignals: false, taGranularitySeconds: 10, taMaxRequestSeconds: 1770, splitHoldSeconds: 5, clockMinuteSlop: 5, taMode: 'web',
 };
 export const LEGAL_AIDS: AidsConfig = { rung: 0, paceBar: false, countdown: false, cumulativeTimes: false, autoAdvanceLine: false, showTruthAfter: true, showSpeedo: 'marks', checkOff: false, cpCard: false, offCourseAlert: false };
 export const TRAINING_AIDS: AidsConfig = { rung: 3, paceBar: true, countdown: true, cumulativeTimes: true, autoAdvanceLine: true, showTruthAfter: true, showSpeedo: 'fine', checkOff: true, cpCard: true, offCourseAlert: true };
@@ -252,6 +267,17 @@ function matrixOf(speeds: number[], rows: number[][]): Matrix {
   speeds.forEach((r, i) => { out.rows[r] = {}; speeds.forEach((c, j) => { out.rows[r]![c] = rows[i]![j]!; }); });
   return out;
 }
+/** SPEED-001: extend a printed matrix by one speed (linear from the last two printed speeds), cells to 0.1 s and never below 0; the printed cells are untouched. `zeroDiagonal` keeps IN == OUT at 0 (the acceleration chart). */
+function extendMatrix(m: Matrix, v: number, zeroDiagonal: boolean): Matrix {
+  const sp = m.speeds; const a = sp[sp.length - 1]!, b = sp[sp.length - 2]!; const r1 = (x: number): number => Math.max(0, Math.round(x * 10) / 10);
+  const speeds = [...sp, v]; const rows: Matrix['rows'] = {};
+  for (const r of sp) { rows[r] = { ...m.rows[r]! }; rows[r]![v] = r1(m.rows[r]![a]! + (m.rows[r]![a]! - m.rows[r]![b]!)); }
+  rows[v] = {};
+  for (const c of sp) rows[v]![c] = r1(m.rows[a]![c]! + (m.rows[a]![c]! - m.rows[b]![c]!));
+  rows[v]![v] = zeroDiagonal ? 0 : r1(rows[a]![v]! + (rows[a]![v]! - rows[b]![v]!));
+  return { speeds, rows };
+}
+const extendTables = (t: CarTables): CarTables => ({ accel: extendMatrix(t.accel, 55, true), stopGo: extendMatrix(t.stopGo, 55, false), turns: extendMatrix(t.turns, 55, false) });
 const PK_ACCEL = [0, 15, 20, 25, 30, 35, 40, 45, 50];
 const PK_SPEEDS = [15, 20, 25, 30, 35, 40, 45, 50];
 /**
@@ -260,7 +286,7 @@ const PK_SPEEDS = [15, 20, 25, 30, 35, 40, 45, 50];
  */
 export const PACKARD_1936: CarSpec = {
   name: '1936 Packard 120B (handbook example charts)', year: 1936, a0: 11.5, vMax: 65, aDec: 11.75, turnSpeedMph: { turn: 15, bear: 25, acute: 10 }, turnZoneFt: 36,
-  tables: {
+  tables: extendTables({
     accel: matrixOf(PK_ACCEL, [
       [0, 1, 1.3, 1.8, 2.9, 3.6, 4.5, 5.6, 6.4],
       [1, 0, 0.3, 0.8, 1.9, 2.6, 3.5, 4.6, 5.4],
@@ -292,7 +318,8 @@ export const PACKARD_1936: CarSpec = {
       [1.8, 2.1, 2.6, 3.7, 4.4, 5.3, 6.4, 7.2],
       [2.3, 2.6, 3.1, 4.2, 4.9, 5.8, 6.9, 7.7],
     ]),
-  },
+  }),
+  extrapolated: [55],
 };
 /** Known cars selectable in the UI / drills. */
 export const KNOWN_CARS: Record<string, CarSpec> = { FORD_1939, PACKARD_1936, MODERN_CAR };

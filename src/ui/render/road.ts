@@ -8,6 +8,10 @@ export interface RoadOverlay {
   paceMode?: 'seconds' | 'arrow' | 'wait'; waitMore?: number | null;
   /** Legal mode (aids rung <= 1) shows relative markers only: no feet labels. Default true. */
   showDistances?: boolean;
+  /** START-002: the cars one minute ahead and one minute behind, when the engine reports them (feet; ahead positive, behind negative). */
+  paceCars?: { side: 'ahead' | 'behind'; distanceFt: number; label: string }[];
+  /** START-002: we are closing on the car one minute ahead: the only live early/late cue in legal mode. */
+  gaining?: boolean;
 }
 
 const VIEW_FT = 1500;
@@ -43,6 +47,13 @@ export function drawRoad(ctx: CanvasRenderingContext2D, obs: Observation | null,
   ctx.fillStyle = fog; ctx.fillRect(0, 0, w, Math.max(1, fogFrom + 60));
   label(ctx, 'beyond sight', cx, Math.max(14, fogFrom * 0.5), 11, 'rgba(200,210,220,0.5)', '500');
   if (ov.aheadDimmed) { ctx.fillStyle = 'rgba(10,13,18,0.7)'; ctx.fillRect(0, 0, w, h); label(ctx, 'eyes on the book', cx, h / 2, 16, th.muted, '600'); }
+  // START-002: the pace cars, drawn smaller and in grey-blue so they are never mistaken for our own car
+  for (const pc of ov.paceCars ?? []) {
+    const y = pc.side === 'ahead' ? yOf(Math.min(VIEW_FT, Math.max(60, Math.abs(pc.distanceFt)))) : Math.min(h - 14, carY + 46 + Math.min(18, Math.abs(pc.distanceFt) / 80));
+    ctx.save(); ctx.translate(cx + roadW * 0.18, y); roundRect(ctx, -9, -15, 18, 30, 5); ctx.fillStyle = '#5f7fa8'; ctx.fill(); ctx.strokeStyle = '#dbe6f5'; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = '#c7defa'; ctx.fillRect(-6, -9, 12, 6); ctx.restore();
+    label(ctx, pc.label, cx + roadW * 0.18 + 16, y, 10, th.muted, '600', 'left');
+  }
+  if (ov.gaining) label(ctx, 'we are gaining on them', cx + roadW * 0.18 + 16, 40, 11, th.accent2, '700', 'left');
   // car
   ctx.save(); ctx.translate(cx, carY);
   roundRect(ctx, -14, -24, 28, 48, 7); ctx.fillStyle = '#c8312b'; ctx.fill(); ctx.strokeStyle = '#f3efe4'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -123,6 +134,7 @@ function drawFeature(ctx: CanvasRenderingContext2D, f: VisibleFeature, cx: numbe
       break;
     }
     case 'roadEnd': { ctx.fillStyle = '#c8312b'; ctx.fillRect(cx - roadW / 2, y - 6, roadW, 12); label(ctx, 'DEAD END', cx, y - 18, 12, th.danger, '700'); label(ctx, d, cx - roadW / 2 - 50, y, 11, th.danger, '600', 'right'); break; }
+    case 'paceCar' as VisibleFeature['kind']: case 'car' as VisibleFeature['kind']: { ctx.save(); ctx.translate(cx + roadW * 0.18, y); roundRect(ctx, -9, -15, 18, 30, 5); ctx.fillStyle = '#5f7fa8'; ctx.fill(); ctx.strokeStyle = '#dbe6f5'; ctx.lineWidth = 1; ctx.stroke(); ctx.restore(); label(ctx, (f.label ?? 'car one minute ahead').slice(0, 28), cx + roadW * 0.18 + 16, y, 10, th.muted, '600', 'left'); break; }
     default: label(ctx, `${f.kind} ${d}`, cx + roadW / 2 + 8, y, 11, th.muted, '500', 'left');
   }
 }
