@@ -3,7 +3,7 @@
 ## HANDOFF (keep this block current; it is the resume point)
 - Branch: claude/rally-simulator-j3kqzq (remote demo_app, renamed TSD-simulator on GitHub; push works).
 - Verify: `npm install && npx tsc -p tsconfig.json && npm test && npm run build && npm run spec:check && npm run test:e2e`
-  (last known, after the PT-10 fix sprint, NOT committed: tsc clean, 621 unit, 90 e2e, 348/348 specs, ENGINE_VERSION 3.3.0).
+  (last known, after the PT-11/realism v4 fix sprint, NOT committed: tsc clean, 650 unit, 94 e2e, 360/360 specs, ENGINE_VERSION 3.4.0).
 - Standing rules from Josh: the organizers' documents and videos override his preferences and ours; digital
   lap/split stopwatch with TOD mode is the default (HB p.5, REG II.H.1.d(3)); the dash clock has no digital
   readout (REG II.H.1.d(1)); mark simulator conventions as such in lessons; keep STATUS/LOG current; commit and
@@ -14,12 +14,10 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-04): fix sprint PT-11 + realism v4 (Opus) on 4b47f0b. PT-11 = 42.5/55 (High: Silver card ramp
-  lead points at chart (a), shutting the D18 gate; D06 Silver passable without measuring; answer tells moved; D10 Bronze
-  too strict). Realism v4 = 59/70 (content gaps: calibration official time, 12/15 mph rows, blinker/RR pause rows, exact
-  mid-stage transit, nine slips). When it lands: five checks, commit, push, PT-12 replay. Known not-done: PT-06 LOW 14,
-  20, 21, 25-27; PT-09 LOW 10, 12-14; realism v4 items 6, 8-10 (place-name calibration signs, race-style builtin default,
-  mid-skill bot, pace-car visibility).
+- In flight (2026-10-05): fix sprint PT-11/realism v4 DONE in the working tree on 9f9a21c, NOT committed (five checks green; see LOG
+  "Fix sprint PT-11/realism v4"). Next: commit, push, PT-12 replay and a realism v5 pass. Known not-done: N-D12 (D06 Bronze still a full
+  drive), Dad's card bold must-lines; realism v4 items 6 (timed change after a stop/restart), 8-10 (place-name calibration signs, race-style
+  book default, mid-skill bot, pace-car visibility); PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

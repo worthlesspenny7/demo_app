@@ -6,7 +6,7 @@
 import { Simulator, replay, ENGINE_VERSION, type Action } from '../../core/sim.js';
 import type { Scenario } from '../../core/course.js';
 
-export type StoredSource = { kind: 'drill'; drillId: string; tier: number; seed: number } | { kind: 'builtin'; name: string; seed: number };
+export type StoredSource = { kind: 'drill'; drillId: string; tier: number; seed: number; attempt?: number } | { kind: 'builtin'; name: string; seed: number };
 export type StoredAction = { tick: number; action: Action };
 
 export interface StoredRun {

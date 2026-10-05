@@ -257,3 +257,6 @@ export function taCauseLabel(id: string | null | undefined): string | null {
   if (!id) return null;
   return id === 'schoolBus' ? 'school bus' : id === 'accident' ? 'accident scene' : id === 'emergency' ? 'emergency speed' : id;
 }
+
+/** ENG-028: the Stage number the book's TA rows print ("Today is Stage N.", REG Example #18 / #36): the web form's Stage field starts with it. */
+export function taStageOf(book: readonly { taPoint?: { stage?: number } }[] | null | undefined): string { const st = (book ?? []).find(i => i.taPoint?.stage !== undefined)?.taPoint?.stage; return st === undefined ? '' : String(st); }

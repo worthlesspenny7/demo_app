@@ -17,6 +17,11 @@ export function rampTime(v1: number, v2: number, car: CarSpec): number {
 
 /** Half the ramp time: how early to begin a speed change so the ramp is centered on the ideal instant. */
 export function rampLead(v1: number, v2: number, car: CarSpec): number { return rampTime(v1, v2, car) / 2; }
+/**
+ * PT-11 N-D1: the lead as the simple chart's Lead column prints it (half the ramp time, to 0.1 s). The card, the Debrief and the D04 / D05 stars all use
+ * this one number, so a navigator who reads the column is graded against what he read.
+ */
+export function chartLead(v1: number, v2: number, car: CarSpec): number { return Math.round(rampLead(v1, v2, car) * 10) / 10; }
 
 // ---------- matrix lookup (handbook layout) ----------
 

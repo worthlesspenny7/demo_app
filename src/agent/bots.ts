@@ -1,8 +1,8 @@
 /** Scripted navigators used for playtesting and validation. DESIGN §15. They may read TRUTH. */
 import { Simulator, type Action } from '../core/sim.js';
 import type { Scenario, Instruction, TurnDir } from '../core/course.js';
-import { nodeById, instructionS } from '../core/course.js';
-import { accelLoss, stopLoss, rampLead } from '../core/perf-table.js';
+import { nodeById, instructionS, timedFinalSpeed } from '../core/course.js';
+import { accelLoss, stopLoss, rampLead, chartLead } from '../core/perf-table.js';
 import { mphToFps } from '../core/units.js';
 import { rng, type Rng } from '../core/rng.js';
 
@@ -15,7 +15,10 @@ interface Plan { ins: Instruction; s: number; vIn: number; vOut: number; turnCal
 /** Speed that covers a transit's approximate miles in its allowed time, rounded UP to a multiple of 5 so the car arrives early and waits (HB p.11). */
 function transitSpeedFor(ins: Instruction): number | null {
   const t = ins.transit; if (!t || t.end || !t.miles || t.seconds <= 0) return null;
-  return Math.min(55, Math.max(15, Math.ceil(t.miles / (t.seconds / 3600) / 5) * 5));
+  const pace = Math.min(55, Math.max(15, Math.ceil(t.miles / (t.seconds / 3600) / 5) * 5));
+  // ENG-027: the transit after the last calibration box carries the calibration allowance (2014 row 18: 55m00s for 5 miles): its time is a deadline, not a pace,
+  // so the navigator drives it at road speed and waits at the restart
+  return ins.section === 'calibration' && !ins.calibrationStart ? Math.max(pace, 35) : pace;
 }
 
 /** Assigned speed in force just before each instruction (from the book); a transit's pace stands in for the assigned speed. */
@@ -26,7 +29,7 @@ function planBook(sc: Scenario): Plan[] {
     const tm = ins.speed === undefined && !ins.timed ? transitSpeedFor(ins) : null;
     const vOut = ins.timed ? ins.timed.holdSpeed : ins.speed ?? tm ?? v;
     out.push({ ins, s: instructionS(sc.course, ins), vIn, vOut, turnCalled: false, speedCalled: false, stopHandled: false, crossedTod: null, transitMph: tm });
-    v = ins.timed ? ins.timed.thenSpeed : vOut;
+    v = ins.timed ? timedFinalSpeed(ins.timed) : vOut;
   }
   return out;
 }
@@ -51,6 +54,8 @@ export interface OracleOptions {
   noCalibration?: boolean;
   /** Never glance at the clock (the navigator keeps time of day off the running chrono): WATCH-009 findings. */
   noClockReads?: boolean;
+  /** PT-11 N-D1: the card follower: every lead is the simple chart's Lead column figure (to 0.1 s), not the model's exact half ramp. */
+  chartLeads?: boolean;
 }
 
 export class OracleBot implements Bot {
@@ -58,7 +63,7 @@ export class OracleBot implements Bot {
   private plans: Plan[];
   private queue: { at: number; a: Action }[] = [];
   private departed = false;
-  private timedPending: { plan: Plan; thenSpeed: number; called: boolean } | null = null;
+  private timedPending: { plan: Plan; thenSpeed: number; called: boolean; /** GEN-017: chained timed change: the step (0 = the first change), the speed held before it and the ghost change time already called */ step?: number; from?: number; afterG?: number } | null = null;
   private stopWaitSince: number | null = null;
   private restartHandled = new Set<number>();
   /** Plans the navigator must read the clock for: restarts, exact-transit ends, promoted stops, and the IN line of an exact transit. */
@@ -145,6 +150,7 @@ export class OracleBot implements Bot {
 
   onTick(): void {
     const sim = this.sim; const sc = sim.sc; const car = sim.car;
+    if (this.stopWaitSince !== null && !sim.waitingForGo && car.v > 0) this.stopWaitSince = null;   // GEN-016: a wait the sim ended itself (a train at a crossing the book pauses at) leaves no stale stop timer
     this.flush();
     this.glance();
     this.procedure();
@@ -171,7 +177,7 @@ export class OracleBot implements Bot {
       if (d < -100) continue; // already passed: nothing below applies (keeps a 250-line stage O(active lines) per tick)
       if (d > Math.max(900, turnLeadFt + 50)) break;
       const node = nodeById(sc.course, p.ins.nodeId);
-      const isStop = node.control === 'STOP' || isHoldIns(p.ins) || (p.ins.section === 'finish');
+      const isStop = node.control === 'STOP' || !!node.fullStop || isHoldIns(p.ins) || (p.ins.section === 'finish');
       // turn callout
       if (p.ins.turn && !p.turnCalled && d <= turnLeadFt) {   // ENG-024: the turn call leads by 600 ft or 9 s at the current speed, whichever is longer
         // do not arm while an intervening real-road exit would match the callout (the driver would take it)
@@ -183,7 +189,7 @@ export class OracleBot implements Bot {
       if (p.ins.section === 'finish' && !p.stopHandled && d <= 500) { p.stopHandled = true; this.act({ type: 'call.stop' }); }
       // landmark speed change (no stop): lead by half the ramp
       if (!isStop && p.ins.speed !== undefined && !p.ins.timed && !p.speedCalled && p.vIn > 0 && p.ins.speed !== p.vIn) {
-        const lead = this.o.ignoreLosses ? 0 : rampLead(p.vIn, p.ins.speed, sc.car);
+        const lead = this.o.ignoreLosses ? 0 : (this.o.chartLeads ? chartLead : rampLead)(p.vIn, p.ins.speed, sc.car);
         const dLead = mphToFps(p.vIn) * lead;
         if (d <= dLead + 1) { p.speedCalled = true; this.act({ type: 'call.speed', mph: this.ind(p.ins.speed) }); }
       }
@@ -226,11 +232,15 @@ export class OracleBot implements Bot {
     if (this.timedPending && !this.timedPending.called) {
       const tp = this.timedPending; const seg = tp.plan.ins.timed!;
       const ghostTod = sim.timedChangeNodeId() === tp.plan.ins.nodeId ? sim.timedChangeGhostTod() : null;
-      const lead = this.o.ignoreLosses ? 0 : rampLead(seg.holdSpeed, seg.thenSpeed, sc.car);
+      const lead = this.o.ignoreLosses ? 0 : (this.o.chartLeads ? chartLead : rampLead)(tp.from ?? seg.holdSpeed, tp.thenSpeed, sc.car);
       let due: boolean;
       if (this.o.ignoreLosses || this.o.goCount) { if (tp.plan.crossedTod === null && car.s > tp.plan.s) tp.plan.crossedTod = sim.tod; due = tp.plan.crossedTod !== null && sim.tod >= tp.plan.crossedTod + seg.seconds - (this.o.goCount ? lead : 0); }
-      else due = ghostTod !== null && sim.tod >= ghostTod - lead;
-      if (due) { tp.called = true; this.act({ type: 'call.speed', mph: this.ind(tp.thenSpeed) }); }
+      else due = ghostTod !== null && (tp.afterG === undefined || ghostTod > tp.afterG + 0.5) && sim.tod >= ghostTod - lead;
+      if (due && (tp.step ?? 0) > 0 && (this.o.ignoreLosses || this.o.goCount)) due = false;   // the naive bots call only the first change of a chain
+      if (due) { tp.called = true; this.act({ type: 'call.speed', mph: this.ind(tp.thenSpeed) });
+        // GEN-017: a chained timed change: the next step is called the same way, counted from where the last one ended
+        const k = tp.step ?? 0; const nx = seg.chain?.[k];
+        if (nx) this.timedPending = { plan: tp.plan, thenSpeed: nx.thenSpeed, called: false, step: k + 1, from: tp.thenSpeed, afterG: ghostTod ?? sim.tod }; }
     }
     if (this.timedPending?.called && car.s > this.timedPending.plan.s + 3 * 5280) this.timedPending = null;
     this.recover();

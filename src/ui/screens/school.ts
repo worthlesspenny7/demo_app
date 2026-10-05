@@ -3,11 +3,12 @@ import { LESSONS, lessonIntro, type LessonBlock } from '../../../content/lessons
 import { app, el } from '../state.js';
 import { allDrills } from '../../core/drills/index.js';
 import { shuffleCheck } from '../viewmodels/lessoncheck.js';
-import { startPathFromProgress, pathNext, unlockBest, pathStars, START_PATH, type PathNext } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, pathNext, beyondPathNext, unlockBest, pathStars, type PathNext } from '../viewmodels/curriculum.js';
 
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
 export function renderBlock(b: LessonBlock): HTMLElement {
   if (typeof b === 'string') return el('p', {}, b);
+  if ('ref' in b) return el('p', { class: 'lesson-ref', 'data-ref': b.ref.id }, 'On the Reference page: ', el('a', { href: `#/reference/${b.ref.id}` }, b.ref.title));   // PLAY-048
   if ('heading' in b) return el('h3', { class: 'lesson-h' }, b.heading);
   if ('list' in b) { const l = el(b.ordered ? 'ol' : 'ul', { class: 'lesson-list' }); for (const t of b.list) l.append(el('li', {}, t)); return l; }
   if ('pre' in b) return el('figure', { class: 'lesson-pre' }, el('pre', {}, b.pre.join('\n')), b.caption ? el('figcaption', { class: 'cite' }, b.caption) : null);
@@ -87,8 +88,8 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
     const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/school'; }; nav.append(back);
     // PLAY-001 / PLAY-023: a lesson on the Start-here path leads to the path's next step (the next lesson when one is due, else the drill); the next lesson in the School stays one click away
     let onPath: PathNext | null = null;
-    if (START_PATH.some(s => s.kind === 'lesson' && s.id === lesson.id)) {
-      try { const ds = allDrills(); const prog = app.progress.load(); const done = (id: string): boolean => id === lesson.id || app.progress.lessonDone(id); onPath = pathNext(startPathFromProgress(ds, prog, done), ds, unlockBest(ds, prog), done, id => LESSONS.find(l => l.id === id)?.title ?? id, pathStars(prog)); } catch { onPath = null; }
+    {   // PT-11 N-D9: every lesson (a "Read first" lesson the path sent you to included) offers the path's next step
+      try { const ds = allDrills(); const prog = app.progress.load(); const done = (id: string): boolean => id === lesson.id || app.progress.lessonDone(id); const title = (id: string): string => LESSONS.find(l => l.id === id)?.title ?? id; onPath = pathNext(startPathFromProgress(ds, prog, done), ds, unlockBest(ds, prog), done, title, pathStars(prog)) ?? beyondPathNext(ds, unlockBest(ds, prog), done, title, pathStars(prog)); if (onPath && onPath.kind === 'step' && onPath.step.kind === 'lesson' && onPath.step.id === lesson.id) onPath = null; } catch { onPath = null; }
     }
     if (onPath && onPath.kind !== 'blocked') { const p = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${onPath.label}`); const h = onPath.hash; p.onclick = () => { location.hash = h; }; nav.append(p); }
     if (LESSONS[idx + 1]) { const n = el('button', { class: onPath ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }

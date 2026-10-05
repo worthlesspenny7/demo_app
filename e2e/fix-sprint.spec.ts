@@ -29,8 +29,7 @@ test('PLAY-001 EDU-005 a Bronze star moves the Start-here path on: Next opens D0
   await page.evaluate(([k]) => localStorage.removeItem(k!), [PROGRESS_KEY]);
   // PLAY-023: start on time (transits, which timer, ghost car, D16) comes before the course block, so those are done here
   await page.evaluate(([k]) => localStorage.setItem(k!, JSON.stringify({ version: 1, drills: { D16: { stars: 1, tierStars: [1, 0, 0], aces: 0, runs: 1, bestScore: 1, lastScore: 1, bestRaw: 1, lastPlayed: 1 } }, lessons: { 'four-s': true, transits: true, 'which-timer': true, 'ghost-car': true, 'griid-cameo': true }, runs: [], maneuvers: {} })), [PROGRESS_KEY]);
-  await page.goto('/#/school/protocol'); await page.reload();
-  await page.locator('#lesson-next-page').click();   // PT-10: the check and the Next button are on page 2
+  await page.goto('/#/school/protocol'); await page.reload();   // PT-11 (PLAY-048): the protocol lesson is one page again (its tables and lists moved to the Reference page)
   await expect(page.locator('#next-path')).toHaveText(/Next on your path: D09/);
   await page.locator('#next-path').click(); await expect(page).toHaveURL(/#\/quiz\/D09$/);
 });

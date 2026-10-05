@@ -175,7 +175,8 @@ describe('V2 fix sprint: transit exactness, Column C icons, guide rows and speed
     expect(sentence({ exact: false, plain: true, seconds: 1800, miles: 20 })).toMatch(/take approximately 30 minutes/); expect(sentence({ exact: true, seconds: 1200, miles: 12 })).toMatch(/take exactly 20 minutes/);
     for (const seed of [1, 2, 3, 4]) {
       const sc = generateStage(seed);
-      expect(sc.book.filter(i => i.transit && !i.transit.end && i.transit.exact === true), `seed ${seed}`).toEqual([]);   // no generated line says "take exactly": calibration, warm-up, finish transit are plain
+      // calibration, warm-up and finish transits are plain; the only "take exactly" line is the mid-stage transit of GEN-017 (REG Example #31), and it says so
+      for (const i of sc.book.filter(i => i.transit && !i.transit.end && i.transit.exact === true)) { expect(i.section, `seed ${seed}`).toBe('transit'); expect(i.text).toMatch(/take exactly/); expect((sc.tags ?? []).some(t => t.startsWith('transit:exact:mid'))).toBe(true); }
       const cal = sc.book.find(i => i.calibrationStart)!; expect(cal.transit).toMatchObject({ exact: false, plain: true }); expect(columnCLines(cal)[1]).toMatch(/^\d+m\d\ds$/); expect(columnCLines(cal)[0]).toMatch(/^\d+ MPH$/);
       expect(columnCLines(sc.book[0]!)[columnCLines(sc.book[0]!).length - 1]).toBe('20m00s'); expect(sc.book[0]!.transit!.exact).toBe(false);
       const fin = sc.book.filter(i => i.endTimed).pop()!; expect(fin.transit).toMatchObject({ exact: false, plain: true });
@@ -202,6 +203,7 @@ describe('V2 fix sprint: transit exactness, Column C icons, guide rows and speed
         const idx = sc.book.indexOf(g); const begin = [...sc.book.slice(0, idx)].reverse().find(i => i.transit && !i.transit.end)!;
         const endIdx = sc.book.findIndex((x, k) => k > idx && (x.transit?.end || x.restartTime !== undefined && x.section === 'restart' || x.section === 'finish'));
         const end = sc.book[endIdx]!; expect(begin.transit!.exact).toBe(false);
+        if (sc.book.slice(sc.book.indexOf(begin), idx).some(i => i.promotedStop)) continue;   // ENG-027: after a meal stop the ladder counts from the meal departure (tested in ENG-027)
         const dist = instructionS(sc.course, end) - instructionS(sc.course, g); const total = instructionS(sc.course, end) - instructionS(sc.course, begin);
         expect(Math.abs(g.transitGuide! - begin.transit!.seconds * dist / total), `seed ${seed} line ${g.n}`).toBeLessThanOrEqual(3);   // rounded to 5 s
         expect(g.transitGuide! % 5).toBe(0); expect(columnCLines(g)).toContain(`(${formatInterval(g.transitGuide!)})`);

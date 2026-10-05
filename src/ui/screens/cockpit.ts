@@ -12,13 +12,13 @@ import { speedoViewModel } from '../viewmodels/speedo.js';
 import { bookRows, bookLayout, rowCameo, stageDisplayName } from '../viewmodels/book.js';
 import { columnAHtml, columnBHtml, columnCHtml, columnDHtml, taBannerHtml, infoBoxHtml, arrowClass, esc } from '../render/griid.js';
 import { placeRowMarks } from '../render/handmarks.js';
-import { chartGrids, simpleChart, type ChartGrid, type SimpleChart } from '../viewmodels/charts.js';
+import { chartGrids, simpleChart, leadSource, type ChartGrid, type SimpleChart } from '../viewmodels/charts.js';
 import { holdCardFor, openTransitCard, clockReadPrompt, secondsToReach, alertExpired, ledgerTaHint, type HoldCard } from '../viewmodels/cockpitinfo.js';
 import { digitalWatchViewModel, SplitTracker } from '../viewmodels/digitalwatch.js';
-import { taFormVm, taNoteText, taRounding, taHelper, ownLappedDelay, buildTaRequest, allowanceSeconds, type TaFormMode } from '../viewmodels/ta.js';
+import { taFormVm, taNoteText, taRounding, taHelper, ownLappedDelay, buildTaRequest, allowanceSeconds, taStageOf, type TaFormMode } from '../viewmodels/ta.js';
 import { taWebHtml, taPaperHtml, type TaFormState } from '../render/taform.js';
 import { FULL_START_FF_LEAD } from '../viewmodels/curriculum.js';
-import { inTimedInterval, startQueueVm, startLaunchFor, launchPlanFromInfo, startCount, makeUpPlan, assignedAfter, scheduleCorrection, inCalibrationRun, nextCallPrompt, driverLineKind, paceCarsFrom, inTransitRun, type LaunchPlan, type StartCountVm } from '../viewmodels/v3.js';
+import { inTimedInterval, startQueueVm, startLaunchFor, withheldLaunchText, launchPlanFromInfo, startCount, makeUpPlan, assignedAfter, scheduleCorrection, inCalibrationRun, nextCallPrompt, driverLineKind, paceCarsFrom, inTransitRun, type LaunchPlan, type StartCountVm } from '../viewmodels/v3.js';
 import { formatInterval } from '../../core/griid.js';
 import { effectiveScale, simAdvance, nextScale, defaultScaleFor, SCALE_STEPS } from '../viewmodels/timescale.js';
 import { KeyMapper, KEY_HELP, type KeyCommand } from '../viewmodels/keys.js';
@@ -27,7 +27,7 @@ import { createAnnotations, HIGHLIGHTS, MARK_PRESETS, markRow, markAnnotation, f
 import { chartLossFor } from '../../core/drills/preread.js';
 import { cockpitLayout } from '../viewmodels/layout.js';
 import { cpCards, debriefViewModel, type CpCard } from '../viewmodels/debrief.js';
-import { instrumentPolicy, chartsHidden, HIDDEN_CHARTS_TEXT, paceAidText, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, finishPrompt, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
+import { instrumentPolicy, chartsHidden, HIDDEN_CHARTS_TEXT, HIDDEN_CAR_LINE_TEXT, paceAidText, perfCardFor, stopCardFor, cardDwell, waitMore, restartLabel, restartLines, focusLine, lineSpeeds, finishPrompt, type PerfCard, type StopCard } from '../viewmodels/cockpitinfo.js';
 import { drillHint, hintBarText, scaleHintText } from '../viewmodels/hints.js';
 import { LIVE_KEY, LAST_KEY, snapshotRun, saveStored, loadStored, clearStored, restoreSim, describeSource, sameDrillSource, type StoredSource } from '../viewmodels/resume.js';
 import { recordCampaignStage } from '../viewmodels/campaign.js';
@@ -41,7 +41,7 @@ import { app, buildScenario, withDriver, el, escapeHtml, sourceHash, saveSetting
 declare global { interface Window { __rally?: { sim: Simulator; advance(seconds: number): Observation; act(a: Action): Observation; observe(): Observation; result(): StageResult; finish(): void } } }
 
 const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
-const sameSource = (a: StoredSource, b: RunSource): boolean => a.kind === b.kind && (a.kind === 'drill' ? b.kind === 'drill' && a.drillId === b.drillId && a.tier === b.tier && a.seed === b.seed : b.kind === 'builtin' && a.name === b.name && a.seed === b.seed);
+const sameSource = (a: StoredSource, b: RunSource): boolean => a.kind === b.kind && (a.kind === 'drill' ? b.kind === 'drill' && a.drillId === b.drillId && a.tier === b.tier && a.seed === b.seed && (a.attempt ?? 0) === (b.attempt ?? 0) : b.kind === 'builtin' && a.name === b.name && a.seed === b.seed);
 
 export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   let drills: ReturnType<typeof allDrills> = []; try { drills = allDrills(); } catch { drills = []; }
@@ -63,13 +63,15 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   } catch (e) { root.replaceChildren(el('div', { class: 'page' }, el('h1', {}, 'Could not start the simulator'), el('p', { class: 'danger' }, String((e as Error).message)))); return () => undefined; }
   const drill = built.drill;
   // PLAY-027: D06 notes of the last run of this seed are kept, so each pair can be driven again and the chart builds up
-  if (!resuming && drill?.id === 'D06' && src.kind === 'drill') { const kept = loadChartNotes(src.tier, src.seed); if (kept.length) { for (const t of kept) { try { sim.act({ type: 'note', text: t }); } catch { /* skip */ } } startNote = `Your ${kept.length} chart note${kept.length === 1 ? ' is' : 's are'} kept from the last run of this seed: drive any pair again and add a new note for it (the last one per pair counts).`; } }
+  if (!resuming && drill?.id === 'D06' && src.kind === 'drill' && src.tier >= 1 && src.attempt) startNote = `Attempt ${src.attempt + 1} of this seed: a new hidden car, so measure every pair again (notes from the last car do not carry over).`;   // PT-11 N-D2
+  if (!resuming && drill?.id === 'D06' && src.kind === 'drill' && src.tier === 0) { const kept = loadChartNotes(src.tier, src.seed); if (kept.length) { for (const t of kept) { try { sim.act({ type: 'note', text: t }); } catch { /* skip */ } } startNote = `Your ${kept.length} chart note${kept.length === 1 ? ' is' : 's are'} kept from the last run of this seed: drive any pair again and add a new note for it (the last one per pair counts).`; } }
   const run: Run = { source: src, scenario, sim, drill, result: null, scaleMax: resuming?.scaleMax ?? 1, watch, annotations: null };
   app.run = run;
   const lockedTo1x = drill?.id === 'D01' || drill?.id === 'D03';
   const policy = instrumentPolicy(scenario.aids);
   const rung = policy.rung;
   const hiddenCharts = chartsHidden(scenario);   // PT-10 N-C1: D06 at Silver / Gold: the car's charts are what the player measures
+  const withheldTimes = policy.computedCard && !policy.printsTimes;   // PT-11 N-D7: Silver prints no launch second
   const showTimes = policy.printsTimes && !hiddenCharts;   // PT-10 N-C7: the dwell and call times are printed at Bronze only (and never for a hidden car)
   const bookLen = scenario.book.length;
   const legalAsp = rung <= 1 && (scenario.asp ?? 0) > 0;   // N15: at the legal rungs the clock caption does not do the base + ASP arithmetic
@@ -231,7 +233,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (view !== 'simple') { simpleBox.innerHTML = '<div class="muted" id="matrices-note">The three matrices (accel/decel, stop &amp; go, turns) are behind the Charts button (C).</div>'; return; }
     const near = (v: number | null): number | null => (v === null || v <= 0 ? null : simple.speeds.reduce((b, s) => (Math.abs(s - v) < Math.abs(b - v) ? s : b), simple.speeds[0]!));
     const hl = new Set([near(sp.vIn), near(sp.vOut)].filter((x): x is number => x !== null));
-    const cls: Record<string, string> = { Dec: 'c-dec', Acc: 'c-acc', 'S/G': 'c-sg', 'TS/G': 'c-ts', 'T@15': 'c-t15', 'T@20': 'c-t20' };
+    const cls: Record<string, string> = { Dec: 'c-dec', Acc: 'c-acc', 'S/G': 'c-sg', 'TS/G': 'c-ts', 'T@15': 'c-t15', 'T@20': 'c-t20', Lead: 'c-lead' };
     simpleBox.innerHTML = `<table id="simplechart-table"><thead><tr><th>Speed</th>${simple.columns.map(c => `<th class="${cls[c]}">${c}</th>`).join('')}</tr></thead><tbody>${simple.rows.map(r => `<tr data-speed="${r.speed}" class="${hl.has(r.speed) ? 'cur' : ''}"><th>${r.speed}</th>${simple.columns.map(c => `<td class="${cls[c]}">${esc(r.text[c])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
     const cur = simpleBox.querySelector('tr.cur') as HTMLElement | null; if (cur) simpleBox.scrollTop = Math.max(0, cur.offsetTop - 40);   // keep the highlighted speed in view inside the small box
   }
@@ -495,7 +497,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     const first = vm.legs.find(l => l.measured > 0) ?? vm.legs[0];
     const mode: TaFormMode = taMode;
     const carDefault = String((scenario as unknown as { carNumber?: number | string }).carNumber ?? '');
-    const formState: TaFormState = { draft: taDraft, legs: vm.legs, first: first ? { legIndex: first.legIndex, fromLine: first.fromLine, toLine: first.toLine, suggested: first.suggested, cause: first.cause } : null, carDefault, loggedIn: taLoggedIn, endOfStage: vm.endOfStage, acked: vm.acked };
+    const formState: TaFormState = { stageDefault: taStageOf(scenario.book), draft: taDraft, legs: vm.legs, first: first ? { legIndex: first.legIndex, fromLine: first.fromLine, toLine: first.toLine, suggested: first.suggested, cause: first.cause } : null, carDefault, loggedIn: taLoggedIn, endOfStage: vm.endOfStage, acked: vm.acked };
     taPanel.innerHTML = `<div class="ta-head"><b>${esc(mode === 'paper' ? 'Time Delay Form (classic paper sheet)' : vm.title)}</b><span class="mono" id="ta-count"></span><label class="ta-paper-toggle" title="the older paper sheet handed to an official at lunch or at the finish; practice only"><input type="checkbox" id="ta-paper" ${mode === 'paper' ? 'checked' : ''}> classic paper</label>${vm.endOfStage ? `<button id="ta-done-pin" class="mini ta-done-pin" type="button" title="the red Done button of the lessons: press it once, after the last Time Allowance of the ENTIRE stage"${vm.acked ? ' disabled' : ''}>Done (red button)</button>` : ''}<button id="ta-toggle" class="mini" title="collapse / expand">_</button></div>
       <div class="ta-body" id="ta-body">
         <p class="muted ta-help">${mode === 'paper' ? 'The paper sheet (older rally schools): fill it in at the stop, hand it to an official at lunch or at the finish. ' : 'The 2026 web form (grscores.com/timeallowance), filed within 15 minutes of the TA point; the red button at the end of the day prints the scorecard. '}Time in multiples of 0m10s (up to 29m30s). Example: <i>${esc(vm.example)}</i></p>
@@ -671,13 +673,13 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
   let countingStop = false; let lastCountSent: number | null = null; const startBeatsSent = new Set<number>();
   function renderStartCard(o: Observation): void {
     const al = activeLaunch(o);
-    const cnt = al ? startCount(o.tod, al.plan.launchTod) : null; lastCount = cnt;
+    const cnt = al ? startCount(o.tod, al.plan.launchTod, withheldTimes) : null; lastCount = cnt;
     const atSign = o.phase === 'preread' || (o.phase === 'running' && !!o.stoppedAtLine && sim.waitReason === 'hold');
     const q = atSign ? startQueueVm(o.startQueue, o.tod, rung) : null;
     const paint = (parts: StartParts, show: boolean): void => {
       parts.queue.textContent = show && q ? q.text : ''; parts.queue.dataset.state = show && q ? q.state : '';
       if (!show || !al || !cnt) { parts.plan.textContent = ''; parts.warn.style.display = 'none'; parts.count.style.display = 'none'; return; }
-      parts.plan.textContent = `Line ${al.line}: ${al.plan.text}`;
+      parts.plan.textContent = `Line ${al.line}: ${withheldTimes ? withheldLaunchText(al.plan, lineSpeeds(scenario, al.line).vOut) : al.plan.text}`;   // PT-11 N-D7
       parts.warn.style.display = cnt.warning && !o.launch?.warned ? '' : 'none'; if (cnt.banner) parts.warn.textContent = cnt.banner;   // B19: the banner goes once W has warned the driver
       parts.count.style.display = cnt.beatText !== null ? '' : 'none'; if (cnt.beatText !== null) { parts.count.textContent = cnt.beatText; parts.count.dataset.beat = cnt.beatText; parts.count.className = `start-count${cnt.phase === 'go' ? ' go' : ''}`; }
     };
@@ -816,6 +818,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     // N15: the legal rungs get no launch arithmetic (the numbers are the answer sheet): the standing-start loss is looked up on your own chart
     if (v0 && li0) accel = !policy.computedCard
       ? (drillStart ? ' Drill start: no queue and no count. The car launches itself on your launch second: your time minus the standing-start loss of your chart.' : ' Your car loses time getting up to speed (the 0 to speed cell of your chart), so launch that many seconds before your time.')
+      : withheldTimes ? (drillStart ? ` Drill start: no queue and no count. The car launches itself on your launch second: your time minus the standing-start loss to ${v0} mph (simple chart, Acc at ${v0}), to the whole second.` : ` Your car loses time getting up to ${v0} mph: launch early by the standing-start loss (simple chart, Acc at ${v0}), to the whole second.`)   // PT-11 N-D7: Silver prints no launch second
       : drillStart ? ` Drill start: no queue and no count. The car launches itself at ${formatClock(li0.launchTime)}, your time minus ${minus} s for its ${li0.netLoss.toFixed(1)} s standing-start loss to ${v0} mph.` : ` Your car loses about ${li0.netLoss.toFixed(1)} s getting up to ${v0} mph, so launch ${minus} s before your time (${formatClock(li0.launchTime)}).`;
     const measureRun = isMeasureRun(scenario);
     // PLAY-027 / PT-10 N-C9: ONE statement about the launch on a measuring run: leave ON your second, no lead (the generic sentence below says nothing else about it)
@@ -877,7 +880,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     let hold: HoldCard | null = policy.computedCard ? (holdCardFor(scenario, sim, line, o.asp) ?? openTransitCard(scenario, sim, o.driver.lastExecutedLine)) : null;   // UI-032: an open exact transit keeps its recorded IN time on the card
     if (hold && hold.start && drillStart) hold = null;   // N8/N9: a drill start launches itself: no "Restart, line 1" block, no count
     const lp = policy.computedCard ? startLaunchFor(scenario, line) : null;   // START-001: your time, launch at your time minus the standing-start loss
-    if (lp) parts.push(`<div class="launchcard" id="launchcard"><b>Launch</b> <span class="mono">${esc(lp.text)}</span><div class="muted">${drillStart ? 'A drill start: the car launches itself on that second (fast-forward to it if you like).' : 'Warn the driver about 30 s before; count so the last count lands on the launch second.'}</div></div>`);
+    if (lp) parts.push(`<div class="launchcard" id="launchcard"><b>Launch</b> <span class="mono">${esc(withheldTimes ? withheldLaunchText(lp, lineSpeeds(scenario, line).vOut) : lp.text)}</span><div class="muted">${drillStart ? 'A drill start: the car launches itself on that second (fast-forward to it if you like).' : 'Warn the driver about 30 s before; count so the last count lands on the launch second.'}</div></div>`);
     if (hold) {
       const atHold = o.stoppedAtLine === hold.line && hold.goTod !== null;
       const toOut = atHold ? hold.goTod! - o.tod : null;
@@ -894,7 +897,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     if (card.restart) {
       parts.push(`<div class="accent">Not a stop: call go so the car leaves at the out-time${card.measure ? ', ON the second' : ''}${card.restart.accel !== null ? ` minus ${Math.round(card.restart.accel)} s for the standing-start loss (${card.restart.accel.toFixed(1)} s)` : ''}.</div>`);
     } else if (card.mode === 'answers' && card.hiddenCar) {
-      parts.push(`<div class="hidden-car muted" id="hidden-car-card">${escapeHtml(HIDDEN_CHARTS_TEXT)}</div>`);   // PT-10 N-C1: no stop, turn or ramp number of the hidden car
+      parts.push(`<div class="hidden-car muted" id="hidden-car-card">${escapeHtml(HIDDEN_CAR_LINE_TEXT)}</div>`);   // PT-10 N-C1: no stop, turn or ramp number of the hidden car; PT-11 N-D8: the chart box prints the hidden-car sentence, the line card only points at the MARKs
     } else if (card.mode === 'answers') {
       if (card.stop && card.withheld) {
         const s = card.stop;   // PT-10 N-C7: Silver: the chart is on the card, the arithmetic is yours
@@ -905,15 +908,15 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
         parts.push(`<div>Stop ${s.vIn} in / ${s.vOut} out${s.cap !== undefined ? ` (turn capped at ${s.cap} mph)` : ''}: loss <b class="mono">${s.loss.toFixed(1)}</b> s → dwell <b class="mono">${s.dwell.toFixed(1)}</b> s after "Stopped"${watch === 'analog' ? ' <span class="muted">(set the bezel with ] )</span>' : ' <span class="muted">(count it on the stopwatch)</span>'}</div>`);
         if (o.stoppedAtLine === line && more !== null) parts.push(`<div class="stopcount muted" id="stopcount">Count it out loud for the driver: <kbd>X</kbd> (${countingStop ? '<b>counting</b>' : 'off'}); say "coming in at ${s.vIn}, out ${s.vOut}, holding for ${Math.round(s.dwell)}" first.</div><div class="stopnow">dwell so far <b class="mono">${Math.max(0, dwellSoFar).toFixed(1)}</b> s · ${more > 0.05 ? `wait <b class="mono">${more.toFixed(1)}</b> more s` : '<b class="ok">go now (G)</b>'}</div>`);
       } else if (card.stopNoPause) parts.push(`<div>STOP without pause: loss ${card.stopNoPause.loss.toFixed(1)} s is yours to recover.</div>`);
-      if (card.timed && card.withheld) parts.push(`<div class="withheld" id="withheld-timed">Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, then ${card.timed.then}: call ${card.timed.then} at ${card.timed.seconds} s minus the ramp lead (chart (a), ${card.timed.hold} to ${card.timed.then}; press C).</div>${card.timed.fromGhost ? `<div class="timed-anchor accent" id="timed-anchor">Count from the ghost's departure = arrival + the ${card.timed.fromGhost.pause} s pause minus the braking part (Dec), not from your go.</div>` : ''}`);
+      if (card.timed && card.withheld) parts.push(`<div class="withheld" id="withheld-timed">Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, then ${card.timed.then}: call ${card.timed.then} at ${card.timed.seconds} s minus the lead for ${card.timed.hold} → ${card.timed.then} (${escapeHtml(leadSource(card.timed.hold, card.timed.then))}).</div>${card.timed.fromGhost ? `<div class="timed-anchor accent" id="timed-anchor">Count from the ghost's departure = arrival + the ${card.timed.fromGhost.pause} s pause minus the braking part (Dec), not from your go.</div>` : ''}`);
       else if (card.timed) parts.push(`<div>Timed: hold ${card.timed.hold} for ${card.timed.seconds} s, call ${card.timed.then} at <b class="mono">${card.timed.call.toFixed(1)}</b> s (lead ${card.timed.lead.toFixed(1)})</div>${card.timed.fromGhost ? `<div class="timed-anchor accent" id="timed-anchor">Count from the ghost's departure = arrival + the ${card.timed.fromGhost.pause} s pause (${card.timed.fromGhost.afterStopped.toFixed(1)} s after "Stopped"), not from your go: call ${card.timed.then} ${card.timed.call.toFixed(1)} s after that = <b class="mono">${card.timed.fromGhost.callAfterStopped.toFixed(1)}</b> s after "Stopped".</div>` : ''}`);
-      else if (card.speedChange && card.withheld) parts.push(`<div class="withheld" id="withheld-ramp">Speed ${card.speedChange.from} → ${card.speedChange.to}: call it the chart (a) loss for that pair before the landmark (press C).</div>`);
+      else if (card.speedChange && card.withheld) parts.push(`<div class="withheld" id="withheld-ramp">Speed ${card.speedChange.from} → ${card.speedChange.to}: call it the lead for that pair before the landmark (${escapeHtml(leadSource(card.speedChange.from, card.speedChange.to))}), so the car crosses the sign at the midpoint speed.</div>`);
       else if (card.speedChange) parts.push(`<div>Speed ${card.speedChange.from} → ${card.speedChange.to}: call it <b class="mono">${card.speedChange.lead.toFixed(1)}</b> s before the landmark (${card.speedChange.ft} ft)</div>`);
       if (card.turnLoss) {
         const t = card.turnLoss;
         parts.push(`<div class="turnloss"><b>Turn loss</b> <span class="muted">(s lost slowing and re-accelerating, no stop)</span>${t.here ? `<div class="thisturn">This turn ${t.here.turn} ${t.here.vIn}${t.here.vIn !== t.here.vOut ? ` &rarr; ${t.here.vOut}` : ''} mph: <b class="mono">this turn: ${t.here.loss.toFixed(1)} s</b></div><div class="muted">${escapeHtml(t.here.rule.text)}</div>` : ''}${t.rows.map(r => `<div class="mono">${r.angle}&deg;: ${t.speeds.map((v, i) => `${v} <b>${r.losses[i]!.toFixed(1)}</b>`).join(' · ')}</div>`).join('')}</div>`);
       }
-      if (card.start && card.withheld) parts.push(`<div class="withheld">Standing start to ${card.start.speed}: leave early by the 0 → ${card.start.speed} loss on chart (a).</div>`);
+      if (card.start && card.withheld) parts.push(`<div class="withheld">Standing start to ${card.start.speed}: leave early by the standing-start loss (simple chart, Acc at ${card.start.speed}).</div>`);
       else if (card.start) parts.push(`<div>Standing start to ${card.start.speed}: leave ~<b class="mono">${card.start.early.toFixed(1)}</b> s early</div>`);
     } else {
       const go = ann.goTime(line) || o.annotations?.[line] || '';

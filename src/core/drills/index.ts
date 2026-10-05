@@ -17,6 +17,7 @@ import type { Scenario } from '../course.js';
 import { basicRubric, legErrors, meanAbs, callErrors, driverScale, headlineTip, withSkillTip, starsFromMeanAbs, withRecoveryGate } from './rubrics.js';
 import { lostProcedure, LOST_GUIDANCE } from './lost.js';
 import { formatClock } from '../units.js';
+import { chartLead } from '../perf-table.js';
 
 export { setGenerator } from './common.js';
 /** EDU-005: Gold on D03/D04/D05 hides the car's numbers (HIDDEN_FORD), so it needs the chart built in D06 first. */
@@ -31,6 +32,17 @@ const D03: Drill = {
   rubric(r, sc) { return basicRubric(r, [1, 3, 6], ['Chart pause time: dwell = printed pause - stop/start loss for the entry/exit speeds on your card (for a 15 s pause it is the stop & go chart value; for any other pause keep the printed pause and scale only the chart loss).'], sc.driver.skill, sc); },
 };
 
+/** PT-11 N-D1: the first timed (or landmark) speed pair of a drill and its lead as the simple chart prints it, for the tips. */
+function firstPair(sc: Scenario, kind: 'timed' | 'landmark'): { from: number; to: number; lead: number } {
+  let v: number | undefined;
+  for (const ins of sc.book) {
+    if (kind === 'timed' && ins.timed) return { from: ins.timed.holdSpeed, to: ins.timed.thenSpeed, lead: chartLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car) };
+    if (kind === 'landmark' && !ins.timed && !ins.pause && ins.speed !== undefined && v !== undefined && v !== ins.speed && ins.section !== 'start') return { from: v, to: ins.speed, lead: chartLead(v, ins.speed, sc.car) };
+    v = ins.timed ? ins.timed.thenSpeed : ins.speed ?? v;
+  }
+  return { from: 30, to: 40, lead: chartLead(30, 40, sc.car) };
+}
+
 // ---------- D04 timed speed changes ----------
 const D04: Drill = {
   id: 'D04', title: 'Timed speed changes', objective: 'Hold X for N seconds then Y: count from the ghost\'s departure and call half a ramp early.', skills: ['P3'], minutes: 10, kind: 'drive',
@@ -41,7 +53,7 @@ const D04: Drill = {
       b.advanceMiles(0.4 + r.next() * 0.4);
       if (i === 2 || i === 5) { const sp = specs[r.int(0, 3)]!; b.instruction({ control: 'STOP', exits: EXITS.crossroads('S'), sightDistance: 700, sign: { text: 'STOP', shape: 'octagon', side: 'R' } }, { turn: 'S', pause: 15, timed: { holdSpeed: sp.hold, seconds: sp.sec, thenSpeed: sp.then }, speed: sp.hold }); }
       else { const sp = specs[i % 4]!; b.timedAt(r.pick(['bridge', 'RR crossing', 'church on R', 'water tower']), { holdSpeed: sp.hold, seconds: sp.sec, thenSpeed: sp.then }); }
-      if (i === 2) { b.advanceMiles(0.5 + r.next() * 0.3); b.checkpoint(); }
+      if (i === 2) { b.advanceMiles(0.75 + r.next() * 0.3); b.checkpoint(); }   // PT-11: the checkpoint sits clear of the 45 s timed change after the STOP (seed 4 put it mid-ramp)
     }
     return b.advanceMiles(0.5).checkpoint().advanceFt(300).finish().build(); },
   rubric(r, sc) {
@@ -55,7 +67,8 @@ const D04: Drill = {
     const stopStars: 0 | 1 | 2 | 3 = !stopErrs.length ? 3 : perStop <= 1.0 * k ? 3 : perStop <= 1.3 * k ? 2 : perStop <= 2.5 * k ? 1 : 0;
     rb.stars = Math.min(rb.stars, changeStars, stopStars) as 0 | 1 | 2 | 3; rb.headline += ` · timed-change calls ${perChange.toFixed(1)} s off each (average ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'})${stopErrs.length ? ` · STOP + timed lines ${perStop.toFixed(1)} s off each` : ''}`;
     // EDU-002: the call error is the drill's own skill: it heads "Fix this next" whenever it held the stars down
-    const tip = stopStars < 3 && stopStars <= changeStars ? `At the STOP + timed lines your calls were ${perStop.toFixed(1)} s off each, ${Math.abs(stopBias).toFixed(1)} s ${stopBias >= 0 ? 'late' : 'early'} on average: ${stopBias < 0 ? 'you counted from your own GO. ' : ''}The count starts when the ghost leaves = arrival + the printed pause (the card's "s after Stopped"), never at your go.` : changeStars < 3 ? `Timed-change calls were ${perChange.toFixed(1)} s off each, ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'} on average: start the count when the ghost leaves the line (the moment you pass it, or arrival plus the printed pause at a STOP, never your own GO) and call the new speed half a ramp before the count ends.` : null;
+    const leadEg = firstPair(sc, 'timed');   // PT-11 N-D1: the tip names the number and where it lives
+    const tip = stopStars < 3 && stopStars <= changeStars ? `At the STOP + timed lines your calls were ${perStop.toFixed(1)} s off each, ${Math.abs(stopBias).toFixed(1)} s ${stopBias >= 0 ? 'late' : 'early'} on average: ${stopBias < 0 ? 'you counted from your own GO. ' : ''}The count starts when the ghost leaves = arrival + the printed pause (the card's "s after Stopped"), never at your go; then call the new speed the lead early (the simple chart's Lead column: row ${leadEg.from}, ${leadEg.to > leadEg.from ? '↑' : '↓'} = ${leadEg.lead.toFixed(1)} s for ${leadEg.from} → ${leadEg.to}).` : changeStars < 3 ? `Timed-change calls were ${perChange.toFixed(1)} s off each, ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'} on average: start the count when the ghost leaves the line (the moment you pass it, or arrival plus the printed pause at a STOP, never your own GO) and call the new speed half a ramp before the count ends (the simple chart's Lead column: row ${leadEg.from}, ${leadEg.to > leadEg.from ? '↑' : '↓'} = ${leadEg.lead.toFixed(1)} s for ${leadEg.from} → ${leadEg.to}).` : null;
     return withSkillTip(rb, r, sc, tip);
   },
 };
@@ -65,18 +78,19 @@ const D05: Drill = {
   id: 'D05', title: 'Speed changes at landmarks', objective: 'Split the change at the sign: be at the midpoint speed as the bumper passes it, which means calling the change half a ramp early.', skills: ['P4'], minutes: 10, kind: 'drive',
   tiers: tiers(), unlock: [], readFirst: ['timed-leads'], tierUnlock: GOLD_NEEDS_D06,
   scenario(seed, t) { const tier = tierOf(D05, t); const r = rng(seed); const b = base('D05', 'Landmark speed changes', seed, tier, { startProcedure: 'drill' }).start(35); let v = 35;
-    for (let i = 0; i < 8; i++) { b.advanceMiles(0.3 + r.next() * 0.4); const nv = r.pick([25, 30, 40, 45, 50].filter(x => Math.abs(x - v) >= 10)); b.speedAtSign(r.pick([`SPEED LIMIT ${nv}`, 'CURVE', 'END ROAD WORK', 'BRIDGE']), nv, { side: r.chance(0.3) ? 'L' : 'R', shape: r.chance(0.5) ? 'rect' : 'diamond' }); v = nv; if (i === 3) { b.advanceMiles(0.4); b.checkpoint(); } }
+    for (let i = 0; i < 8; i++) { b.advanceMiles(0.3 + r.next() * 0.4); const nv = r.pick(tier.name === 'Gold' ? [25, 30, 40, 45, 50].filter(x => Math.abs(x - v) >= 10) : [20, 25, 30, 35, 40, 45, 50].filter(x => Math.abs(x - v) === 10)); /* PT-11 N-D1: Bronze and Silver change by 10 mph, the pairs the simple chart's Lead column prints; Gold (a hidden car, your own chart) keeps the wide pairs */ b.speedAtSign(r.pick([`SPEED LIMIT ${nv}`, 'CURVE', 'END ROAD WORK', 'BRIDGE']), nv, { side: r.chance(0.3) ? 'L' : 'R', shape: r.chance(0.5) ? 'rect' : 'diamond' }); v = nv; if (i === 3) { b.advanceMiles(0.4); b.checkpoint(); } }
     return b.advanceMiles(0.4).checkpoint().advanceFt(300).finish().build(); },
   rubric(r, sc) {
     // PLAY-006: graded on the call error at each sign (alternating up and down changes no longer cancel): calling at the sign is late by half a ramp
     const errs = callErrors(r, sc, 'landmark'); const perChange = meanAbs(errs); const bias = errs.length ? errs.reduce((a, b) => a + b, 0) / errs.length : 0;
-    const rb = basicRubric(r, [1, 2, 4], ['Split at the sign: lead time = half the ramp time for that pair of speeds (it is on your performance card), so you cross the sign at the midpoint speed.'], sc.driver.skill, sc);
+    const rb = basicRubric(r, [1, 2, 4], ['Split at the sign: lead time = half the ramp time for that pair of speeds (Bronze prints it on the card; at Silver read the simple chart\'s Lead column: the row of the speed you are at, ↑ for 10 mph up, ↓ for 10 mph down), so you cross the sign at the midpoint speed.'], sc.driver.skill, sc);
     const k = driverScale(sc.driver.skill);
     const changeStars: 0 | 1 | 2 | 3 = perChange <= 0.8 * k ? 3 : perChange <= 1.3 * k ? 2 : perChange <= 2.0 * k ? 1 : 0;
     rb.stars = Math.min(rb.stars, changeStars) as 0 | 1 | 2 | 3; rb.headline += ` · landmark calls ${perChange.toFixed(1)} s off each (average ${Math.abs(bias).toFixed(1)} s ${bias >= 0 ? 'late' : 'early'})`;
     // EDU-002: name the call error, not the leg error, when the calls held the stars down
+    const leadEg = firstPair(sc, 'landmark');
     const tip = changeStars < 3 ? (bias >= 0
-      ? `Landmark calls were ${perChange.toFixed(1)} s off each, ${bias.toFixed(1)} s late on average: you call at the sign. Call the new speed half a ramp before it (the lead for each pair is on your card) so the bumper crosses the sign at the midpoint speed (HB p.12).`
+      ? `Landmark calls were ${perChange.toFixed(1)} s off each, ${bias.toFixed(1)} s late on average: you call at the sign. Call the new speed half a ramp before it (the simple chart's Lead column: row ${leadEg.from}, ${leadEg.to > leadEg.from ? '↑' : '↓'} = ${leadEg.lead.toFixed(1)} s for ${leadEg.from} → ${leadEg.to}) so the bumper crosses the sign at the midpoint speed (HB p.12).`
       : `Landmark calls were ${perChange.toFixed(1)} s off each, ${(-bias).toFixed(1)} s early on average: lead by half the ramp for that pair of speeds, not more, so the bumper crosses the sign at the midpoint speed (HB p.12).`) : null;
     return withSkillTip(rb, r, sc, tip);
   },
@@ -105,9 +119,17 @@ const D09: Drill = {
 
 // ---------- D10 course following in motion ----------
 /** PT-10 N-C8: D10 comes before the recovery lesson on the path, so an on-course run with a slow leg never advises the 10 % rule; the cause is named, the make-up comes later. */
-function d10TimingTip(mean: number, k: number): string {
-  const base = `On course all the way, which is what this drill grades first. The leg ran ${mean.toFixed(1)} s off (three stars need ${(10 * k).toFixed(0)} s or less): time is secondary here, so keep every call and every pause exact; making seconds up is taught in a later lesson on your path.`;
-  return base;
+function d10TimingTip(mean: number, thr: number, turns: { count: number; seconds: number }, bronze: boolean): string {
+  // PT-11 N-D3: the tip names the turn losses (the ghost turns at full speed) instead of blaming calls and pauses that were exact
+  const turnPart = turns.count > 0 && turns.seconds >= 1.5 ? ` ${turns.count} turn${turns.count === 1 ? '' : 's'} cost ${Math.round(turns.seconds)} s: the ghost turns at full speed and your car cannot${bronze ? ', so at Bronze those seconds are not counted against you' : ''}; making them up is taught in the recovery lesson later on your path.` : ' Making seconds up is taught in a later lesson on your path.';
+  return `On course all the way, which is what this drill grades first. The leg ran ${mean.toFixed(1)} s off${bronze ? ' after the turn losses' : ''} (three stars need ${thr.toFixed(0)} s or less): time is secondary here.${turnPart}`;
+}
+/** PT-11 N-D3: per-leg seconds the drill does not hold against the navigator: an off-course excursion (graded on the doctrine) and, at Bronze, the turn losses. */
+function d10Adjusted(r: StageResult, sc: Scenario, bronze: boolean): { errs: number[]; turns: { count: number; seconds: number } } {
+  const errs = legErrors(r).map((e, k) => { const a = (r.attribution ?? [])[k]; const b = a?.buckets ?? ({} as Record<string, number>); return e - (b.offCourse ?? 0) - (bronze ? (b.turn ?? 0) : 0); });
+  const seconds = (r.attribution ?? []).reduce((x, a) => x + Math.max(0, a.buckets?.turn ?? 0), 0);
+  const count = sc.book.filter(i => i.turn && i.turn !== 'S' && !i.pause).length;
+  return { errs, turns: { count, seconds } };
 }
 const D10: Drill = {
   id: 'D10', title: 'Course following with distractors', objective: 'Fifteen instructions with driveways, gravel roads and misleading signs: stay on course; time is secondary. If you do go wrong, run the lost doctrine: stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course.', skills: ['P7', 'P8'], minutes: 12, kind: 'drive',
@@ -130,20 +152,25 @@ const D10: Drill = {
   rubric(r, sc) {
     // LOST-001: a wrong turn is scored on the doctrine too: stopwatch at the turn-around, the doubled time written within 2 s
     // EDU-006: on course, the stars are also bounded by the timing (a rookie 52-84 s late no longer earns 2 and opens D18): Stay on course first, then Stay on time
-    const lost = lostProcedure(r); const k = driverScale(sc.driver.skill); const mean = meanAbs(legErrors(r));
-    const timing: 1 | 2 | 3 = mean <= 10 * k ? 3 : mean <= 20 * k ? 2 : 1;
-    const base: 0 | 1 | 2 | 3 = r.offCourseCount === 0 ? timing : r.offCourseCount === 1 ? 1 : 0;
+    // PT-11 N-D3: Bronze grades staying on course and the lost procedure: the turn losses (the ghost turns at full speed) are not the navigator's fault before the
+    // recovery lesson. Bronze uses Silver's thresholds on that smaller error, so it is never stricter than Silver; an excursion is graded on the same timing and
+    // can never outscore staying on course.
+    const lost = lostProcedure(r); const k = driverScale(sc.driver.skill); const bronze = sc.aids.rung >= 3;
+    const thr = Math.max(10 * k, 10 * driverScale('sportsman'));
+    const adj = d10Adjusted(r, sc, bronze); const mean = meanAbs(adj.errs);
+    const timing: 1 | 2 | 3 = mean <= thr ? 3 : mean <= 2 * thr ? 2 : 1;
     const proc = lost.length > 0 && lost.every(x => x.watchStarted && x.ok);
-    const stars = (r.offCourseCount === 1 && proc ? 2 : base) as 0 | 1 | 2 | 3;
-    const feedback = [r.offCourseCount ? 'Confirm the landmark (shape, side, text) before the leading edge; driveways, lots and gravel are not roads.' : timing === 3 ? 'On course all the way. Now add the clock.' : `On course all the way, but the leg ran ${mean.toFixed(1)} s off (three stars need ${(10 * k).toFixed(0)} s or less): stay on course first, then stay on time.`];
+    const stars = (r.offCourseCount === 0 ? timing : r.offCourseCount === 1 ? Math.min(proc ? 2 : 1, timing) : 0) as 0 | 1 | 2 | 3;
+    const turnsNote = adj.turns.seconds >= 1.5 ? ` ${adj.turns.count || 'The'} turn${adj.turns.count === 1 ? '' : 's'} cost ${Math.round(adj.turns.seconds)} s${bronze ? ' (not counted against you at Bronze)' : ''}.` : '';
+    const feedback = [r.offCourseCount ? 'Confirm the landmark (shape, side, text) before the leading edge; driveways, lots and gravel are not roads.' : timing === 3 ? `On course all the way. Now add the clock.${turnsNote}` : `On course all the way, but the leg ran ${mean.toFixed(1)} s off${bronze ? ' after the turn losses' : ''} (three stars need ${thr.toFixed(0)} s or less): stay on course first, then stay on time.${turnsNote}`];
     if (r.offCourseCount) {
       for (const x of lost) feedback.push(`Lost (LOST-001): turn-around ${formatClock(x.turnAroundTod)}, back at the junction ${formatClock(x.rejoinTod)}: doubled = ${x.doubled.toFixed(1)} s. ${x.watchStarted ? 'The stopwatch was started at the turn-around.' : 'Start the stopwatch at the turn-around.'} ${x.noted === null ? 'You wrote no lost time ("lost 94").' : x.ok ? `Your ${x.noted} s is within 2 s.` : `Your ${x.noted} s is more than 2 s off.`}`);
       if (!lost.length) feedback.push('You never called the turn-around while off course: when you know you are lost, say "turn around", start the stopwatch, and double it.');
       feedback.push(LOST_GUIDANCE);
     }
     // EDU-003: an off-course run gets the lost doctrine as its tip; an on-course run the leg-error tip for its stars
-    const tip = r.offCourseCount ? `Off course ${r.offCourseCount} time(s): confirm the landmark (shape, side, text) before the leading edge of the intersection. Once lost: turn around where it is safe, start the stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course and write the leg off (lesson "When you are lost").` : timing === 3 ? headlineTip(r, sc, { stars }) : d10TimingTip(mean, k);   // PT-10 N-C8: the 10 % rule is taught later on the path: no make-up advice here
-    return { score: r.offCourseCount, stars, tip, headline: `${r.offCourseCount} off-course excursions${lost.length ? `, lost time ${lost.map(x => (x.ok ? 'doubled within 2 s' : 'not doubled')).join(', ')}` : ''}${r.offCourseCount ? '' : `, leg error ${mean.toFixed(1)} s`}`, feedback: [tip, ...feedback] };
+    const tip = r.offCourseCount ? `Off course ${r.offCourseCount} time(s): confirm the landmark (shape, side, text) before the leading edge of the intersection. Once lost: turn around where it is safe, start the stopwatch at the turn-around, double it for the lost time, rejoin 30 s behind a car known to be on course and write the leg off (lesson "When you are lost").` : timing === 3 ? `On course all the way, and on time: ${mean.toFixed(1)} s off${bronze ? ' after the turn losses' : ''}.${turnsNote}` : d10TimingTip(mean, thr, adj.turns, bronze);   // PT-10 N-C8: the 10 % rule is taught later on the path: no make-up advice here
+    return { score: r.offCourseCount, stars, tip, headline: `${r.offCourseCount} off-course excursions${lost.length ? `, lost time ${lost.map(x => (x.ok ? 'doubled within 2 s' : 'not doubled')).join(', ')}` : ''}${r.offCourseCount ? '' : `, leg error ${mean.toFixed(1)} s${bronze && adj.turns.seconds >= 1.5 ? ' after the turn losses' : ''}`}`, feedback: [tip, ...feedback] };
   },
 };
 

@@ -21,7 +21,7 @@ export function renderSettings(root: HTMLElement): void {
     row('Sound', chk(!s.muted, v => { app.settings.muted = !v; commit(); }), 'Watch clicks, 3-2-1 beeps (aid), train and signal.'),
     row("Dad's voice", chk(s.speech, v => { app.settings.speech = v; commit(); }), 'Read-backs through speechSynthesis when the browser has it; the text overlay always shows.'),
     row('Dash clock face', sel(s.clockFace, [['sawtooth', 'Sawtooth style: white dial, brass rim, spade hands, red second hand (default)'], ['bezel', 'Bezel rally clock: rotating minute bezel (the 2026 school shows one)']], v => { app.settings.clockFace = v as 'sawtooth' | 'bezel'; commit(); }), 'Both are analog with no digital readout (REG II.H.1.d(1)).'),
-    row('Performance card', sel(s.chartView, [['simple', 'Simple chart: Speed, Dec, Acc, S/G, T@15 (default)'], ['matrices', 'The three matrices (behind the Charts button)']], v => { app.settings.chartView = v as 'simple' | 'matrices'; commit(); }), 'The simple chart is derived from your car; the three matrices are always on the Charts button (C).'),
+    row('Performance card', sel(s.chartView, [['simple', 'Simple chart: Speed, Dec, Acc, S/G, TS/G, T@15, T@20, Lead (default)'], ['matrices', 'The three matrices (behind the Charts button)']], v => { app.settings.chartView = v as 'simple' | 'matrices'; commit(); }), 'The simple chart is derived from your car; the three matrices are always on the Charts button (C).'),
     row('Key help overlay', chk(s.showHelp, v => { app.settings.showHelp = v; commit(); })),
   );
   panel.append(el('div', { class: 'settings-note', id: 'stopwatch-note' }, STOPWATCH_NOTE), el('div', { class: 'settings-note', id: 'clock-note' }, CLOCK_NOTE));

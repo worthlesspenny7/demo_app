@@ -5,7 +5,7 @@ import { LESSONS } from '../../../content/lessons.js';
 import type { Drill } from '../../core/drills/types.js';
 import { app, builtinScenarios, el, sourceHash, type RunSource } from '../state.js';
 import { formatMinutes } from '../viewmodels/estimate.js';
-import { startPathFromProgress, unlockBest, pathStars, pathStepHash, lockText, readFirstOf, cardMinutesText, pathNext, pathCompleteText, PATH_WHY, FOUR_S_TITLE, type FourS } from '../viewmodels/curriculum.js';
+import { startPathFromProgress, unlockBest, pathStars, pathStepHash, lockText, readFirstOf, cardMinutesText, pathNext, pathCompleteText, beyondPathNext, PATH_WHY, FOUR_S_TITLE, type FourS } from '../viewmodels/curriculum.js';
 import { LIVE_KEY, loadStored, clearStored, describeSource } from '../viewmodels/resume.js';
 
 /** PLAY-023: the tracks in the handbook's Four S's order (HB p.13-14): start on time, stay on course, then stay on time. D02 is retired. */
@@ -84,7 +84,12 @@ function startHerePanel(drills: Drill[], prog: ReturnType<typeof app.progress.lo
     el('h3', {}, 'Start here'),
     el('p', {}, "New? Take the path in order. It follows the handbook's Four S's in the handbook's order: safety, start on time, stay on course, stay on time. Each drill comes after the lessons on its \"Read first\" line. Lessons tick when you pass their check question; a drill ticks with one star at any tier. Bronze shows live help; Gold is Great Race legal: analog dials, no answer sheet. Only Silver or Gold stars unlock the miniature leg and the whole legs."),
     el('p', { class: 'muted', id: 'path-why' }, PATH_WHY),
-    list, go ? el('div', { style: 'margin-top:10px' }, go) : el('p', { class: 'ok', id: 'path-complete' }, pathCompleteText(drills, best)));
+    list, go ? el('div', { style: 'margin-top:10px' }, go) : el('div', {}, el('p', { class: 'ok', id: 'path-complete' }, pathCompleteText(drills, best)), beyondButton(drills, best, lessonDone, lessonTitle, pathStars(prog))));
+}
+/** PT-11 N-D9: "Path complete" keeps a button: the way on to the full stage (D12). */
+function beyondButton(drills: Drill[], best: Record<string, number>, lessonDone: (id: string) => boolean, lessonTitle: (id: string) => string, played: Record<string, number>): HTMLElement | null {
+  const bx = beyondPathNext(drills, best, lessonDone, lessonTitle, played); if (!bx) return null;
+  const b = el('button', { class: 'primary', id: 'beyond-path', 'data-next': bx.kind }, `Next: ${bx.label}`); b.onclick = () => { location.hash = bx.hash; }; return b;
 }
 
 function resumePanel(drills: Drill[]): HTMLElement | null {

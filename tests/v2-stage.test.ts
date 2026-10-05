@@ -124,7 +124,10 @@ describe('stage structure (STAGE-001..008)', () => {
       const miles = (nodeById(sc.course, cal[cal.length - 1]!.nodeId).s - nodeById(sc.course, begin.nodeId).s) / FT_MI; expect(miles).toBeGreaterThanOrEqual(15);
       let prev = 0; for (const p of pts) { expect(Math.round(p.perfectCumulative! * 10)).toBeCloseTo(p.perfectCumulative! * 10, 6); expect(p.perfectInterval!).toBeCloseTo(p.perfectCumulative! - prev, 6); prev = p.perfectCumulative!; }
       const official = Math.ceil(prev / 60) * 60; const allowance = begin.transit!.seconds;
-      expect(allowance - official).toBeGreaterThanOrEqual(120); expect(allowance - official).toBeLessThanOrEqual(300); expect(allowance % 60).toBe(0);
+      // ENG-027 (REG Example #5 / #10): the start row prints the official time itself (the run rounded up to the minute); the 2-5 min allowance rides on the plain transit after the last box
+      expect(allowance).toBe(official); const after = cal[cal.length - 1]!.transit!; expect(after).toMatchObject({ exact: false, plain: true });
+      const restart = sc.book.find(i => i.section === 'restart' && i.n > cal[cal.length - 1]!.n)!;
+      expect(restart.baseTime! - (sc.book[0]!.baseTime ?? sc.book[0]!.restartTime!) - 1200 - official).toBe(after.seconds);   // warm-up + official + the transit (with the allowance) = the printed restart base
       const calSpeed = Number((sc.tags ?? []).find(t => t.startsWith('calibration:speed:'))!.split(':')[2]); expect([50, 55]).toContain(calSpeed); expect(columnCLines(begin)).toEqual([`${calSpeed} MPH`, formatInterval(allowance), '* 0m00.0s']); expect(columnCLines(pts[0]!)[0]).toMatch(/^\d+m\d\d\.\ds$/);
       const g = buildGhost(sc); expect(ghostTimeAt(g, nodeById(sc.course, cal[cal.length - 1]!.nodeId).s) - ghostTimeAt(g, nodeById(sc.course, begin.nodeId).s)).toBeCloseTo(miles * 3600 / calSpeed, 0);
       expect(sc.checkpoints.some(c => c.kind === 'timing' && c.s <= nodeById(sc.course, cal[cal.length - 1]!.nodeId).s)).toBe(false); // free zone: nothing scored
@@ -140,10 +143,10 @@ describe('stage structure (STAGE-001..008)', () => {
   it('STAGE-007 assigned speeds are multiples of 5 from 15 to 55 (plus 48, SPEED-001), and a SPEED LIMIT sign never posts a limit below the assigned speed', () => {
     const seen = new Set<number>();
     for (const seed of [1, 2, 3, 4, 5]) for (const ins of day(seed).book) {
-      for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v === 48 || v % 5 === 0).toBe(true); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); seen.add(v); }
+      for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v === 48 || v === 12 || v % 5 === 0).toBe(true); expect(v).toBeGreaterThanOrEqual(12); expect(v).toBeLessThanOrEqual(55); seen.add(v); }   // GEN-015: 12 / 15 in towns
     }
     expect(seen.has(20)).toBe(true); expect(seen.has(55)).toBe(true);
-    const sc = day(3); for (const ins of sc.book) { const m = nodeById(sc.course, ins.nodeId).sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1])).toBeGreaterThanOrEqual(ins.speed); }
+    const sc = day(3); for (const ins of sc.book) { const m = nodeById(sc.course, ins.nodeId).sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1])).toBeGreaterThanOrEqual(ins.speed - 10); }   // GEN-015 (REG VII.E.1.c): sometimes at or below the assigned speed
   });
 
   it('STAGE-008 emergency GR signs (End Leg cancels a leg) are a backlog item: the engine has no GR action or instruction yet', () => {
@@ -160,7 +163,7 @@ describe('stage structure (STAGE-001..008)', () => {
         if (ins.pause) expect(jump, `line ${ins.n}`).toBe(true);
         else if (n.control === 'STOP') expect(jump, `no pause printed at line ${ins.n}`).toBe(false);
       }
-      expect(sc.book.filter(i => nodeById(sc.course, i.nodeId).control === 'RR').every(i => !i.pause)).toBe(true);
+      expect(sc.book.filter(i => nodeById(sc.course, i.nodeId).control === 'RR').every(i => !i.pause || nodeById(sc.course, i.nodeId).fullStop)).toBe(true);   // GEN-016: only the tracks row of a two-row crossing pauses
     }
     const sig = generateStage(4, { ...PROFILES.fullStage!, pauseOnSignalProbability: 1, trafficWaitProbability: 0 });
     expect(sig.book.filter(i => nodeById(sig.course, i.nodeId).control === 'SIGNAL' && sectionAt(sig, nodeById(sig.course, i.nodeId).s) !== 'warmup').some(i => i.pause === 15)).toBe(true);

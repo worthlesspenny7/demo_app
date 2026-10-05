@@ -85,7 +85,7 @@ test('UI-037 START-001 the restart card and the count work at a time-of-day rest
 });
 
 test('UI-037 TAF-001 TAF-002 TAF-003 the TA form is the 2026 web page word for word (no witness field), with the make-up helper, and a classic paper sheet', async ({ page }) => {
-  await resumeAtFirstTaWindow(page, 6);
+  await resumeAtFirstTaWindow(page, 21);
   await expect(page.locator('#ta-panel')).toBeVisible();
   // the login page: Car Number, Password, Phone Number and a green Login
   await expect(page.locator('#ta-login-screen .taweb-title')).toHaveText(/Great Race\s*Time Allowance\s*Login/);
@@ -100,6 +100,7 @@ test('UI-037 TAF-001 TAF-002 TAF-003 the TA form is the 2026 web page word for w
   for (const text of ['Stage', 'Leg Number', 'Between Instructions', '&', 'Allowance', 'Reason', 'Submit', 'CLICK to see Time Allowances Submitted', 'CLICK this after submitting ALL Time Allowances for the ENTIRE stage', 'grscores.com']) await expect(entry).toContainText(text);
   for (const id of ['ta-stage', 'ta-leg', 'ta-from', 'ta-to', 'ta-min', 'ta-sec', 'ta-cause']) await expect(page.locator(`#${id}`)).toBeVisible();
   await expect(page.locator('#ta-sec')).toHaveAttribute('step', '10');                                       // seconds in 10 s steps
+  await expect(page.locator('#ta-stage')).toHaveValue('3');   // ENG-028: the Stage comes filled in, as the TA row says "Today is Stage 3." (day seed 21)
   await expect(page.locator('#ta-leg')).toHaveValue('3'); await expect(page.locator('#ta-leg option:checked')).toHaveText('Leg 3');   // the leg is filled in: "Leg 3"
   await expect(page.locator('#ta-ack-btn')).toHaveClass(/red/); await expect(page.locator('#ta-see')).toHaveClass(/yellow/); await expect(page.locator('#ta-submit')).toHaveClass(/green/);
   expect(await page.locator('#ta-form [id*="witness"], #ta-form [id^="ta-w"]').count()).toBe(0);              // no witness field on the web form

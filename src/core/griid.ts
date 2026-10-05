@@ -42,12 +42,13 @@ export function columnCLines(ins: Partial<Instruction> | null | undefined, timeZ
   if (!calBox) out.push(...transitLines); // the calibration box comes before a transit that begins on the same line (Example Rally #10)
   if (ins.promotedStop) out.push(`(${formatInterval(ins.promotedStop.leaveBeforeEndSeconds)})`);
   if (ins.transitGuide !== undefined && ins.transitGuide > 0) out.push(`(${formatInterval(ins.transitGuide)})`);   // time left to the end of the transit (HB #11)
-  if (ins.transitCountdown !== undefined && ins.transitCountdown > 0) out.push(`(${formatInterval(ins.transitCountdown)})`);   // the countdown rows of a long transit (11a): (10m00s), (8m00s), (3m00s)
+  if (ins.transitCountdown !== undefined && ins.transitCountdown > 0 && !(ins.transitGuide !== undefined && ins.transitGuide > 0)) out.push(`(${formatInterval(ins.transitCountdown)})`);   // the countdown rows of a long transit (11a): (10m00s), (8m00s), (3m00s)
   const hasPause = typeof ins.pause === 'number' && ins.pause > 0;
   if (hasPause) { out.push(mph(0), formatInterval(ins.pause!)); }
   if (ins.timed && Number.isFinite(ins.timed.holdSpeed)) {
     if (ins.timed.delayed) out.push(formatInterval(ins.timed.seconds), mph(ins.timed.thenSpeed));
     else out.push(mph(ins.timed.holdSpeed), formatInterval(ins.timed.seconds), mph(ins.timed.thenSpeed));
+    for (const c of ins.timed.chain ?? []) out.push(formatInterval(c.seconds), mph(c.thenSpeed));   // GEN-017: REG Example #14 "30 MPH / 0m36s / 45 MPH / 1m12s / 50 MPH"
   } else if (typeof ins.speed === 'number' && !ins.calibrationStart) out.push(mph(ins.speed));
   if (ins.calibrationStart) out.push('* 0m00.0s');
   else if (calBox) out.push(formatInterval(ins.perfectInterval!, true), formatInterval(ins.perfectCumulative!, true), ...transitLines);

@@ -26,7 +26,8 @@ export function saveSettings(s: Settings): void { try { localStorage.setItem(SET
 export function applyTheme(s: Settings): void { try { document.documentElement.dataset.theme = s.theme === 'light' ? 'light' : 'dusk'; } catch { /* ssr */ } }
 
 /** What is being played: a drill (id/tier/seed) or a built-in scenario. */
-export type RunSource = { kind: 'drill'; drillId: string; tier: number; seed: number } | { kind: 'builtin'; name: string; seed: number };
+/** PT-11 N-D2: `attempt` counts the retries of a D06 measuring seed: each attempt drives a new hidden car (0 or absent = the first). */
+export type RunSource = { kind: 'drill'; drillId: string; tier: number; seed: number; attempt?: number } | { kind: 'builtin'; name: string; seed: number };
 
 export interface Run { source: RunSource; scenario: Scenario; sim: Simulator; drill: Drill | null; result: StageResult | null; scaleMax: number; watch: 'analog' | 'digital'; annotations: string | null; aborted?: boolean }
 
@@ -78,18 +79,20 @@ export function buildScenario(src: RunSource, drills: Drill[]): { scenario: Scen
   try {
     if (src.kind === 'builtin') return { scenario: builtinScenario(src.name, src.seed), drill: null };
     const d = drills.find(x => x.id === src.drillId); if (!d) return null;
-    return { scenario: d.scenario(src.seed, src.tier), drill: d };
+    return { scenario: d.scenario(src.seed, src.tier, src.attempt ?? 0), drill: d };
   } catch { return null; }
 }
 
 export function parseSource(parts: string[]): RunSource | null {
   // #/cockpit/drill/D03/0/7   or   #/cockpit/builtin/varied/3
-  const [kind, a, b, c] = parts;
-  if (kind === 'drill' && a) return { kind: 'drill', drillId: a, tier: Number(b ?? 0) || 0, seed: Number(c ?? 1) || 1 };
+  const [kind, a, b, c, d] = parts;
+  if (kind === 'drill' && a) { const att = Math.max(0, Math.floor(Number(d ?? 0) || 0)); return { kind: 'drill', drillId: a, tier: Number(b ?? 0) || 0, seed: Number(c ?? 1) || 1, ...(att > 0 ? { attempt: att } : {}) }; }
   if (kind === 'builtin' && a) return { kind: 'builtin', name: a, seed: Number(b ?? 1) || 1 };
   return null;
 }
-export function sourceHash(src: RunSource): string { return src.kind === 'drill' ? `#/cockpit/drill/${src.drillId}/${src.tier}/${src.seed}` : `#/cockpit/builtin/${src.name}/${src.seed}`; }
+export function sourceHash(src: RunSource): string { return src.kind === 'drill' ? `#/cockpit/drill/${src.drillId}/${src.tier}/${src.seed}${src.attempt ? `/${src.attempt}` : ''}` : `#/cockpit/builtin/${src.name}/${src.seed}`; }
+/** PT-11 N-D2: Retry of a D06 measuring run (Silver, Gold) is the next attempt (a new hidden car); every other retry is the same run. */
+export function retrySource(src: RunSource): RunSource { return src.kind === 'drill' && src.drillId === 'D06' && src.tier >= 1 ? { ...src, attempt: (src.attempt ?? 0) + 1 } : src; }
 
 export function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string | number | boolean | null | undefined> = {}, ...children: (Node | string | null | undefined | false)[]): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);

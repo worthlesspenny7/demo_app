@@ -77,7 +77,7 @@ export const PENALTY_ROWS: PenaltyRow[] = [
   { rule: 'V.E.2.d', what: 'Missing the final Observation Checkpoint of a Stage', penalty: 'DNF or FNS', seconds: null },
   { rule: 'V.E.3.a', what: 'Stopping or traveling 5 MPH or slower within sight of a Timing Checkpoint', penalty: '30 s', seconds: 30 },
   { rule: 'V.E.3.b', what: 'Blocking a Checkpoint in line, or interfering with Checkpoint operations', penalty: '5 minutes or DNF', seconds: 300 },
-  { rule: 'V.E.3.c, II.D.4', what: 'More than two persons in a vehicle', penalty: '5 seconds (per II.D.4.b)', seconds: 5 },
+  { rule: 'V.E.3.c, II.D.4', what: 'Each additional occupant age 13 or older (notify per II.D.4.a; none on the Trophy Run, II.D.4.c)', penalty: '5 seconds added to the stage score (II.D.4.b)', seconds: 5 },
   { rule: 'V.E.3.d, II.E.8', what: 'Support Vehicle violation', penalty: '1 minute first, 5 minutes second, then disqualification', seconds: 60 },
   { rule: 'V.E.3.e', what: 'Failure to stop at a Stop Sign (a full stop at every STOP, also where the book prints no pause)', penalty: 'DNF', seconds: null },
   { rule: 'V.E.3.f', what: 'Being carried on any trailer for any part of a Stage', penalty: 'DNF', seconds: null },
@@ -133,15 +133,15 @@ export const TA_FORM_FIELDS: TaFormField[] = [
   { id: 'car', field: 'Car number', example: '99', note: 'Your car number, not your start position. A wrong car number is not allowed (REG V.H.6).', cite: '2026 Training Session [110:28]; Time Delay Form [02:41]', form: 'both', inDocs: true },
   { id: 'password', field: 'Password', example: '4 digits', note: 'The four-digit password the web form asks for.', cite: '2026 Training Session [110:28]', form: 'web 2026', inDocs: false },
   { id: 'phone', field: 'Phone number', example: 'the number used for time allowances', note: 'Your phone stays out of reach while driving (REG II.H.1.i): file at lunch or at the finish.', cite: '2026 Training Session [110:28], [59:59]', form: 'web 2026', inDocs: false },
-  { id: 'stage', field: 'Stage', example: '2', note: 'What day of the rally it is: the second day is stage 2.', cite: 'Time Delay Form [02:41]', form: 'paper', inDocs: false },
+  { id: 'stage', field: 'Stage', example: '2', note: 'What day of the rally it is: the second day is stage 2. On the 2026 web form it is the first field of the entry page and comes filled in ("Stage 1"); the TA row of the book says "Today is Stage N." (REG Example #18).', cite: '2026 Training Session [110:28]; Time Delay Form [02:41]', form: 'both', inDocs: true },
   { id: 'leg', field: 'Leg', example: '5', note: 'Checkpoints passed + 1: passed checkpoint 4, you are on leg 5. The simulator fills it in.', cite: 'Time Delay Form [02:41]', form: 'both', inDocs: false },
   { id: 'instructions', field: 'Instruction numbers, from / to', example: '102 to 103', note: '"The most important part": the instruction numbers the delay happened between.', cite: '2026 Training Session [110:28]; Time Delay Form [02:41]', form: 'both', inDocs: true },
   { id: 'time', field: 'Time', example: '3m40s', note: 'In multiples of 10 s (REG V.H.3, V.H.6). Measured delay = stopped time + chart stop-and-go loss; make up the odd seconds first: 3:47 delayed, make up 7, claim 3:40.', cite: 'Time Delay Form [01:38], [02:10], [04:44]', form: 'both', inDocs: false },
   { id: 'cause', field: 'Cause', example: 'train, tractor, school bus, construction, combine', note: 'Never a flat tire, oversleeping, getting lost or a breakdown (REG V.H.1).', cite: 'Time Delay Form [00:04]; Rally School Part 2 [05:43]', form: 'both', inDocs: true },
-  { id: 'witnesses', field: 'Witnesses (cars ahead / behind)', example: 'car 2 ahead, car 8 behind', note: 'List witnesses, especially for delays over 1m00s (REG V.H.5).', cite: 'Time Delay Form [02:41]', form: 'both', inDocs: true },
+  { id: 'witnesses', field: 'Witnesses (cars ahead / behind)', example: 'car 2 ahead, car 8 behind', note: 'Paper sheet only: the 2026 web form has no witness field. List witnesses on the sheet, especially for delays over 1m00s (REG V.H.5).', cite: 'Time Delay Form [02:41]', form: 'paper', inDocs: true },
   { id: 'done', field: 'Red "done" button', example: 'end of the day', note: 'Prints the scorecard; needed whether or not you made a request. Filed twice a day: at lunch and at the finish, within 15 minutes of the TA point.', cite: '2026 Training Session [110:28]', form: 'web 2026', inDocs: false },
 ];
-export const TA_FORM_NOTE = 'The 2026 web form takes the first six fields; the paper sheets (older rally schools, 2024) add the stage, the cause and the witnesses and are handed to an official at lunch or at the finish. Regulation V.H.3 only says "by the method printed in the day\'s instructions".';
+export const TA_FORM_NOTE = 'The 2026 web form (frame 2026-110m28s): Car Number, Password and Phone Number on the login page; Stage (filled in), Leg Number, Between Instructions, Allowance (m s) and Reason on the entry page. It has no witness field. The paper sheets (older rally schools, 2024) add the circumstances and the witnesses and are handed to an official at lunch or at the finish. Regulation V.H.3 only says "by the method printed in the day\'s instructions".';
 
 export interface CheckpointFact { fact: string; cite: string; doc: string | null }
 export const CHECKPOINT_FACTS: CheckpointFact[] = [

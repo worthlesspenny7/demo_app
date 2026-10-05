@@ -116,7 +116,7 @@ describe('post-validation specs', () => {
       expect(restart).toBeTruthy(); expect(restart.restartTime! % 60).toBe(0); expect(restart.n).toBeGreaterThan(last.n); expect(last.transit && !last.transit.end).toBe(true); expect(restart.transit?.end).toBe(true); expect(restart.baseTime).toBe(restart.restartTime);
       const trains = sc.hazards.filter(h => h.kind === 'train'); expect(trains.length).toBeLessThanOrEqual(2);
       expect((sc.tags ?? []).filter(t => /^train:\d+:hit$/.test(t)).length).toBeLessThanOrEqual(1);
-      for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; const m = n.sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1]), `line ${ins.n}`).toBeGreaterThanOrEqual(ins.speed); }
+      for (const ins of sc.book) { const n = sc.course.nodes.find(x => x.id === ins.nodeId)!; const m = n.sign?.text.match(/^SPEED LIMIT (\d+)$/); if (m && ins.speed !== undefined) expect(Number(m[1]), `line ${ins.n}`).toBeGreaterThanOrEqual(ins.speed - 10); }   // GEN-015 (REG VII.E.1.c): a posted limit may sit at or below the assigned speed
     }
   });
   it('BOT-006 oracle declares TA and handles compound STOP+timed lines (D04 3 stars on 10 seeds)', () => {

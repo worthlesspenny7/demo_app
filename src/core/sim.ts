@@ -1,7 +1,7 @@
 /** The Simulator: world state machine. DESIGN §7, §9, §11. */
 import {
   type Scenario, type Node, type Exit, type TurnDir, type Checkpoint, type Hazard, type Instruction, type SlowHazard, type ConstructionHazard, type AccidentHazard, type TractorHazard, type CombineHazard, type SchoolBusHazard,
-  nodeById, instructionS, transitPaceMph, isMeasureRun,
+  nodeById, instructionS, transitPaceMph, isMeasureRun, timedFinalSpeed,
 } from './course.js';
 import { buildGhost, ghostTimeAt, exactTransitBegin, type GhostTable, type Leg } from './ghost.js';
 import { Car } from './car.js';
@@ -223,7 +223,7 @@ export interface StageResult {
 }
 /** 3.1.0 (PT-06 bug 4): cross-traffic holds come from a keyed stream per STOP node and the driver's noise / ramps from their own streams. */
 /** 3.2.0 (fix sprint PT-08 / PT-09): measuring runs leave on the second, launchInfo covers exact-transit OUT and promoted stops, a turn called in time is made, the off-course rejoin is booked once, the call.over event. */
-export const ENGINE_VERSION = '3.3.0';
+export const ENGINE_VERSION = '3.4.0';   // fix sprint PT-11 / realism v4: full-stop nodes, chained timed changes, the restart start bucket and the new generated days change replayed results
 
 interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
 
@@ -420,7 +420,7 @@ export class Simulator {
   private curStop: { nodeId: string; line: number | null; pause: number; startTod: number; dwellStart: number | null; dwell: number; goCalledAt: number | null; vIn: number; vOut: number; turn: string | null } | null = null;
   private rampTarget: number | null = null; private rampKind: 'speedChange' | 'timedChange' | null = null;
   private lastSpeedChangeWasTimed = false;
-  private timedChange: { atS: number; atTod: number; nodeId: string; line: number } | null = null;
+  private timedChange: { atS: number; atTod: number; nodeId: string; line: number; /** GEN-017: the chain still to come (REG Example #14) */ thenSpeed?: number; rest?: { seconds: number; thenSpeed: number }[] } | null = null;
   /** Which instruction node anchors the active timed segment (truth, for bots/debrief). */
   timedChangeNodeId(): string | null { return this.timedChange?.nodeId ?? null; }
   private restartMinutesEarly = 0;
@@ -465,7 +465,7 @@ export class Simulator {
   private stoppedTod = new Map<number, number>();
   /** PLAY-030: the braking part of the stop loss before a STOP + timed line (the ghost arrives that much before the car stops): stop loss minus the standing-start loss. */
   private brakeShare(ins: Instruction): number {
-    let vIn: number | undefined; for (const b of this.sc.book) { if (b === ins) break; if (b.timed) vIn = b.timed.thenSpeed; else if (b.speed !== undefined) vIn = b.speed; }
+    let vIn: number | undefined; for (const b of this.sc.book) { if (b === ins) break; if (b.timed) vIn = timedFinalSpeed(b.timed); else if (b.speed !== undefined) vIn = b.speed; }
     const hold = ins.timed!.holdSpeed; try { return Math.max(0, stopLoss(vIn ?? hold, hold, this.sc.car) - accelLoss(hold, this.sc.car)); } catch { return 0; }
   }
   private instr(kind: 'clock.read' | 'watch.start' | 'watch.stop' | 'watch.lap' | 'watch.mode', source?: 'clock' | 'stopwatch'): void { this.instrumentLog.push({ tod: this.tod, kind, mode: this.watch.mode, ...(source ? { source } : {}) }); this.log('instrument', { kind, mode: this.watch.mode, ...(source ? { source } : {}) }); }
@@ -1016,7 +1016,7 @@ export class Simulator {
 
   private mustStopAt(node: Node): boolean {
     if (this.releasedNodeId === node.id) return false;
-    if (node.control === 'STOP') return true;
+    if (node.control === 'STOP' || node.fullStop) return true;   // GEN-016: a blinker / RR row with a printed pause is a full stop
     if (this.holdRequested) return true;
     if (this.isHoldNode(node)) return true;
     if (node.kind === 'finish' && this.holdRequested) return true;
@@ -1073,7 +1073,7 @@ export class Simulator {
     if (early > 0) { this.earlyDepartureMinutes.push(Math.round(early * 100) / 100); this.log('promotedStop.early', { minutesEarly: early, scheduled: go }); if (early > this.sc.rules.earlyDepartureMinutes) this.say(`Scoring crew: you left ${early.toFixed(1)} minutes before the scheduled departure (V.E.3.h)`, 'info'); }
   }
   /** A Stop Sign is the next control within sight. */
-  private stopAhead(): boolean { const n = this.nextNode(); return !!n && n.control === 'STOP' && n.s - this.car.s < 2000; }
+  private stopAhead(): boolean { const n = this.nextNode(); return !!n && (n.control === 'STOP' || !!n.fullStop) && n.s - this.car.s < 2000; }
   private hasStraightExit(node: Node): boolean { return (node.exits ?? []).some(e => Math.abs(e.angle) < 20 && e.kind === 'road'); }
 
   private beginWait(node: Node): void {
@@ -1091,7 +1091,7 @@ export class Simulator {
       else { const pk = this.sc.book.find(i => i.nodeId === node.id)?.promotedStop?.kind; const word = pk === 'meal' ? 'Lunch' : pk === 'refuel' ? 'Fuel' : pk === 'pit' ? 'Pit' : pk === 'rest' ? 'Rest' : 'Promoted';
         this.say(go !== null && !legal ? `${word} stop. We leave AT ${formatClock(go)}, not before ${formatClock(go - this.sc.rules.earlyDepartureMinutes * 60)} (${this.sc.rules.earlyDepartureMinutes}-minute penalty window)` : legal ? `${word} stop. When do we leave? Not more than ${this.sc.rules.earlyDepartureMinutes} minutes early (the penalty window)` : `${word} stop`, 'info'); }
     }
-    else if (node.control === 'STOP') { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0) { const tr = rng(`${this.sc.seed}:traffic:${node.id}`); if (tr.chance(p)) this.trafficClearTod = this.tod + tr.next() * 20; } }
+    else if (node.control === 'STOP' || node.fullStop) { this.waitReason = 'stop'; this.say('Stopped', 'info'); const p = this.sc.trafficWaitProbability ?? 0; if (p > 0) { const tr = rng(`${this.sc.seed}:traffic:${node.id}`); if (tr.chance(p)) this.trafficClearTod = this.tod + tr.next() * 20; } }
     else if (this.holdRequested) { this.waitReason = node.kind === 'finish' ? 'finish' : 'hold'; this.say('Stopped here', 'info'); }
     else if (node.kind === 'intersection' && !this.pendingTurn) { this.waitReason = 'ask'; this.say('Left or right?', 'question'); }
     else { this.waitReason = 'hold'; }
@@ -1516,6 +1516,8 @@ export class Simulator {
     }
     if (this.releasedNodeId) { const rn = this.sc.course.nodes.find(x => x.id === this.releasedNodeId); if (rn && s > rn.s + 5) this.releasedNodeId = null; }
     // timed change due?
+    // GEN-017: a chained timed change moves on to its next step once the ghost has passed the current one
+    if (this.timedChange?.rest?.length && this.timedChange.thenSpeed !== undefined) { const g = this.timedChangeGhostTod(); if (g !== null && this.tod >= g + 1.5) { const tc = this.timedChange; const nx = tc.rest![0]!; this.timedChange = { ...tc, atS: tc.atS + mphToFps(tc.thenSpeed!) * nx.seconds, atTod: Math.max(tc.atTod, this.tod) + nx.seconds, thenSpeed: nx.thenSpeed, rest: tc.rest!.slice(1) }; } }
     if (this.timedChange && this.tod >= this.timedChange.atTod + 60) this.timedChange = null;
     this.processCheckoffs();
   }
@@ -1528,7 +1530,7 @@ export class Simulator {
       if (c.afterS !== null && this.car.s < c.afterS) ready = false;
       else if (ins.speed !== undefined || ins.timed || ins.pause) {
         // the last speed change is made once the car has settled at the speed the navigator called for the book's final speed
-        const final = ins.timed ? ins.timed.thenSpeed : ins.speed;
+        const final = ins.timed ? timedFinalSpeed(ins.timed) : ins.speed;
         const called = final === undefined || this.targetIndicated === final || (this.card[String(final)] !== undefined && this.targetIndicated === this.card[String(final)]);
         ready = called && !this.waitingForGo && !this.off && this.car.v > 0 && this.targetIndicated !== null && Math.abs(this.car.v - mphToFps(this.speedo.inverse(this.targetIndicated))) < mphToFps(0.5);
       }
@@ -1600,6 +1602,7 @@ export class Simulator {
         this.buckets = this.emptyBuckets(); this.legStops = []; this.cruiseDt = 0; this.cruiseDs = 0; this.cruiseGhostDs = 0; // transit into the restart is unscored
         this.legAnchorActual = ins.restartTime; this.legAnchorGhost = ins.restartTime;
         this.officialAnchorActual = ins.restartTime; this.anchorShift = 0;
+        this.buckets.start -= early;   // PT-11 N-D11: the launch lead is booked against the ramp it pays for (as at the start line), so a launch on its second books about 0
         this.log('restart', { early });
       } else if (ins.transit?.end && ins.transit.exact) {
         const out = this.transitOutFor(ins);
@@ -1608,6 +1611,7 @@ export class Simulator {
           const gAt = ghostTimeAt(this.ghost, instructionS(this.sc.course, ins));
           this.buckets = this.emptyBuckets(); this.legStops = []; this.cruiseDt = 0; this.cruiseDs = 0; this.cruiseGhostDs = 0;
           this.legAnchorActual = out; this.legAnchorGhost = gAt; this.officialAnchorActual = out; this.anchorShift = out - gAt;
+          this.buckets.start -= out - this.tod;   // PT-11 N-D11
           this.log('transit.out', { out, early: out - this.tod });
         }
       }
@@ -1618,7 +1622,7 @@ export class Simulator {
         this.log('ta.point', { n: ins.n, windowSeconds: ins.taPoint.windowSeconds, endOfStage: ins.taPoint.endOfStage });
         this.say(ins.taPoint.endOfStage ? 'TA point: file any Time Allowance request now, and acknowledge the scorecard' : 'TA point: file any Time Allowance request now', 'info');
       }
-      if (ins.timed) { const atS = instructionS(this.sc.course, ins) + mphToFps(ins.timed.holdSpeed) * ins.timed.seconds; this.timedChange = { atS, atTod: this.tod + ins.timed.seconds, nodeId: n.id, line: ins.n }; this.timedWatch = { line: ins.n, holdSpeed: ins.timed.holdSpeed, startTod: this.tod, over: 0, flagged: false }; }
+      if (ins.timed) { const atS = instructionS(this.sc.course, ins) + mphToFps(ins.timed.holdSpeed) * ins.timed.seconds; this.timedChange = { atS, atTod: this.tod + ins.timed.seconds, nodeId: n.id, line: ins.n, ...(ins.timed.chain?.length ? { thenSpeed: ins.timed.thenSpeed, rest: ins.timed.chain } : {}) }; this.timedWatch = { line: ins.n, holdSpeed: ins.timed.holdSpeed, startTod: this.tod, over: 0, flagged: false }; }
       else if (ins.speed !== undefined || ins.pause || ins.turn) { this.timedChange = null; this.timedWatch = null; } // a later speed/pause/turn line ends any earlier timed segment
     }
     let offRoute = false; let turnCalledHere = false;

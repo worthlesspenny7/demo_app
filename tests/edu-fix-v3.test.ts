@@ -10,7 +10,7 @@ import { headlineTip } from '../src/core/drills/rubrics.js';
 import { debriefViewModel } from '../src/ui/viewmodels/debrief.js';
 import { CURRICULUM, START_PATH, startPathState, pathStepHash, readFirstOf, lockText, cardMinutesText, nextDrill } from '../src/ui/viewmodels/curriculum.js';
 import { scenarioMinutes } from '../src/ui/viewmodels/estimate.js';
-import { LESSONS, LESSON_ORDER, lessonText, FORD_NOTE, type LessonBlock } from '../content/lessons.js';
+import { LESSONS, LESSON_ORDER, lessonWithReferenceText as lessonText, FORD_NOTE, type LessonBlock } from '../content/lessons.js';   // PLAY-048: a lesson teaches what it links to on the Reference page
 import { PENALTY_ROWS, CHECKPOINT_FACTS, COLUMN_C_ROWS, TA_STEPS, packardValue } from '../content/reference-data.js';
 import { answerSheetOpen } from '../src/ui/screens/reference.js';
 import { idealNotes } from '../src/core/drills/d15.js';
@@ -159,7 +159,7 @@ describe('EDU-006 the soft gates', () => {
 describe('EDU-007 Dad\'s card and the first morning', () => {
   it('EDU-007 the twelve-line card carries safety, the full stop, the checkpoint signs, calibration conduct, the restart queue, lost, the phone and the emergency signs; no "stop short of the intersection"', () => {
     const c = card(); expect(c.length).toBe(21); const t = c.join('\n');   // PLAY-031 (fix sprint PT-08): one rule per line, so 21 short lines
-    for (const phrase of ['Safety beats seconds', 'Every STOP sign is a full stop, even with no pause in the book', 'DNF', 'Never speed', 'Green sign = timing checkpoint: just drive on', 'Never stop or slow to 5 mph or less in sight of it: 30 second penalty', 'Red GREAT RACE STOP board: stop', 'Calibration run: hold the indicated speed exactly, say nothing about early or late', 'Never guess a speed', 'train, tractor, school bus', 'wait back among the cars; pull up only after the car ahead has left', 'go around it', 'Not sure where we are: say so', 'never in sight of a green sign', 'no U-turn in traffic', 'No score is worth an accident', 'Day-Glo "GR" sign', '"End Leg"', 'Off the clock', 'Phones off and out of reach', 'a warning, the next 10 seconds, then 1 minute'])
+    for (const phrase of ['Safety beats seconds', 'Every STOP sign is a full stop, even with no pause in the book', 'DNF', 'Never speed', 'Green sign = timing checkpoint: just drive on', 'Never stop or slow to 5 mph or less in sight of it: 30 second penalty', 'Red GREAT RACE STOP board: stop', 'Calibration run: hold the indicated speed exactly, say nothing about early or late', 'Never guess a speed', 'train, tractor, school bus', 'wait back among the cars; pull up only after the car ahead has left', 'go around it', 'Not sure where we are: say so', 'never in sight of a green sign', 'no U-turn in traffic', 'No score is worth an accident', 'Day-Glo "GR" sign', '"End Leg"', 'Off the clock', 'Phones off and out of reach', 'Second use: 10 seconds. Third use: 1 minute'])
       expect(t, phrase).toContain(phrase);
     expect(lessonText(lesson('protocol'))).not.toMatch(/stop short of the intersection/i); expect(lessonText(lesson('protocol'))).toMatch(/Rule 10 .*never in sight of a green checkpoint sign/);
     expect(Math.max(...c.map(x => x.length))).toBeLessThan(330);   // printable: one short paragraph per line

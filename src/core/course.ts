@@ -49,10 +49,16 @@ export interface Node {
   label?: string;
   /** Ramp or multi-lane approach: the CAMEO draws lane-marking ticks on the stem (11a row 4). */
   ramp?: boolean;
+  /** GEN-016: the car comes to a full stop here although the control is not a STOP sign: a flashing-red blinker or railroad tracks the book pauses at (REG Example #15, 11b rows 102-103). */
+  fullStop?: boolean;
 }
 
 /** `delayed`: Column C prints the interval first ("1m12s / 40 MPH"); holdSpeed is the speed already in force (VII.E.2.d). */
-export interface TimedSegment { holdSpeed: number; seconds: number; thenSpeed: number; delayed?: boolean }
+/** GEN-017: the speed in force once a timed segment (and its chain) is over. */
+export function timedFinalSpeed(t: TimedSegment): number { return t.chain?.length ? t.chain[t.chain.length - 1]!.thenSpeed : t.thenSpeed; }
+export interface TimedSegment { holdSpeed: number; seconds: number; thenSpeed: number; delayed?: boolean;
+  /** GEN-017: a chained timed change (REG Example #14 "30 MPH / 0m36s / 45 MPH / 1m12s / 50 MPH"): after thenSpeed, hold it for chain[0].seconds, then chain[0].thenSpeed, ... */
+  chain?: { seconds: number; thenSpeed: number }[] }
 
 export interface Instruction {
   n: number;
@@ -85,7 +91,8 @@ export interface Instruction {
   /** "End timed portion" line (crossed-out clock). */
   endTimed?: boolean;
   /** Time Allowance point (yellow box): requests are accepted for `windowSeconds` after the car passes it. */
-  taPoint?: { windowSeconds: number; endOfStage: boolean };
+  /** ENG-028: `stage` = the Stage number the TA row prints ("Today is Stage N.", REG Example #18 / #36) and the web form prefills */
+  taPoint?: { windowSeconds: number; endOfStage: boolean; stage?: number };
   /** Promoted lunch/pit/refuel/rest stop inside a transit: "leave here X prior to your end-of-transit time". */
   promotedStop?: { kind: 'pit' | 'meal' | 'refuel' | 'rest'; leaveBeforeEndSeconds: number; /** an unhosted meal: the book prints "no-host" above the knife and fork */ noHost?: boolean };
   /** Information Box row (GRIID-016, 11a section 3): a rounded box over Columns B and C with the body text (host dinner, parc ferme, parking); Column D keeps its own list. Not an action: the line is complete when passed. */
@@ -410,7 +417,8 @@ export function validateScenario(sc: Scenario): string[] {
   for (let i = 0; i < sc.book.length; i++) {
     const ins = sc.book[i]!;
     if (ins.timed) {
-      const s0 = instructionS(sc.course, ins); const sv = s0 + ins.timed.holdSpeed * 1.4666666666666666 * ins.timed.seconds;
+      const s0 = instructionS(sc.course, ins); let sv = s0 + ins.timed.holdSpeed * 1.4666666666666666 * ins.timed.seconds;
+      { let v = ins.timed.thenSpeed; for (const c of ins.timed.chain ?? []) { sv += v * 1.4666666666666666 * c.seconds; v = c.thenSpeed; } }   // GEN-017: the chain's end
       const next = sc.book.slice(i + 1).find(j => j.speed !== undefined || j.pause !== undefined || j.turn !== undefined || j.timed !== undefined);
       if (next && nodeById(sc.course, next.nodeId).s <= sv) problems.push(`instruction ${ins.n}: timed segment reaches past instruction ${next.n}`);
     }
@@ -441,7 +449,7 @@ export function validateScenario(sc: Scenario): string[] {
     if (ins.freeZone === 'begin') freeFrom = s0;
     if (ins.freeZone === 'end' && freeFrom !== null) { bounds.push({ from: freeFrom, to: s0, why: 'free zone' }); freeFrom = null; }
     for (const b of bounds) for (const cp of timingCps) if (cp.s > b.from && cp.s < b.to) problems.push(`timing checkpoint ${cp.id} lies in a ${b.why}`);
-    if (ins.speed !== undefined) assigned = ins.speed; else if (ins.timed) assigned = ins.timed.thenSpeed;
+    if (ins.speed !== undefined) assigned = ins.speed; else if (ins.timed) assigned = timedFinalSpeed(ins.timed);
     if (ins.transit?.end && ins.speed !== undefined) assigned = ins.speed;
   }
   const calIns = sc.book.filter(i => i.section === 'calibration'); const warm = sc.book.filter(i => i.section === 'warmup');
@@ -459,7 +467,7 @@ export function freeZoneEndS(sc: Pick<Scenario, 'book' | 'course'>, from: Instru
     const sr = sOf(r); const dt = (sr - s) / fps(v);
     if (t + dt >= seconds) return s + (seconds - t) * fps(v);
     t += dt + (r.pause ?? 0); s = sr;
-    if (r.timed) v = Math.max(r.timed.holdSpeed, r.timed.thenSpeed); else if (r.speed !== undefined) v = r.speed;
+    if (r.timed) v = Math.max(r.timed.holdSpeed, r.timed.thenSpeed, ...(r.timed.chain ?? []).map(c => c.thenSpeed)); else if (r.speed !== undefined) v = r.speed;
     if (t >= seconds) return s;
   }
   return s + Math.max(0, seconds - t) * fps(v);

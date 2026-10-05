@@ -5,6 +5,8 @@ import { stopLoss, rampLead, accelLoss, SPEEDS } from '../../core/perf-table.js'
 import { cameoSvg } from '../viewmodels/cameo.js';
 import { EXITS } from '../../core/builder.js';
 import { app, el } from '../state.js';
+import { LESSONS, LESSON_REFERENCE } from '../../../content/lessons.js';
+import { renderBlock } from './school.js';
 
 let perfCache: { stop: number[][]; lead: number[][]; accel: number[] } | null = null;
 function perf(): { stop: number[][]; lead: number[][]; accel: number[] } {
@@ -61,7 +63,7 @@ function schoolPanels(): HTMLElement[] {
   return [panel];
 }
 
-export function renderReference(root: HTMLElement): void {
+export function renderReference(root: HTMLElement, sub?: string): void {
   const page = el('div', { class: 'page ref' }, el('h1', {}, 'Reference'), el('p', { class: 'muted' }, 'Everything here is legal on paper in the car. Calculators are not.'));
   const g = el('div', { class: 'grid2' });
   // seconds per mile
@@ -71,7 +73,7 @@ export function renderReference(root: HTMLElement): void {
   // recovery factors
   const rec = el('div', { class: 'panel' }, el('h3', {}, 'Recovery factors'), el('p', { class: 'muted' }, 'On your stopwatch, holding +d mph recovers E seconds after t = E x v / d seconds: +5 mph needs v/5 watch seconds per second owed, +10 mph needs v/10 (8 s late at 35: 40 mph for 56 s). The 10 % rule (10 % over for 10x the delay) and the 20 % rule (5x) are the same formula and are exact on the watch. In ghost time the factors are v/d + 1 (the older table), which a watch cannot show.'));
   const t2 = el('table', {}, el('thead', {}, el('tr', {}, el('th', {}, 'assigned'), el('th', { class: 'num' }, '+5 mph: watch s per s (v/5)'), el('th', { class: 'num' }, '+10 mph: watch s per s (v/10)'), el('th', { class: 'num' }, '10 % rule'), el('th', { class: 'num' }, '20 % rule'))));
-  const tb2 = el('tbody', {}); for (let v = 20; v <= 60; v += 5) tb2.append(el('tr', {}, el('td', {}, String(v)), el('td', { class: 'num' }, (v / 5).toFixed(1)), el('td', { class: 'num' }, (v / 10).toFixed(1)), el('td', { class: 'num' }, `${(v * 1.1).toFixed(1)} for 10x`), el('td', { class: 'num' }, `${(v * 1.2).toFixed(1)} for 5x`))); t2.append(tb2); rec.append(t2);
+  const tb2 = el('tbody', {}); for (let v = 20; v <= 60; v += 5) tb2.append(el('tr', {}, el('td', {}, String(v)), el('td', { class: 'num' }, (v / 5).toFixed(1)), el('td', { class: 'num' }, (v / 10).toFixed(1)), el('td', { class: 'num' }, `${(v * 1.1).toFixed(1)} for 10x`), el('td', { class: 'num' }, `${(v * 1.2).toFixed(1)} for 5x`))); t2.append(tb2); rec.append(t2, el('p', { class: 'warn', id: 'ref-speed-caution' }, 'Caution: every make-up speed stays at or below the posted limit (HB p.1; Making Up Time, video). The 20 % column on 55 is 66 mph: illegal on most roads, and dangerous or reckless driving, which may include speeding, is a disqualification (REG V.F.1.c). On a fast road use the 10 % rule or make the time up in chunks.'));   // ENG-028 (realism v4 slip 8)
   // pause arithmetic / performance table
   const P = perf();
   const d06 = answerSheetOpen(app.progress.get('D06'));
@@ -116,7 +118,7 @@ export function renderReference(root: HTMLElement): void {
     ['Time Allowance (TA)', 'Request the seconds a train or an accident held you (V.H.1; V.H.5\'s own example is a farm tractor), in multiples of 10 s, by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint; in 2026 the web form) at the TA point within the time it gives (REG V.H; see the TA procedure below). The committee denies time you could have made up. The measured delay is the time stopped plus the chart stop-and-go loss for your speeds (Time Delay Form [01:38], [04:44]; video, not in the documents). Never also make the same seconds up.'],
     ['Ace', 'A checkpoint crossed at exactly the perfect second (error 0).'],
     ['Age factor', 'Raw seconds times a factor for the car\'s year: 0.845 for a 1939 car.'],
-    ['Transit / free zone', 'Untimed sections between legs (section symbols in Column B). Drive normally, reset for the next start time.'],
+    ['Transit / free zone', 'A transit has no timing checkpoints and no assigned speed: a time for the passage (or a restart time at its end) is given, and transit times are part of the scoring time (glossary; REG V.B.2.c), so it is not scored but not untimed: an exact transit ("take exactly") must be left on IN + interval. A free zone has no timing checkpoint (section symbols in Column B).'],
     ['Early restart', 'Leaving a promoted lunch, pit or rest stop more than 5 minutes before its scheduled departure costs 1 minute, then 5 minutes (REG V.E.3.h). Go at the printed out-time minus your standing-start loss; a restart hold is not a stop.'],
   ];
   const dl = el('dl', {}); for (const [k, v] of defs) dl.append(el('dt', { style: 'font-weight:700;margin-top:6px' }, k), el('dd', { style: 'margin:0 0 4px 0;color:var(--muted)' }, v)); gi.append(dl);
@@ -132,11 +134,25 @@ export function renderReference(root: HTMLElement): void {
     ['Recovery: 10 % over for 10x the delay or 20 % over for 5x (exact on the stopwatch: t = E x v / d); penalties are symmetric so never overshoot into early; stop correcting before likely checkpoint spots.', 'docs/research/03 §4.3; docs/research/07 §6'],
     ['Time allowances are requested by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint), at the TA point, within the time it gives (15 minutes in the 2026 example), in multiples of 10 s, for delays beyond your control that V.H.1 names (a train, an accident); the committee denies time you could have made up.', 'docs/research/09 §14 (REG V.H); docs/research/08 §6'],
     ['Typical scores: champions about 1 s per leg; a normal rookie day is 20-46 s (Team Hagerty 34, 46 and 20 s; 13 s is the best rookie on record); well over 46 s is a blown day.', 'docs/research/06 §4; STATUS.md key facts'],
-    ['Course following: dashed CAMEO lines are driveways/lots/unpaved/dead ends; quoted signs must match exactly; never go past the leading edge of an intersection you are unsure of.', 'docs/research/04 §2.2, §4; REQUIREMENTS P8'],
+    ['Course following: dashed CAMEO lines are driveways/lots/unpaved/dead ends; spelling is supposed to be exact but there are no traps based on spelling, and a referenced sign may be quoted in whole or in part (REG VII.D); never go past the leading edge of an intersection you are unsure of.', 'docs/research/04 §2.2, §4; REQUIREMENTS P8'],
   ];
   for (const [t, c] of cites) rl.append(el('li', {}, t, ' ', el('span', { class: 'cite' }, `[${c}]`)));
   rules.append(rl, el('p', { class: 'cite' }, 'Penalty and Time Allowance values come from the 2026 Event Regulations (docs/research/09-event-regulations-2026.md, REG V.E and V.H); the tables below quote them with their rule numbers. The regulations list no penalty for starting late: the leg score is the penalty.'));
-  g.append(spm, rec, pa, cam, gi, rules, ...regPanels());
+  g.append(spm, rec, pa, cam, gi, rules, ...regPanels(), lessonPanel());
   page.append(g);
   root.replaceChildren(page);
+  // PLAY-048: a lesson's "On the Reference page" link opens #/reference/<id> at its section
+  if (sub) { const t = (page.querySelector(`#ref-lesson-${CSS.escape(sub)}`) ?? page.querySelector(`#ref-${CSS.escape(sub)}`)) as HTMLElement | null; if (t) { t.classList.add('ref-target'); try { t.scrollIntoView({ block: 'start' }); } catch { /* jsdom */ } } }
+}
+
+/** PLAY-048: the tables, lists and worked examples the evening-one lessons link to (every rule kept, with its source). */
+function lessonPanel(): HTMLElement {
+  const panel = el('div', { class: 'panel', id: 'ref-from-lessons', style: 'grid-column:1/3' }, el('h3', {}, 'From the lessons'), el('p', { class: 'muted' }, 'The tables and lists the lessons link to. Each section names the lesson it belongs to.'));
+  for (const r of LESSON_REFERENCE) {
+    const title = LESSONS.find(l => l.id === r.lesson)?.title ?? r.lesson;
+    const sec = el('section', { class: 'ref-lesson', id: `ref-lesson-${r.id}` }, el('h4', {}, r.title), el('p', { class: 'cite' }, 'From the lesson ', el('a', { href: `#/school/${r.lesson}` }, title)));
+    for (const b of r.blocks) sec.append(renderBlock(b));
+    panel.append(sec);
+  }
+  return panel;
 }

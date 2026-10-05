@@ -3,7 +3,7 @@
  * (a) ACCELERATION - DECELERATION (includes 0), (b) STOP & GO PAUSE TIMES for a 15 s stop, (c) TURNS time lost.
  */
 import type { CarSpec, Matrix } from '../../core/course.js';
-import { buildPerfTable, matrixAt, stopLoss, speedChangeLoss } from '../../core/perf-table.js';
+import { buildPerfTable, matrixAt, stopLoss, speedChangeLoss, chartLead } from '../../core/perf-table.js';
 
 export type ChartId = 'accel' | 'stopGo' | 'turns';
 /**
@@ -111,16 +111,27 @@ export function tenPercentRule(assignedMph: number, lostSeconds: number): { mph:
 
 /** The speeds of the simple chart: 55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10 (11a section 2.2). */
 export const SIMPLE_CHART_SPEEDS = [55, 50, 48, 45, 40, 35, 30, 25, 20, 15, 12, 10] as const;
-export type SimpleColumn = 'Dec' | 'Acc' | 'S/G' | 'TS/G' | 'T@15' | 'T@20';
+export type SimpleColumn = 'Dec' | 'Acc' | 'S/G' | 'TS/G' | 'T@15' | 'T@20' | 'Lead';
 export interface SimpleChartRow {
   speed: number;
   /** Time lost braking to a stop, accelerating from a stop, their sum, and the loss of a turn taken at 15 / 20 mph (null: N/A, the approach speed is at or below the turn speed). */
-  dec: number; acc: number; sg: number; /** PT-10 N-C5: a stop and go that turns 90 degrees out of the stop (the car leaves at its turn speed); null for a table car (the Packard prints none) */ tsg: number | null; t15: number | null; t20: number | null;
+  dec: number; acc: number; sg: number;
+  /** PT-11 N-D1: the Lead column: half the ramp time for a 10 mph change from this speed, up (row speed to +10) and down (to -10); null off the chart */
+  leadUp: number | null; leadDown: number | null; /** PT-10 N-C5: a stop and go that turns 90 degrees out of the stop (the car leaves at its turn speed); null for a table car (the Packard prints none) */ tsg: number | null; t15: number | null; t20: number | null;
   /** The printed texts: one decimal, "+x.x" for a gain (a negative loss), "N/A". */
   text: Record<SimpleColumn, string>;
 }
 export interface SimpleChart { speeds: number[]; columns: SimpleColumn[]; /** the car has a T@20 column (a model-driven car; the Packard booklet prints only the 15 mph turn) */ hasT20: boolean; /** the car has a turning-stop column (a model-driven car) */ hasTS: boolean; rows: SimpleChartRow[]; note: string }
 
+/** PT-11 N-D1: what the Lead column means, in the card's words. */
+export const LEAD_NOTE = 'Lead: half the ramp time, the seconds to call a speed change early so the car crosses the sign (or ends the timed count) at the midpoint speed; read the row of the speed you are at: ↑ for 10 mph up, ↓ for 10 mph down (30 → 40: row 30, ↑).';
+/** PT-11 N-D1: where the card sends a Silver navigator for the lead of a pair: the row he is at and the arrow. */
+export function leadSource(from: number, to: number): string {
+  const d = to - from; const arrow = d > 0 ? '↑' : '↓';
+  if (Math.abs(d) === 10) return `simple chart, Lead column, row ${from}, ${arrow}`;
+  if (Math.abs(d) % 10 === 0) { const steps: number[] = []; for (let v = from; d > 0 ? v < to : v > to; v += d > 0 ? 10 : -10) steps.push(v); return `simple chart, Lead column: add the ${arrow} figures of rows ${steps.join(' and ')}`; }
+  return `simple chart, Lead column, row ${from}, ${arrow} (that figure is for 10 mph: for a ${Math.abs(d)} mph change take about ${Math.abs(d) < 10 ? 'half' : 'one and a half times'} of it)`;
+}
 /** A time lost as the simple chart prints it: "3.7"; a gain (negative loss) as "+0.3"; null as "N/A". */
 export function formatLoss(v: number | null): string {
   if (v === null || !Number.isFinite(v)) return 'N/A';
@@ -141,8 +152,10 @@ export function simpleChart(car: CarSpec): SimpleChart {
     const dec = r1(speedChangeLoss(speed, 0, car)), acc = r1(speedChangeLoss(0, speed, car)), sg = r1(dec + acc);
     const tsg = hasTS ? r1(stopLoss(speed, speed, car, car.turnSpeedMph.turn)) : null;   // stop & go through a 90 degree turn: brake to a stop, turn out at the car's turn speed, accelerate
     const t15 = turn(speed, 15), t20 = hasT20 ? turn(speed, 20) : null;
-    return { speed, dec, acc, sg, tsg, t15, t20, text: { Dec: formatLoss(dec), Acc: formatLoss(acc), 'S/G': formatLoss(sg), 'TS/G': hasTS ? formatLoss(tsg) : '', 'T@15': formatLoss(t15), 'T@20': hasT20 ? formatLoss(t20) : '' } };
+    const leadUp = speed + 10 <= 55 && speed !== 12 ? chartLead(speed, speed + 10, car) : null, leadDown = speed - 10 >= 10 ? chartLead(speed, speed - 10, car) : null;
+    const leadText = `${leadUp === null ? '' : `↑${leadUp.toFixed(1)}`}${leadUp !== null && leadDown !== null ? ' ' : ''}${leadDown === null ? '' : `↓${leadDown.toFixed(1)}`}` || 'N/A';
+    return { speed, dec, acc, sg, leadUp, leadDown, tsg, t15, t20, text: { Dec: formatLoss(dec), Acc: formatLoss(acc), 'S/G': formatLoss(sg), 'TS/G': hasTS ? formatLoss(tsg) : '', 'T@15': formatLoss(t15), 'T@20': hasT20 ? formatLoss(t20) : '', Lead: leadText } };
   });
-  const columns: SimpleColumn[] = ['Dec', 'Acc', 'S/G', ...(hasTS ? ['TS/G' as const] : []), 'T@15', ...(hasT20 ? ['T@20' as const] : [])];
-  return { speeds: [...SIMPLE_CHART_SPEEDS], columns, hasT20, hasTS, rows, note: 'Dec: seconds lost braking to a stop. Acc: seconds lost accelerating from a stop. S/G: stop and go = Dec + Acc. TS/G: a stop and go that turns 90 degrees out of the stop (the car leaves at its turn speed, so it costs more than S/G). T@15 / T@20: seconds lost in a turn made at 15 / 20 mph. "+" is a gain.' };
+  const columns: SimpleColumn[] = ['Dec', 'Acc', 'S/G', ...(hasTS ? ['TS/G' as const] : []), 'T@15', ...(hasT20 ? ['T@20' as const] : []), 'Lead'];
+  return { speeds: [...SIMPLE_CHART_SPEEDS], columns, hasT20, hasTS, rows, note: `Dec: seconds lost braking to a stop. Acc: seconds lost accelerating from a stop. S/G: stop and go = Dec + Acc. TS/G: a stop and go that turns 90 degrees out of the stop (the car leaves at its turn speed, so it costs more than S/G). T@15 / T@20: seconds lost in a turn made at 15 / 20 mph. "+" is a gain. ${LEAD_NOTE}` };
 }

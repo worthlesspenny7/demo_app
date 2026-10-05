@@ -5,8 +5,8 @@
  *  - what the legal (aids rung <= 1) cockpit hides: digital readouts and the computed answer card
  */
 import type { Scenario, Instruction, AidsConfig } from '../../core/course.js';
-import { transitPaceMph, isMeasureRun } from '../../core/course.js';
-import { stopLoss, rampLead, accelLoss, turnLoss, buildPerfTable } from '../../core/perf-table.js';
+import { transitPaceMph, isMeasureRun, timedFinalSpeed } from '../../core/course.js';
+import { stopLoss, chartLead, accelLoss, turnLoss, buildPerfTable } from '../../core/perf-table.js';
 import { formatClock } from '../../core/units.js';
 import { formatInterval } from '../../core/griid.js';
 import { exactTransitBegin } from '../../core/ghost.js';
@@ -36,6 +36,8 @@ export const CHARTS_HIDDEN_TAG = 'charts:hidden';
 export function chartsHidden(sc: { tags?: string[] } | null | undefined): boolean { return !!sc?.tags?.includes(CHARTS_HIDDEN_TAG); }
 /** What the chart overlay and the perf card's simple chart say instead of the car's numbers when they are hidden. */
 export const HIDDEN_CHARTS_TEXT = "Your car's chart is what you measure today: Silver and Gold hide the car's numbers. Read the pace aid at each MARK and build the chart from the net.";
+/** PT-11 N-D8: the line card under a hidden car: no number, and not the chart box's sentence a second time. */
+export const HIDDEN_CAR_LINE_TEXT = 'No car numbers on this line: drive it as a measuring run and note the net from the MARK readings.';
 
 /** Ledger-box pace aid text (N11): while the car waits at a restart line (D16 hold) the early/late number is meaningless, so show no number. */
 export function paceAidText(earlyLate: number, waitReason: string | null | undefined): string {
@@ -52,7 +54,7 @@ export function lineSpeeds(sc: Scenario, line: number): { vIn: number | null; vO
     const vIn = v;
     if (ins.timed) v = ins.timed.holdSpeed; else if (typeof ins.speed === 'number') v = ins.speed;
     if (ins.n === line) return { vIn, vOut: v };
-    if (ins.timed) v = ins.timed.thenSpeed;
+    if (ins.timed) v = timedFinalSpeed(ins.timed);
   }
   return { vIn: null, vOut: null };
 }
@@ -176,7 +178,8 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
     return card;
   }
   // PLAY-002: no speed printed on a transit or warm-up line: give the driver a pace (the box's miles over its minutes) so the day stage moves
-  if (ins.speed === undefined && !ins.timed) { const mph = transitPaceMph(ins.transit); if (mph !== null) { const minutes = Math.round(ins.transit!.seconds / 60); card.transitPace = { mph, miles: ins.transit!.miles!, minutes, text: `No speed printed: call about ${mph} mph (${ins.transit!.miles} mi / ${minutes} min). Nothing is timed in a transit; arrive at the end on time.` }; } }
+  if (ins.speed === undefined && !ins.timed) { const mph0 = transitPaceMph(ins.transit); if (mph0 !== null) { const minutes = Math.round(ins.transit!.seconds / 60); const afterCal = ins.section === 'calibration' && !ins.calibrationStart; const mph = afterCal ? Math.max(mph0, 35) : mph0;   // ENG-027: after the calibration run the time carries the allowance: a deadline, not a pace
+      card.transitPace = { mph, miles: ins.transit!.miles!, minutes, text: afterCal ? `No speed printed: ${ins.transit!.miles} mi in ${minutes} min, which includes the calibration allowance: drive about ${mph} mph and wait at the restart. Nothing is timed in a transit.` : `No speed printed: call about ${mph} mph (${ins.transit!.miles} mi / ${minutes} min). Nothing is timed in a transit; arrive at the end on time.` }; } }
   if (!policy.computedCard) return card;
   if (chartsHidden(sc)) { card.hiddenCar = true; return card; }   // PT-10 N-C1: nothing of the hidden car's numbers on the card
   if (!policy.printsTimes) card.withheld = true;
@@ -186,12 +189,12 @@ export function perfCardFor(sc: Scenario, line: number, policy: InstrumentPolicy
     if (ins.pause && sc1) card.stop = sc1;
     else if (node?.control === 'STOP' && sc1) card.stopNoPause = { loss: sc1.loss };
     if (ins.timed) {
-      const lead = r1(rampLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car)); const call = r1(ins.timed.seconds - lead);
+      const lead = chartLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car); const call = r1(ins.timed.seconds - lead);
       card.timed = { hold: ins.timed.holdSpeed, seconds: ins.timed.seconds, then: ins.timed.thenSpeed, lead, call };
       // N5: on a STOP + timed line the same anchor as timedAnchorTod (the Debrief and the D04 stars): the ghost's departure = the car's stop + the pause - the braking part of the stop loss
       if (ins.pause) { const vi = sp.vIn && sp.vIn > 0 ? sp.vIn : ins.timed.holdSpeed; let brake = 0; try { brake = Math.max(0, stopLoss(vi, ins.timed.holdSpeed, sc.car) - accelLoss(ins.timed.holdSpeed, sc.car)); } catch { brake = 0; } const afterStopped = r1(ins.pause - brake); card.timed.fromGhost = { pause: ins.pause, afterStopped, callAfterStopped: r1(afterStopped + call) }; }
     }
-    else if (!measuring && sp.vIn !== null && sp.vOut !== null && sp.vIn !== sp.vOut && !ins.pause && node?.control !== 'STOP') { const lead = r1(rampLead(sp.vIn, sp.vOut, sc.car)); card.speedChange = { from: sp.vIn, to: sp.vOut, lead, ft: Math.round(sp.vIn * 1.4667 * lead) }; }
+    else if (!measuring && sp.vIn !== null && sp.vOut !== null && sp.vIn !== sp.vOut && !ins.pause && node?.control !== 'STOP') { const lead = chartLead(sp.vIn, sp.vOut, sc.car); card.speedChange = { from: sp.vIn, to: sp.vOut, lead, ft: Math.round(sp.vIn * 1.4667 * lead) }; }
     if (ins.turn && ins.turn !== 'S' && !ins.pause && node?.control !== 'STOP') card.turnLoss = turnLossBlock(sc, line);   // PLAY-008: a stop's turn-capped loss already includes the turn
     if (ins.section === 'start' && ins.speed && !measuring) card.start = { speed: ins.speed, early: Math.round(accelLoss(ins.speed, sc.car)) }; // PLAY-009: the launch lead, rounded like every launch time
   } catch { /* partial card */ }

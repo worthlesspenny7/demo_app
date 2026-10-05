@@ -1,6 +1,6 @@
 # video-key | mm:ss | what is shown | why useful
 # video-key must match a line in urls.txt (key = URL). Timestamps are inferred from speech; grab a few seconds either side.
-2026 | 73:54 | five-column instruction page, footer "page 1 of 26" | real GRIID layout to copy
+2026 | 73:54 | five-column instruction page, footer "Page 1 of 13" on screen (the speaker says "of 26") | real GRIID layout to copy
 2026 | 74:40 | same page, CAMEO rows | CAMEO styling
 2026 | 78:30 | calibration table with 7m19.7s and Column D writing | interval/cumulative box format
 2026 | 83:42 | end of calibration, total 28m43.2s | official total row

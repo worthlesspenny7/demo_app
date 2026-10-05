@@ -37,8 +37,8 @@ describe('generator', () => {
       let prev = 0;
       for (const leg of ghost.legs) { expect(a.book.some(i => { const s = nodeById(a.course, i.nodeId).s; return s > prev && s < leg.cpS; })).toBe(true); prev = leg.cpS; }
       for (const ins of a.book) {
-        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v === 48 || v % 5 === 0).toBe(true); expect(v).toBeGreaterThanOrEqual(15); expect(v).toBeLessThanOrEqual(55); }
-        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined && !ins.transit && ins.section !== 'calibration' && ins.section !== 'start') expect(SPEEDS.includes(v)).toBe(true);
+        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined) { expect(v === 48 || v === 12 || v % 5 === 0).toBe(true); expect(v).toBeGreaterThanOrEqual(12); expect(v).toBeLessThanOrEqual(55); }   // GEN-015: 12 and 15 in towns
+        for (const v of [ins.speed, ins.timed?.holdSpeed, ins.timed?.thenSpeed]) if (v !== undefined && !ins.transit && ins.section !== 'calibration' && ins.section !== 'start') expect(SPEEDS.includes(v) || v === 12 || v === 15).toBe(true);
       }
     }
     expect(JSON.stringify(generateLeg(4, PROFILES.fullLeg))).toBe(JSON.stringify(generateLeg(4, PROFILES.fullLeg)));
@@ -210,7 +210,8 @@ describe('generator', () => {
     const sc = stage(1);
     for (const n of sc.course.nodes.filter(n => n.control === 'SIGNAL' && sectionAt(sc, n.s) !== 'warmup')) { expect(sc.hazards.some(h => h.kind === 'signal' && Math.abs(h.s - n.s) < 1)).toBe(true); expect(insOf(sc, n)!.pause).toBeUndefined(); }
     for (const h of sc.hazards.filter(h => h.kind === 'train')) expect(sc.course.nodes.some(n => n.control === 'RR' && Math.abs(h.s - n.s) < 1)).toBe(true); // a crossing without a hazard is simply open (never a plain RR with a pause: REG-006)
-    for (const n of sc.course.nodes.filter(n => n.control === 'RR')) expect(insOf(sc, n)?.pause).toBeUndefined();
+    // GEN-016 (11b rows 102-103): a pause at a crossing is only the tracks row of the two-row crossing (the car stops there), right after the RR advance-sign row
+    for (const n of sc.course.nodes.filter(n => n.control === 'RR')) if (insOf(sc, n)?.pause !== undefined) { expect(n.fullStop).toBe(true); expect(insOf(sc, n)!.pause).toBe(15); const prev = sc.book[insOf(sc, n)!.n - 2]!; expect(nodeById(sc.course, prev.nodeId).sign?.shape).toBe('rr-advance'); }
     const trains = (sc.tags ?? []).filter(t => t.startsWith('train:'));
     expect(trains.length).toBeGreaterThan(0);
     // timed segments never span another instruction and hold 20-90 s

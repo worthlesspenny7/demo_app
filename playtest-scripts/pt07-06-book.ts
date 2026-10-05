@@ -1,5 +1,5 @@
 /** PT-07 step 6: the printable book (#/book/...) and the cockpit book against the real 2026 sheet
- *  (docs/research/frames/2026-73m54s+0-five-column-instruction-page-footer-page-1-of-26.jpg). Element screenshots of page 1 and one middle page,
+ *  (docs/research/frames/2026-73m54s+0-five-column-instruction-page-footer-page-1-of-13.jpg). Element screenshots of page 1 and one middle page,
  *  page counts and rows per page, and the cockpit book column. Fresh profile, never saved. */
 import { launch, goto, log, reset, hold, SHOTS } from './pt07-common.js';
 const F = '06-book.txt'; reset(F);

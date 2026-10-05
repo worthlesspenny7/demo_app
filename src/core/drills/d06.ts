@@ -6,7 +6,7 @@ import { buildPerfTable, matrixAt, stopLoss } from '../perf-table.js';
 import { rng, type Rng } from '../rng.js';
 import type { Drill } from './types.js';
 import { tiers, tierOf, base, carFor } from './common.js';
-import { MEASURE_RUN_TAG, instructionS, type CarSpec, type Scenario } from '../course.js';
+import { MEASURE_RUN_TAG, instructionS, FORD_1939, type CarSpec, type Scenario } from '../course.js';
 
 /** `stopMid` (CHART-006, 10c): the stop-in-the-middle run: a stop with no pause printed between the two marks, so the net loss against the ghost is the stop-and-go loss (15 s minus chart (b)). */
 export type ChartKind = 'stopGo' | 'accel' | 'turn' | 'stopMid';
@@ -160,16 +160,19 @@ export function runMeasurement(r: StageResult, sc: Scenario, p: ChartPair): numb
   return (b.tod - a.tod) - (b.ghost - a.ghost);
 }
 
+/** One chart cell of a car for a pair (stop in the middle = the zero-dwell stop & go loss). */
+function cellOf(car: CarSpec, perf: ReturnType<typeof buildPerfTable>, p: ChartPair): number { return p.kind === 'stopMid' ? stopLoss(p.vIn, p.vOut, car) : matrixAt(p.kind === 'stopGo' ? perf.stopGo : p.kind === 'accel' ? perf.accel : perf.turns, p.vIn, p.vOut); }
+
 export const D06: Drill = {
-  id: 'D06', title: 'Build your charts', objective: 'Bronze: copy the Packard charts. Every pair on the marker lines is inside the 15-50 mph the handbook prints (HB p.7-9): note the printed cell for each, as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; you are graded on copying it right. Silver and Gold: measure the car. Drive each section as a measuring run: leave restarts ON the second and call every speed AT its sign (measure, do not compensate), read the pace aid at MARK in and at MARK out: the net is the out reading minus the in reading (for stop & go the chart pause time is 15 s minus the net). Retry the seed to drive the pairs again: your notes are kept and the last one per pair counts ("stopgo 30>40 runs 8.4 8.6" averages runs). Notes of raw run times work too ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ...").', skills: ['P12'], minutes: 22, kind: 'drive',
+  id: 'D06', title: 'Build your charts', objective: 'Bronze: copy the Packard charts. Every pair on the marker lines is inside the 15-50 mph the handbook prints (HB p.7-9): note the printed cell for each, as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; you are graded on copying it right. Silver and Gold: measure the car. Drive each section as a measuring run: leave restarts ON the second and call every speed AT its sign (measure, do not compensate), read the pace aid at MARK in and at MARK out: the net is the out reading minus the in reading (for stop & go the chart pause time is 15 s minus the net). Bronze retries keep your notes (the last one per pair counts); at Silver and Gold each retry is a new hidden car, so measure every pair on it ("stopgo 30>40 runs 8.4 8.6" averages runs). Notes of raw run times work too ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ...").', skills: ['P12'], minutes: 22, kind: 'drive',
   objectiveFor: t => t === 0
     ? 'Copy the Packard charts. Every pair on the marker lines is inside the 15-50 mph the handbook prints (HB p.7-9): note the printed cell for each, as "stopgo 30>40 = 8.4", "accel 0>40 = 4.5" or "turn 40>35 = 4.0"; you are graded on copying it right. Drive each section the way the chart is made: leave restarts ON the second and call every speed AT its sign. Retry the seed to drive the pairs again: your notes are kept and the last one per pair counts.'
-    : 'Measure the car: its charts are hidden. Drive each section as a measuring run: leave restarts ON the second and call every speed AT its sign (measure, do not compensate), read the pace aid at MARK in and at MARK out: the net is the out reading minus the in reading (for stop & go the chart pause time is 15 s minus the net). Retry the seed to drive the pairs again: your notes are kept and the last one per pair counts ("stopgo 30>40 runs 8.4 8.6" averages runs). Notes of raw run times work too ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ...").',
+    : 'Measure the car: its charts are hidden. Drive each section as a measuring run: leave restarts ON the second and call every speed AT its sign (measure, do not compensate), read the pace aid at MARK in and at MARK out: the net is the out reading minus the in reading (for stop & go the chart pause time is 15 s minus the net). Each retry is a new hidden car: measure every pair on it ("stopgo 30>40 runs 8.4 8.6" averages runs). Notes of raw run times work too ("const 25 runs 19.8 19.9 19.8 19.9", "acc 25 runs ...", "brk 25 runs ...").',
   tiers: tiers([3, 3, 2]), unlock: [], readFirst: ['measure-car'],
-  scenario(seed, t) {
+  scenario(seed, t, attempt = 0) {
     const tier = tierOf(D06, t); const r = rng(seed * 6007 + 6);
     const driver: 'A' | 'B' = tier.name === 'Bronze' ? 'A' : rng(seed * 6007 + 99).chance(0.5) ? 'B' : 'A';   // CHART-006: each driver has his own chart; Bronze copies the printed Packard (driver A)
-    const b = base('D06', 'Build your charts', seed, tier, { car: driverCar(carFor('D06', seed, tier), driver) }).start(30);
+    const b = base('D06', 'Build your charts', seed, tier, { car: driverCar(carFor('D06', seed, tier, tier.name === 'Bronze' ? 0 : attempt), driver) }).start(30);
     const tags: string[] = [`driver:${driver}`];
     const bronze = tier.name === 'Bronze';
     // PLAY-027: the MARK lines say what this tier grades: Bronze copies the printed Packard cell; Silver and Gold measure, and a measuring run never compensates
@@ -221,7 +224,7 @@ export const D06: Drill = {
       mark(`${id} out`, bronze ? `Leave at ${vo}. The stop in the middle is 15 s minus the Packard chart (b) cell for ${vi} > ${vo}.` : `Leave at ${vo}. ${net(id)} That net is the stop-and-go loss for ${vi} > ${vo}.`);
       b.advanceMiles(0.5).checkpoint().advanceFt(300); }
     const sc = b.finish().build();
-    sc.tags = [...(sc.tags ?? []), ...tags, 'd06', MEASURE_RUN_TAG, tier.name === 'Bronze' ? 'charts:packard' : 'charts:hidden'];
+    sc.tags = [...(sc.tags ?? []), ...tags, 'd06', MEASURE_RUN_TAG, tier.name === 'Bronze' ? 'charts:packard' : 'charts:hidden', ...(attempt > 0 && tier.name !== 'Bronze' ? [`attempt:${attempt}`] : [])];
     annotatePerfectTimes(sc, true);
     return sc;
   },
@@ -235,6 +238,7 @@ export const D06: Drill = {
     const packard = (sc.tags ?? []).includes('charts:packard');
     const physCar = packard && sc.car.tables ? { ...sc.car, tables: undefined } : null; const physPerf = physCar ? buildPerfTable(physCar) : null;
     const measuredTruth = (p: ChartPair): number | null => !physCar || !physPerf ? null : Math.round((p.kind === 'stopMid' ? stopLoss(p.vIn, p.vOut, physCar) : matrixAt(p.kind === 'stopGo' ? physPerf.stopGo : p.kind === 'accel' ? physPerf.accel : physPerf.turns, p.vIn, p.vOut)) * 10) / 10;
+    const fordPerf = packard ? null : buildPerfTable(FORD_1939);
     let good = 0; const lines: string[] = []; const per: Record<ChartKind, number> = { stopGo: 0, accel: 0, turn: 0, stopMid: 0 };
     const extrap = new Set(perf.extrapolated);
     for (const p of pairs) {
@@ -245,10 +249,14 @@ export const D06: Drill = {
       if (e?.outliers.length) lines.push(`${lab}: ${e.outliers.join(', ')} s is a negative cell. Re-drive this pair (retry the seed: your notes are kept) and take net = the pace-aid reading at MARK out minus the reading at MARK in; for stop & go the chart pause time is 15 s minus that net.`);
       // ENG-020: a negative note that is what this run really measured is a fair measurement of a noisy run (the driver's noise, Gold): credited, and named as a run to repeat
       if (e && e.value === null && e.outliers.length) { const rm0 = runMeasurement(r, sc, p); const neg = e.outliers[e.outliers.length - 1]!; if (rm0 !== null && Math.abs(neg - rm0) <= 1) { good++; per[p.kind]++; lines.push(`${lab}: you noted ${neg}, which is what this run measured (${rm0.toFixed(1)} s): fair, but a negative loss is the driver's noise, so drive the pair again and average (chart ${tv.toFixed(1)} s)${flagged}`); continue; } }
-      if (!e || e.value === null) { lines.push(`${lab}: not noted (chart ${tv.toFixed(1)} s)${flagged}`); continue; }
+      // PT-11 N-D2: an unmeasured pair never prints its answer (Bronze: the printed Packard cell is the copy exercise, so it may say where it is)
+      if (!e || e.value === null) { lines.push(packard ? `${lab}: not noted (copy it from the Packard chart, Reference HB p.7-9)${flagged}` : `${lab}: not measured: drive the pair and note the net (retry draws a new car, so measure every pair on it)`); continue; }
       const mt = measuredTruth(p); const errM = mt === null ? Infinity : Math.abs(e.value - mt);
       const rm = runMeasurement(r, sc, p); const errR = rm === null ? Infinity : Math.abs(e.value - rm);
-      const err = Math.abs(e.value - tv); const ok = err <= 1 || errM <= 1 || errR <= 1;
+      const err = Math.abs(e.value - tv);
+      // PT-11 N-D2: a note that is the stock Ford's printed cell on a car that differs from it is a copy, not a measurement (unless this run really measured it)
+      if (!packard && fordPerf) { const fc = Math.round(cellOf(FORD_1939, fordPerf, p) * 10) / 10; if (Math.abs(e.value - fc) <= 0.05 && Math.abs(tv - fc) >= 0.3 && errR > 0.3) { lines.push(`${lab}: you noted ${e.value}, the stock Ford's chart cell, not this car's: copying the Ford chart is not measuring. Drive the pair and note the net.`); continue; } }
+      const ok = err <= 1 || errM <= 1 || errR <= 1;
       if (ok) { good++; per[p.kind]++; }
       lines.push(`${lab}: you noted ${e.value}${e.runs.length > 1 ? ` (average of ${e.runs.length - e.outliers.length} runs)` : ''}, chart ${tv.toFixed(1)} s (${err <= 1 ? 'within 1 s' : errM <= 1 ? `measured on this car: ${mt!.toFixed(1)} s, within 1 s` : errR <= 1 ? `this run measured ${rm!.toFixed(1)} s, within 1 s: a fair measurement, the driver's noise put this run off the mean` : `off by ${err.toFixed(1)} s${rm !== null ? `; this run measured ${rm.toFixed(1)} s` : ''}`})${flagged}`);
     }
@@ -260,10 +268,10 @@ export const D06: Drill = {
     const stars: 0 | 1 | 2 | 3 = ratio >= 0.88 ? 3 : ratio >= 0.66 ? 2 : ratio >= 0.33 ? 1 : 0;
     const other = [...parseChartRuns(notes).values()].filter(v => v.driver && v.driver !== driver).length;
     // EDU-002: the tip names the chart cells, the thing this drill grades (never the leg-error "Clean run")
-    const firstMiss = lines.find(l => /not noted|off by|NEGATIVE|negative cell|disagrees|above 15 s/.test(l));
+    const firstMiss = lines.find(l => /not noted|not measured|stock Ford|off by|NEGATIVE|negative cell|disagrees|above 15 s/.test(l));
     const tip = stars === 3 ? `Clean run: ${good}/${pairs.length} chart cells within 1 s. Keep the chart in the car and write its numbers beside the book's stops and turns.`
       : good === 0 && !notes.length ? `No chart cells were noted: write each pair as you measure it ("stopgo 30>40 = 8.4", "accel 0>40 = 4.5", "turn 40>35 = 4.0"), or the raw runs ("const 25 runs 19.8 19.9 19.8 19.9"). ${packard ? 'At Bronze copy the printed Packard charts (Reference, HB p.7-9).' : 'Lesson "Measure your car" shows the runs.'}`
-        : `${good}/${pairs.length} chart cells within 1 s${firstMiss ? `; first to fix: ${firstMiss}` : ''}. ${packard ? 'Bronze is graded on copying: every pair is on the printed Packard charts (Reference, HB p.7-9); copy the cell for the IN > OUT pair.' : 'Retry this seed to drive the pairs again (your notes are kept; the last note per pair counts, "runs a b c" averages them), and measure without compensating: no launch lead, no early call.'}`;
+        : `${good}/${pairs.length} chart cells within 1 s${firstMiss ? `; first to fix: ${firstMiss}` : ''}. ${packard ? 'Bronze is graded on copying: every pair is on the printed Packard charts (Reference, HB p.7-9); copy the cell for the IN > OUT pair.' : 'Retry draws a new hidden car (each attempt is a new car, so the last Debrief is not this car\'s answer key): measure every pair on it, without compensating: no launch lead, no early call ("runs a b c" averages runs of a pair within the attempt).'}`;
     return {
       score: good, stars, tip, headline: `${good}/${pairs.length} chart cells within 1 s (stop & go ${per.stopGo}/3, accel/decel ${per.accel}/3, turns ${per.turn}/3, stop in the middle ${per.stopMid}/1)`,
       feedback: [

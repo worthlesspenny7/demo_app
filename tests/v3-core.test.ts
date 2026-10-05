@@ -12,6 +12,7 @@ import { drillById } from '../src/core/drills/registry.js';
 import { departuresOf } from '../src/core/drills/departures.js';
 import { d16Plan } from '../src/core/drills/d16.js';
 import { parseChartRuns, parseChartNotes, chartPairs, driverOf } from '../src/core/drills/d06.js';
+import { d06Car } from '../src/core/drills/common.js';
 import { gradeCheckpointNotes, gradeChartLossNotes, chartLossFor, parseCpNotes, lossNumbers, lineSpeeds } from '../src/core/drills/preread.js';
 import { lostProcedure, parseLostNote } from '../src/core/drills/lost.js';
 import { generateStage, PROFILES } from '../src/core/generator/generate.js';
@@ -28,8 +29,8 @@ function stepTo(sim: Simulator, tod: number): void { while (sim.tod < tod - 1e-9
 const msgs = (sim: Simulator): string[] => sim.driverMsgs.map(m => m.text);
 
 describe('V3 engine version', () => {
-  it('INST-001 ENGINE_VERSION is 3.3.0 (ENG-004 keyed RNG streams, the fix sprint PT-08/PT-09, then PT-10 N-B14) and the V3 actions are in the action list and validated', () => {
-    expect(ENGINE_VERSION).toBe('3.3.0');   // fix sprint PT-10 bumped it (ENG-026: a called turn is kept for its own intersection, which changes replayed results)
+  it('INST-001 ENGINE_VERSION is 3.4.0 (ENG-004 keyed RNG streams, the fix sprint PT-08/PT-09, PT-10 N-B14, then PT-11 / realism v4) and the V3 actions are in the action list and validated', () => {
+    expect(ENGINE_VERSION).toBe('3.4.0');   // fix sprint PT-11 / realism v4 bumped it (GEN-016 full stops, GEN-017 chains, N-D11 start bucket and the new generated days change replayed results)
     for (const t of ['pullUp', 'call.warn', 'call.identify', 'count', 'clock.read', 'ledger.set', 'ta.request']) expect(ACTION_LIST).toContain(t);
     expect(validateAction({ type: 'call.identify', text: 'bridge' })).toBeNull(); expect(validateAction({ type: 'call.identify' })).not.toBeNull();
     expect(validateAction({ type: 'count', n: 9 })).toBeNull(); expect(validateAction({ type: 'count', n: 1.5 })).not.toBeNull();
@@ -449,7 +450,7 @@ describe('SPEED-001 speeds 10-55 in charts and the generator', () => {
       const t = sc.tags!.find(x => x.startsWith('calibration:speed:'))!; if (t.endsWith(':55')) n55cal++; else { expect(t.endsWith(':50')).toBe(true); n50cal++; }
       const cal = sc.book.find(i => i.calibrationStart)!; expect(cal.speed).toBe(Number(t.split(':')[2]));
     }
-    expect(n48).toBeGreaterThan(0); expect(n55cal).toBeGreaterThan(0); expect(n50cal).toBeGreaterThan(0); expect(all.has(55)).toBe(true); expect([...all].every(v => v === 48 || v % 5 === 0)).toBe(true);
+    expect(n48).toBeGreaterThan(0); expect(n55cal).toBeGreaterThan(0); expect(n50cal).toBeGreaterThan(0); expect(all.has(55)).toBe(true); expect([...all].every(v => v === 48 || v === 12 || v % 5 === 0)).toBe(true);
     const share48 = n48 / [...Array(12).keys()].reduce((a, k) => a + generateStage(k + 1, PROFILES.fullStage).book.length, 0); expect(share48).toBeLessThan(0.08);   // sometimes, not often
   });
   it('SPEED-001 the oracle drives a 48 and a 55 calibration day: k is measured at the calibration speed and holds the day', () => {
@@ -568,7 +569,7 @@ describe('CHART-006 the D06 chart tool: runs, outliers, per-driver charts, stop 
     for (let seed = 1; seed <= 12; seed++) { for (const t of [1, 2]) { const sc = d.scenario(seed, t); drivers.add(driverOf(sc.tags)); expect(sc.tags).toContain(`driver:${driverOf(sc.tags)}`); if (driverOf(sc.tags) === 'B') expect(sc.car.name).toMatch(/driver B/); } expect(driverOf(d.scenario(seed, 0).tags)).toBe('A'); }
     expect(drivers).toEqual(new Set(['A', 'B']));
     const seedB = Array.from({ length: 12 }, (_, i) => i + 1).find(sd => driverOf(d.scenario(sd, 1).tags) === 'B')!; const sc = d.scenario(seedB, 1); const perf = buildPerfTable(sc.car);
-    expect(sc.car.a0).toBeLessThan(FORD_1939.a0 * 1.2); const pairs = chartPairs(sc.tags); expect(pairs.length).toBe(10);
+    expect(sc.car.a0).toBeCloseTo(d06Car(seedB, 0).a0 * 0.9, 9); expect(d06Car(seedB, 0).a0).toBeLessThanOrEqual(FORD_1939.a0 * 1.6); /* PT-11 N-D2: driver B drives the same hidden car 10 % softer (the car itself is 1.4-1.6x the Ford) */ const pairs = chartPairs(sc.tags); expect(pairs.length).toBe(10);
     const truth = (p: ReturnType<typeof chartPairs>[number]): number => p.kind === 'stopMid' ? Math.round(stopLoss(p.vIn, p.vOut, sc.car) * 10) / 10 : Math.round((p.kind === 'stopGo' ? perf.stopGo : p.kind === 'accel' ? perf.accel : perf.turns).rows[p.vIn]![p.vOut]! * 10) / 10;
     const run = (prefix: string, extra: string[] = []) => { const sim = new Simulator(sc); for (const p of pairs) sim.act({ type: 'note', text: `${prefix}${p.kind === 'stopGo' ? 'stopgo' : p.kind} ${p.vIn}>${p.vOut} runs ${truth(p).toFixed(1)} ${(truth(p) + 0.2).toFixed(1)} ${(truth(p) - 0.2).toFixed(1)} ${truth(p).toFixed(1)}` }); for (const e of extra) sim.act({ type: 'note', text: e }); return d.rubric(runBot(sim, null), sc); };
     expect(run('B: ').stars).toBe(3); expect(run('').stars).toBe(3); const wrong = run('A: '); expect(wrong.stars).toBe(0); expect(wrong.feedback.join(' ')).toMatch(/tagged for the other driver were ignored/); expect(wrong.feedback.join(' ')).toMatch(/driver B/);

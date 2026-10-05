@@ -111,6 +111,29 @@ function afterPathState(drills: Pick<Drill, 'id' | 'unlock' | 'lessonGate'>[], b
   return { step: AFTER_PATH_STEP, done: false, current: true, ...(miss.length || ls.length ? { locked: true, needs: lockText(miss, ls) } : {}) };
 }
 
+/**
+ * PT-11 N-D9: "Path complete" still has a button: the way on to the full stage (D12). Its first missing prerequisite is played at Silver (its "Read first"
+ * lesson first when one is due), then D12 itself once it is open. Null once D12 has a star (nothing left on the way).
+ */
+export const BEYOND_PATH_TARGET = 'D12';
+export function beyondPathNext(drills: Pick<Drill, 'id' | 'unlock' | 'lessonGate' | 'readFirst' | 'tiers'>[], best: Record<string, number>, lessonDone: (id: string) => boolean, lessonTitle: (id: string) => string = lessonTitleOf, played?: Record<string, number>): Exclude<PathNext, { kind: 'blocked' }> | null {
+  const d = drills.find(x => x.id === BEYOND_PATH_TARGET); if (!d) return null;
+  if (((played ?? best)[d.id] ?? 0) >= 1) return null;
+  const s: FourS = 'time';
+  for (const u of d.unlock.filter(x => (best[x.drill] ?? 0) < x.stars)) {
+    const pre = drills.find(x => x.id === u.drill); if (!pre) continue;
+    if (pre.unlock.some(v => (best[v.drill] ?? 0) < v.stars)) continue;
+    const due = [...readFirstOf(pre).map(l => l.id), ...(pre.lessonGate ?? [])].find(id => !lessonDone(id));
+    if (due) { const ls: StartStep = { kind: 'lesson', id: due, label: `School: ${lessonTitle(due)}`, s }; return { kind: 'step', step: ls, hash: pathStepHash(ls), label: `Read first: ${lessonTitle(due)} (before ${pre.id})` }; }
+    const tier = Math.min(1, pre.tiers.length - 1); const tierName = pre.tiers[tier]?.name ?? 'Silver';
+    const forStep: StartStep = { kind: 'drill', id: d.id, label: `${d.id} Full stage`, s };
+    return { kind: 'replay', drillId: pre.id, tier, hash: STATIC_DRILL[pre.id] ? `#/${STATIC_DRILL[pre.id]}/${pre.id}` : `#/cockpit/drill/${pre.id}/${tier}/1`, forStep, needs: `${u.drill} ${'★'.repeat(u.stars)}`, label: `Play ${pre.id} at ${tierName} (${d.id} needs ${u.drill} ${'★'.repeat(u.stars)} at Silver or Gold)` };
+  }
+  if (d.unlock.some(x => (best[x.drill] ?? 0) < x.stars) || (d.lessonGate ?? []).some(l => !lessonDone(l))) return null;
+  const st: StartStep = { kind: 'drill', id: d.id, label: `${d.id} Full stage (the whole day)`, s };
+  return { kind: 'step', step: st, hash: pathStepHash(st), label: st.label };
+}
+
 /** PLAY-024: the path's last line names what opens the whole-leg drills, from their own unlock lists ("D11 opens with D18 ★ and D07 ★★ at Silver or Gold"). */
 export function pathCompleteText(drills: Pick<Drill, 'id' | 'unlock'>[], best: Record<string, number>): string {
   const part = (id: string, what: string): string => {
@@ -143,7 +166,8 @@ export function debriefNext(drillId: string, drills: Drill[], prog: { drills: Re
   const pn = pathNext(startPathFromProgress(drills, prog, lessonDone), drills, best, lessonDone, lessonTitle, pathStars(prog));
   const sameDrill = !!pn && pn.kind === 'step' && pn.step.kind === 'drill' && pn.step.id === drillId;
   const nd = pn ? null : nextDrill(drillId, drills, best, lessonDone);
-  return { path: pn && pn.kind !== 'blocked' && !sameDrill ? pn : null, blocked: pn && pn.kind === 'blocked' ? pn.label : null, drill: nd && !nd.locked ? nd.drill : null };
+  const beyond = pn ? null : beyondPathNext(drills, best, lessonDone, lessonTitle, pathStars(prog));   // PT-11 N-D9: after D11 the path leads on toward D12
+  return { path: pn && pn.kind !== 'blocked' && !sameDrill ? pn : beyond, blocked: pn && pn.kind === 'blocked' ? pn.label : null, drill: nd && !nd.locked ? nd.drill : null };
 }
 
 /** EDU-005: what a locked drill or tier still needs, in words: "D03 ★★, D16 ★ at Silver or Gold; read the lesson lost". */

@@ -2,7 +2,7 @@
 import type { Rubric } from './types.js';
 import type { StageResult, InstrumentFinding } from '../sim.js';
 import type { Scenario } from '../course.js';
-import { rampLead, stopLoss, accelLoss } from '../perf-table.js';
+import { chartLead, stopLoss, accelLoss, dwellFor } from '../perf-table.js';
 import type { Instruction } from '../course.js';
 import type { SimEvent } from '../sim.js';
 
@@ -103,10 +103,23 @@ export function withRecoveryGate(rb: Rubric, r: StageResult, sc: Scenario): Rubr
 }
 
 /** PLAY-028: printed-pause stops where the navigator sat more than 1 s past the chart pause time (the only case for "go earlier"). */
-export function longDwells(r: StageResult, over = 1): { line: number | null; seconds: number }[] {
+export function longDwells(r: StageResult, over = 1, sc?: Scenario): { line: number | null; seconds: number }[] {
   const out: { line: number | null; seconds: number }[] = [];
-  for (const a of r.attribution ?? []) for (const st of a.stops ?? []) if (st.pause > 0 && st.actualCost - Math.max(0, st.trafficWait ?? 0) > over) out.push({ line: st.line, seconds: Math.round((st.actualCost - Math.max(0, st.trafficWait ?? 0)) * 10) / 10 });
+  for (const a of r.attribution ?? []) for (const st of a.stops ?? []) {
+    if (!(st.pause > 0) || st.actualCost - Math.max(0, st.trafficWait ?? 0) <= over) continue;
+    // PT-11 N-D5: with the run's own dwell on record, "long" is the navigator's go against the chart dwell for that stop (turn-capped, the TS/G column):
+    // a stop whose go came within 1 s of it is never "go earlier", whatever else the stop bucket picked up
+    const own = sc ? dwellError(st, sc) : null;
+    if (own !== null && own <= over) continue;
+    out.push({ line: st.line, seconds: Math.round((own ?? st.actualCost - Math.max(0, st.trafficWait ?? 0)) * 10) / 10 });
+  }
   return out;
+}
+type StopRec = NonNullable<StageResult['attribution']>[number]['stops'][number];
+/** PT-11 N-D5: seconds the navigator's go came after the chart dwell of this stop (turn-capped), or null when the run recorded no dwell (a synthetic record). */
+export function dwellError(st: StopRec, sc: Scenario, straight = false): number | null {
+  if (!(st.goDwell > 0 || st.dwell > 0) || !st.vIn || !st.vOut) return null;
+  try { return st.goDwell - dwellFor(st.pause, st.vIn, st.vOut, sc.car, straight ? undefined : stopTurnCap(st.turn, sc.car)); } catch { return null; }
 }
 
 /** Largest-bucket headline tip (DEBRIEF-001 at engine level). */
@@ -172,6 +185,7 @@ export function turningStopExtras(r: StageResult, sc: Scenario, over = 1): { lin
   for (const a of r.attribution ?? []) for (const st of a.stops ?? []) {
     if (!(st.pause > 0) || st.actualCost - Math.max(0, st.trafficWait ?? 0) <= over) continue;
     const cap = stopTurnCap(st.turn, sc.car); if (cap === undefined || !st.vIn || !st.vOut) continue;
+    { const own = dwellError(st, sc); if (own !== null && own <= over) continue; }   // PT-11 N-D5: the dwell already took the turning-stop loss off
     try { const extra = Math.round((stopLoss(st.vIn, st.vOut, sc.car, cap) - stopLoss(st.vIn, st.vOut, sc.car)) * 10) / 10; if (extra >= 0.3) out.push({ line: st.line, extra, cap }); } catch { /* skip */ }
   }
   return out;
@@ -191,7 +205,7 @@ function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[], r?
   switch (k) {
     case 'stop': {
       // PLAY-028: "go earlier" only when a dwell at a printed pause was really long (more than 1 s over the chart pause time at some stop)
-      if (late && r) { const long = longDwells(r); const c = stopCauses(r);
+      if (late && r) { const long = longDwells(r, 1, sc); const c = stopCauses(r);
         const pauseStops = (r.attribution ?? []).some(a => (a.stops ?? []).some(st => st.pause > 0));
         if (!long.length && (pauseStops || c.noPause >= 1.5)) {
           if (c.noPause >= 1.5) return `Your stops cost ${Math.round(c.noPause + Math.max(0, c.pause))} s, but your dwells were right (every printed pause within 1 s): the loss is at STOP signs with no pause printed, where the stop and go costs the car time that no dwell can save. Go as soon as it is safe and make the seconds up with the 10 % rule (10 % faster for 10 x the seconds lost).`;
@@ -205,9 +219,11 @@ function tipFor(k: string, late: boolean, sc?: Scenario, events?: SimEvent[], r?
     case 'timedChange': return "Timed changes are off: count from the ghost's departure (arrival + pause) and split the change at the sign by calling it half a ramp early.";
     case 'hazard': return 'Lights, trains or traffic cost you: time every delay on the stopwatch, then make it up with the 10 % rule (10 % faster for 10 x the seconds lost, 4 s lost at 35 -> 38.5 mph for 40 s) or, for a train or accident, file a Time Allowance at the TA point, never both.';
     case 'offCourse': return "A wrong turn cost the leg: stay on course first (the third of the Four S's) and confirm the landmark before the leading edge of the intersection. Once you know you are lost: turn around where it is safe, start the stopwatch at the turn-around and double it for the lost time, rejoin 30 s behind a car known to be on course, and never ask for a Time Allowance for a wrong turn.";
-    case 'turn': return 'Turns cost time the ghost does not spend: write the turn chart loss on your card (the handbook\'s Packard: approach 40, exit 35 = 4.0 s) and recover it with the 10 % rule right after the turn.';
+    case 'turn': return sc?.car.tables ? 'Turns cost time the ghost does not spend: write the turn chart loss on your card (the handbook\'s Packard: approach 40, exit 35 = 4.0 s) and recover it with the 10 % rule right after the turn.' : 'Turns cost time the ghost does not spend: write the turn loss on your card (the simple chart\'s T@15 / T@20 for your speed) and recover it with the 10 % rule right after the turn.';   // PT-11 N-D7: the Ford's own chart, not the Packard's
     case 'cruise': {
       if (sc && events && uncalledSpeeds(events, sc).length) { const m = uncalledSpeeds(events, sc); return `Cruise ran ${late ? 'slow' : 'fast'} because ${m.length === 1 ? `${m[0]!.mph} at line ${m[0]!.line} was` : `${m.length} new speeds (first ${m[0]!.mph} at line ${m[0]!.line}) were`} never called: the driver keeps the old speed until you call the new one (a stop that leaves at the speed it came in at needs no call).`; }
+      // PT-11 N-D6: a logged make-up (the 10 % rule called above the assigned speed) is recovery, never "the driver wandered", in every drill
+      if (!late && events && events.some(e => e.type === 'makeUp.begin' || e.type === 'call.over')) return 'Cruise ran fast because you called a deliberate make-up (the 10 % rule): that is recovery, not the driver wandering. Drop back to the assigned speed as soon as the seconds you owed are back, so the make-up does not overshoot into early.';
       const speedoTrue = sc ? sc.speedo.kind === 'timewise' && Math.abs(sc.speedo.gain - 1) < 0.003 && Math.abs(sc.speedo.offset) < 0.1 : false;
       if (speedoTrue) return late ? 'Cruise segments ran slow because the driver wandered under the assigned speed: watch the needle and call small corrections (+1) sooner, and make up the rest with the 10 % rule.' : 'Cruise segments ran fast because the driver wandered over the assigned speed: call small corrections (-1) sooner.';
       return late ? 'You ran slow on the cruise segments because the speedometer reads high: calibrate and hold a corrected indicated speed.' : 'You ran fast on the cruise segments because the speedometer reads low: calibrate and hold a corrected indicated speed.';
@@ -264,12 +280,12 @@ export function callErrors(r: StageResult, sc: Scenario, kind: 'timed' | 'landma
     if (only && !only(ins)) continue;
     const cross = ev[ci]!;
     if (kind === 'timed' && ins.timed) {
-      const T = ins.timed.seconds; const lead = rampLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car);
+      const T = ins.timed.seconds; const lead = chartLead(ins.timed.holdSpeed, ins.timed.thenSpeed, sc.car);   // PT-11 N-D1: the simple chart's Lead column
       const t0 = timedAnchorTod(ev, sc, ins, ci, vBefore);
       const call = ev.slice(ci + 1).find(e => e.type === 'call.speed' && e.detail?.mph === ins.timed!.thenSpeed && e.tod <= t0 + T + 90);
       out.push(call ? call.tod - t0 - (T - lead) : missedPenalty);
     } else if (kind === 'landmark' && !ins.timed && !ins.pause && ins.speed !== undefined && vBefore !== undefined && vBefore !== ins.speed && node?.control !== 'STOP' && ins.section !== 'start' && ins.section !== 'restart' && !wasTimed) {
-      const lead = rampLead(vBefore, ins.speed, sc.car);
+      const lead = chartLead(vBefore, ins.speed, sc.car);
       const since = Math.max(cross.tod - 120, prevCrossTod(ev, sc, ins)); // never a call made for an earlier line (PLAY-006)
       const before = [...ev.slice(0, ci + 1)].reverse().find(e => e.type === 'call.speed' && e.detail?.mph === ins.speed && e.tod >= since);
       const call = before ?? ev.slice(ci + 1).find(e => e.type === 'call.speed' && e.detail?.mph === ins.speed && e.tod <= cross.tod + 60);

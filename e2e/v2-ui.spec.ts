@@ -95,7 +95,7 @@ test('UI-030 the charts overlay shows the three IN x OUT grids (accel includes 0
 });
 
 test('UI-031 the TA form appears at a TA point on a generated day stage and the window counts down', async ({ page }) => {
-  await resumeAtFirstTaWindow(page, 6);
+  await resumeAtFirstTaWindow(page, 21);
   await expect(page.locator('#ta-panel')).toBeVisible();
   await expect(page.locator('#ta-count')).toContainText(/window 1[45]:\d\d left/);
   const first = await page.locator('#ta-count').innerText();
@@ -138,7 +138,7 @@ test('REG-008 LESSON-007 the reference page: phones only for emergencies and Tim
 
 test('UI-036 the TA form fits at 1366 x 800: every "Use" button lies inside the panel and the viewport, and the panel has no horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 800 });
-  await resumeAtFirstTaWindow(page, 6);
+  await resumeAtFirstTaWindow(page, 21);
   await expect(page.locator('#ta-panel')).toBeVisible();
   const m = await page.evaluate(() => {
     const p = document.querySelector('#ta-panel') as HTMLElement; const pr = p.getBoundingClientRect();

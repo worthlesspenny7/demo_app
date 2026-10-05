@@ -148,6 +148,9 @@ class Generator {
   private readonly v3Rng: Rng;
   /** Own stream for the cosmetic Phase VI choices (no-host meals, sign faces, plaques, the Information Box sign), so the layout draws of a seed never move. */
   private readonly cosRng: Rng;
+  /** Own stream for the realism-v4 content (12/15 mph rows, posted limits, blinker and two-row RR pauses, delayed / chained timed changes, the mid-stage exact transit). */
+  private readonly v4Rng: Rng;
+  private blinkers = 0; private rrPairs = 0; private chains = 0; private delayedTimed = 0;
   private readonly b: ScenarioBuilder;
   private readonly tags: string[];
   private speed = 35;
@@ -178,6 +181,7 @@ class Generator {
     this.omitRng = rng(`gen-omit:${kind}:${seed}`);
     this.v3Rng = rng(`gen-v3:${kind}:${seed}`);
     this.cosRng = rng(`gen-cos:${kind}:${seed}`);
+    this.v4Rng = rng(`gen-v4:${kind}:${seed}`);
     const wanted = profile.cpCount ?? profile.legs;
     this.legs = kind === 'leg' ? 1 : wanted > 0 ? wanted : Math.min(6, this.r.int(4, 7));   // CPX-001: 4-6 timing checkpoints a day
     this.tags = [`gen:${profile.name ?? kind}`, `seed:${seed}`];
@@ -185,6 +189,7 @@ class Generator {
       id: `gen-${profile.name ?? kind}-${seed}`, name: `${profile.name ?? kind} #${seed}`, seed, startTime: profile.startTime ?? 8 * 3600,
       car: profile.car ?? FORD_1939, speedo: profile.speedo ?? PERFECT_TIMEWISE, driver: profile.driver ?? DRIVER_EXPERT, aids: profile.aids ?? TRAINING_AIDS,
       tags: this.tags, trafficWaitProbability: profile.trafficWaitProbability ?? 0, asp: profile.asp, timeZone: profile.timeZone, bookStyle: profile.bookStyle,
+      stage: kind === 'stage' ? ((seed - 1) % 9) + 1 : 1,   // ENG-028: the TA rows print "Today is Stage N.": the 2026 event runs Stages 1-9 after the Trophy Run (REG I.A), so day seed n is Stage ((n - 1) mod 9) + 1
     });
   }
 
@@ -291,18 +296,23 @@ class Generator {
   private emitLegs(count: number, o: { firstIsStop: boolean; lastOfStage: boolean; afterTransit: boolean }): void {
     const p = this.profile; const forceNoPause = !!p.noPauseTraps;
     const fzLeg = count > 1 && this.r.chance(p.freeZoneProbability ?? 0) ? this.r.int(0, count - 1) : -1;
+    // GEN-017 (REG Example #31-33): in the afternoon portion of a day stage, now and then a "take exactly" transit sits between two legs
+    const exactAfter = p.skeleton === 'day' && o.lastOfStage && count >= 2 && this.v4Rng.chance(0.6) ? 0 : -1;
+    let transitBefore = o.afterTransit;
     for (let k = 0; k < count; k++) {
       const leg = ++this.legCounter; const n = this.perLeg[leg - 1]!;
       const lastLeg = o.lastOfStage && k === count - 1;
       const items = this.planLeg(n, { firstIsStop: o.firstIsStop && k === 0, forceMissingPause: forceNoPause && leg === 1, calmTail: lastLeg });
       this.forceAfterStop = k === count - 1;
-      const cp = this.chooseCheckpoint(items, lastLeg, k === 0 && o.afterTransit ? this.freeZoneFtAfterTransit : 0);
+      const cp = this.chooseCheckpoint(items, lastLeg, transitBefore ? this.freeZoneFtAfterTransit : 0);
+      transitBefore = false;
       if (k === fzLeg) this.addFreeZone(items, cp);
       this.emitLeg(items, cp);
       const lastAt = items[items.length - 1]!.at;
       let v = this.legStartSpeed; for (const it of items) { if (it.at > cp.at) break; if (it.ins) v = it.speedAfter; }
       this.carrySpeed = v;
       this.carry = items.filter(it => it.at > cp.at).map(it => ({ ...it, at: it.at - lastAt, slow: it.slow ? { ...it.slow, at: it.slow.at - lastAt } : undefined }));
+      if (k === exactAfter) { this.emitExactTransit(); this.carry = []; transitBefore = true; }
     }
     this.carry = []; // the end of a timed portion re-anchors the clock: no debt carries over
   }
@@ -319,6 +329,25 @@ class Generator {
     const [a, b] = this.r.pick(pairs);
     a.ins = { ...a.ins!, freeZone: 'begin' }; b.ins = { ...b.ins!, freeZone: 'end' };
     this.tags.push(`freezone:${this.lineNo + items.filter(i => i.ins && i.at <= a.at).length + 1}`);
+  }
+
+  /**
+   * GEN-017 (REG Example #31-33): a mid-stage transit to "take exactly" N minutes: Begin Transit (the interval printed plain), a turn at a blinker on the way with
+   * its "(0m45s)" guide, End Transit at a sign where the team leaves IN + N minutes and the next assigned speed begins. The pace is generous (a 30 mph car arrives early and waits).
+   */
+  private emitExactTransit(): void {
+    const b = this.b, r = this.v4Rng;
+    b.advanceFt(milesToFt(0.3));
+    const miles = r.int(30, 60) / 10; const secs = Math.ceil(miles / 30 * 60) * 60 + 120;
+    b.transit({ exact: true, seconds: secs, miles });
+    b.advanceMiles(miles * 0.85);
+    const d = r.pick(['L', 'R'] as const);
+    this.instruction({ control: 'BLINKER', exits: EXITS.tee(d), sightDistance: 600, label: 'T' }, { turn: d });
+    b.advanceMiles(miles * 0.15);
+    this.speed = this.r.pick(RURAL_SPEEDS.filter(v => v <= 40));
+    b.endTransit({ speed: this.speed });
+    this.tags.push(`transit:exact:mid:${b.lineCount}`);
+    this.freeZoneFtAfterTransit = Math.ceil(120 * mphToFps(this.speed)) + 400;
   }
 
   // ---------- lunch transit (STAGE-001 / STAGE-005) ----------
@@ -343,12 +372,21 @@ class Generator {
     this.instruction({ sign: { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect', side: 'R' }, sightDistance: 500 }, {});
     b.advanceMiles(m1 * 0.5);
     b.promotedStop('meal', leadMeal, { noHost: this.cosRng.chance(0.25) });
-    const restMiles = withRest ? 0.4 : 0;
     b.advanceMiles(m2 * 0.5);
     this.instruction({ exits: EXITS.sideRoad('R', { route: 'turn' }), sightDistance: 600, label: 'side road R' }, { turn: 'R' });
-    b.advanceMiles(m2 * 0.5 - restMiles - 0.3);
-    if (withRest) { b.promotedStop('rest', 180); b.advanceMiles(restMiles); }
-    b.advanceMiles(0.3);
+    // ENG-027 (11a, the 2014 lunch transit): the time left to the end of the transit is printed as a ladder, (10m00s), (8m00s), (3m00s), (0m30s), on rows after the meal stop,
+    // placed at the pace from the meal departure (leave 45 minutes prior over the m2 miles); a rest stop ("leave 3 minutes prior") stands in for the 3-minute rung
+    const before = (sec: number): number => m2 * sec / leadMeal;   // miles before the end of the transit at that time left
+    const rungs: { left: number; spec: () => void }[] = [
+      { left: 600, spec: () => this.instruction({ sign: { text: `${this.cosRng.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect', side: 'R' }, sightDistance: 500 }, { transitCountdown: 600 }) },
+      { left: 480, spec: () => this.instruction({ label: this.cosRng.pick(LANDMARKS), sightDistance: 500 }, { transitCountdown: 480 }) },
+      { left: 180, spec: () => (withRest ? b.promotedStop('rest', 180) : this.instruction({ label: this.cosRng.pick(LANDMARKS), sightDistance: 500 }, { transitCountdown: 180 })) },
+      { left: 30, spec: () => this.instruction({ sign: { text: 'STOP AHEAD', shape: 'stop-ahead', side: 'R' }, sightDistance: 400 }, { transitGuide: 30 }) },
+    ];
+    let pos = m2 * 0.5;   // miles before the end, where the side road R row sits
+    for (const g of rungs) { const at = before(g.left); b.advanceMiles(Math.max(0.05, pos - at)); pos = Math.min(pos, at); g.spec(); }
+    b.advanceMiles(Math.max(0.05, pos));
+    this.tags.push('lunch:ladder');
     const base = Math.ceil((tEnd + L) / 60) * 60 - b.opts.asp * 60;
     this.speed = r.pick(TOWN_SPEEDS);
     b.restart(this.speed, base);
@@ -414,6 +452,7 @@ class Generator {
       const built = this.buildLine(type, card, inTown, gap);
       if (!built) { i--; minNextGap = Math.max(minNextGap, gap + 300); continue; }
       gap = built.gap;
+      if (built.pre) gap = Math.max(gap, minNextGap + built.pre.offset + 50);   // GEN-016: the RR advance-sign row, too, stays clear of the previous timed segment
       // slow traffic on long rural segments, placed just after the previous instruction node
       let slow: Item['slow'] | undefined;
       if (this.profile.slowTraffic && !inTown && !calm && gap >= 7920 && this.r.chance(0.35) && this.speed >= 40) {
@@ -423,7 +462,7 @@ class Generator {
       // distractors (GEN-006): from the card, or a generic one with trapDensity probability
       const at = pos + gap;
       const d = card ? trapDistractorBefore(card, this.r) : (this.profile.trapDensity > 0 && this.r.chance(this.profile.trapDensity * 0.5) ? this.genericDistractor() : null);
-      if (d) {
+      if (d && !built.pre) {
         const prevAt = pos;
         let before = d.beforeFt;
         const minBefore = d.node.exits?.some(e => !e.isRoute && e.kind !== 'driveway' && e.kind !== 'lot' && e.kind !== 'private') ? 650 : 300;
@@ -436,6 +475,7 @@ class Generator {
       }
       const item: Item = { ...built.item, at, slow, speedAfter: built.speedAfter, town: inTown };
       if (item.trapId) { this.tags.push(`trap:${item.trapId}:${this.lineNo + this.countIns(items) + 1}`); }
+      if (built.pre) { items.push({ at: at - built.pre.offset, node: built.pre.node, ins: built.pre.ins, kind: 'speedSign', costAfter: AFTER.speed, needBefore: BEFORE.control, cost: COST.speed, speedAfter: built.pre.speedAfter, town: inTown }); this.tags.push(`rr:twoRow:${this.lineNo + this.countIns(items)}`); }
       items.push(item);
       // speed state
       this.speed = built.speedAfter;
@@ -513,7 +553,7 @@ class Generator {
   }
 
   /** Build one line's node/instruction. Returns null when the type cannot fit (caller retries with a longer gap). */
-  private buildLine(type: LineType, card: TrapCard | null, town: boolean, gap: number): { item: Omit<Item, 'at' | 'town' | 'speedAfter'>; gap: number; speedAfter: number; minNextGap: number } | null {
+  private buildLine(type: LineType, card: TrapCard | null, town: boolean, gap: number): { item: Omit<Item, 'at' | 'town' | 'speedAfter'>; gap: number; speedAfter: number; minNextGap: number; /** GEN-016: a row printed `offset` ft before this one (the RR advance sign) */ pre?: { offset: number; node: NodeSpec; ins: InsSpec; speedAfter: number } } | null {
     const r = this.r;
     let speedAfter = this.speed;
     let minNextGap = 500;
@@ -555,6 +595,8 @@ class Generator {
         const printPause = this.noPauseThisLeg >= 2 || r.chance(this.profile.pauseOnStopProbability ?? 1);
         if (!printPause) this.noPauseThisLeg++;
         const ins: InsSpec = { turn: dir, pause: printPause ? 15 : undefined, speed: speedAfter, hint: this.hintFor(gap, 'stop', undefined) };
+        // GEN-016 (REG Example #15 "0 MPH / 0m15s / 45 MPH"): a flashing-red blinker with a printed 15 s pause: the team stops as at a STOP sign
+        if (this.blinkers < 2 && this.v4Rng.chance(0.18)) { this.blinkers++; const bn: NodeSpec = { control: 'BLINKER', exits, sightDistance: 700, label: useTee ? 'T' : 'Blinker', fullStop: true }; return { item: { node: bn, ins: { ...ins, pause: 15 }, kind: 'stop', costAfter: AFTER.control, needBefore: BEFORE.control, cost: COST.stop }, gap, speedAfter, minNextGap }; }
         return { item: { node, ins, kind: 'stop', costAfter: AFTER.control, needBefore: BEFORE.control, cost: printPause ? COST.stop : COST.stopNoPause }, gap, speedAfter, minNextGap };
       }
       case 'signal': {
@@ -567,6 +609,15 @@ class Generator {
       }
       case 'rr': {
         speedAfter = r.chance(0.5) ? this.pickSpeed(town, false) : this.speed;
+        // GEN-016 (11b rows 102-103): the two-row railroad crossing: the round RR sign row with its approach speed, then the tracks row "0 MPH / 0m15s / 15 MPH"
+        if (this.rrPairs < 2 && this.v4Rng.chance(0.6)) {
+          this.rrPairs++; gap = Math.max(gap, 1300); const train = this.makeTrain();
+          const approach = this.speed > 20 ? 20 : this.speed;
+          const signNode: NodeSpec = { sign: { text: 'RR', shape: 'rr-advance', side: 'R' }, sightDistance: 600, label: 'RR advance sign' };
+          const tracks: NodeSpec = { kind: 'landmark', control: 'RR', sightDistance: 500, label: 'RR tracks', fullStop: true };
+          const pre = { offset: 450, node: signNode, ins: { ...(approach !== this.speed ? { speed: approach } : {}) } as InsSpec, speedAfter: approach };
+          return { item: { node: tracks, ins: { pause: 15, speed: 15 }, kind: 'rr', costAfter: AFTER.control, needBefore: BEFORE.control, cost: train?.hit ? COST.trainHit : COST.stop, train }, gap, speedAfter: 15, minNextGap, pre };
+        }
         const node: NodeSpec = { kind: 'landmark', control: 'RR', sign: { text: 'RR', shape: 'rr-advance', side: 'R' }, sightDistance: 700, label: 'RR crossing' };
         const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'rr', undefined) };
         const train = this.makeTrain();
@@ -589,10 +640,16 @@ class Generator {
       }
       case 'speedSign': {
         speedAfter = this.pickSpeed(town, true);
-        const s0 = town && r.chance(0.5) ? { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect' as const } : r.pick(SIGN_TEXTS);
+        let s0 = town && r.chance(0.5) ? { text: `${r.pick(TOWN_NAMES)} CITY LIMIT`, shape: 'rect' as SignShape } : r.pick(SIGN_TEXTS) as { text: string; shape: SignShape };
+        // GEN-015 (SPEED-001, REG VII.E.1.a): a town's school zone or congested area is a 15 (now and then 12) mph row
+        if (town && this.speed >= 20 && this.speed <= 30 && this.v4Rng.chance(0.2)) { speedAfter = this.v4Rng.chance(0.3) ? 12 : 15; s0 = speedAfter === 15 && this.v4Rng.chance(0.5) ? { text: 'SPEED LIMIT 15', shape: 'speedlimit' } : { text: this.v4Rng.pick(['SCHOOL ZONE', 'CONGESTED AREA', 'SLOW']), shape: 'rect' }; }
+        // GEN-015 (REG VII.E.1.c): now and then the posted limit sits at or below the assigned average speed; the team recovers the time before the checkpoint
+        const below = speedAfter >= 20 && this.v4Rng.chance(0.12);
+        if (below) s0 = { text: 'SPEED LIMIT', shape: 'speedlimit' };
         // GRIID-017: a "Speed Limit NN" sign posts the road's limit, which is NOT the assigned speed (the 2014 sheet shows Speed Limit 65 over an assigned 50): it is never below the
         // assigned speed, and is drawn from the cosmetic stream so the layout of the seed does not move. "Speed Limit NN AHEAD" warns of the same kind of limit.
-        const limit = Math.min(65, speedAfter + this.cosRng.pick([5, 10, 15]));
+        const up = this.cosRng.pick([5, 10, 15]);
+        const limit = s0.text === 'SPEED LIMIT 15' ? 15 : below ? Math.max(10, Math.floor(speedAfter / 5) * 5 - this.v4Rng.pick([0, 5])) : Math.min(65, Math.ceil((speedAfter + up) / 5) * 5);   // posted limits are multiples of 5 (never "53" over a 48)
         const s = s0.shape === 'speedlimit' ? { text: `SPEED LIMIT ${limit}`, shape: s0.shape } : s0.shape === 'speed-ahead' ? { text: `SPEED LIMIT ${limit} AHEAD`, shape: s0.shape } : s0.shape === 'business' ? { text: this.cosRng.pick(BUSINESS_SIGNS), shape: s0.shape } : s0;
         const node: NodeSpec = { sign: { text: s.text, shape: s.shape, side: r.chance(0.8) ? 'R' : 'L' }, sightDistance: 500 };
         const ins: InsSpec = { speed: speedAfter, hint: this.hintFor(gap, 'speedSign', undefined) };
@@ -612,16 +669,22 @@ class Generator {
         return { item: { node, ins, kind: 'landmarkSpeed', costAfter: AFTER.speed, needBefore: BEFORE.plain, cost: COST.speed }, gap, speedAfter, minNextGap };
       }
       case 'timed': {
-        const hold = this.pickSpeed(town, true);
-        const then = this.pickSpeedExcept(town, hold);
+        let hold = this.pickSpeed(town, true);
+        let then = this.pickSpeedExcept(town, hold);
         const seconds = town ? r.int(20, 40) : r.int(20, 90);
-        const reach = mphToFps(hold) * seconds;
+        // GEN-017 (REG Example #25 "1m12s / 40 MPH"): a delayed timed change: keep the speed in force for the interval, then change
+        const delayed = this.speed > 0 && this.v4Rng.chance(0.2);
+        if (delayed) { hold = this.speed; if (then === hold) then = this.pickSpeedExcept(town, hold); this.delayedTimed++; }
+        // GEN-017 (REG Example #14 "30 MPH / 0m36s / 45 MPH / 1m12s / 50 MPH"): a chained timed change
+        const chainStep = !delayed && this.v4Rng.chance(0.22) ? { seconds: this.v4Rng.int(20, town ? 40 : 75), thenSpeed: this.pickSpeedExcept(town, then) } : null;
+        if (chainStep) this.chains++;
+        const reach = mphToFps(hold) * seconds + (chainStep ? mphToFps(then) * chainStep.seconds : 0);
         minNextGap = Math.ceil(reach + 350);
-        speedAfter = then;
+        speedAfter = chainStep ? chainStep.thenSpeed : then;
         const lm = r.pick(LANDMARKS);
         const node: NodeSpec = { label: lm, sightDistance: 500 };
-        const timed = { holdSpeed: hold, seconds, thenSpeed: then };
-        const ins: InsSpec = { timed, speed: hold, hint: this.hintFor(gap, 'timed', undefined) };
+        const timed = { holdSpeed: hold, seconds, thenSpeed: then, ...(delayed ? { delayed: true } : {}), ...(chainStep ? { chain: [chainStep] } : {}) };
+        const ins: InsSpec = { timed, speed: delayed ? undefined : hold, hint: this.hintFor(gap, 'timed', undefined) };
         return { item: { node, ins, kind: 'timed', costAfter: Math.ceil(reach) + 600, needBefore: BEFORE.plain, cost: COST.timed }, gap, speedAfter, minNextGap };
       }
       case 'straight': {

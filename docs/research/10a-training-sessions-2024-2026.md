@@ -516,7 +516,7 @@ Navigator best practices
 | 2026 | 55:49 | Photos: picking up instructions; setting clocks at a parked car | Morning ritual context |
 | 2026 | 58:25 | Checkpoint photo on a long desert road | Checkpoint look |
 | 2026 | 73:54-75:26 | Sample page with five columns (instruction number, A, B, C, D) | Real GRIID layout |
-| 2026 | 75:26 | Page footer "page 1 of 26" | Page-count footer |
+| 2026 | 75:26 | Page footer "page 1 of 26" (spoken; the frame at 73:54 shows "Page 1 of 13") | Page-count footer |
 | 2026 | 76:59-77:29 | CAMEO instructions with playhouse start, dark arrow, toll booth, "turn into middle lane" in D | Sample of A/D coupling |
 | 2026 | 78:30-79:31 | Calibration cumulative table (7m19.7s) with Column D writing | Interval/cumulative format |
 | 2026 | 83:42-84:44 | End of calibration hourglass; total 28m43.2s | Official total and comparison |

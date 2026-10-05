@@ -81,7 +81,7 @@ describe('instrument discipline (WATCH-009)', () => {
     expect(sim.sc.book.find(i => i.calibrationStart)!.transit).toMatchObject({ exact: false, plain: true });
     // the generated day stage: its calibration start and finish transit are not exact either, so a clock-less run flags no transit IN
     const day = generateStage(1);
-    expect(day.book.filter(i => i.transit && !i.transit.end && i.transit.exact)).toEqual([]);
+    expect(day.book.filter(i => i.transit && !i.transit.end && i.transit.exact && !/take exactly/.test(i.text))).toEqual([]);   // GEN-017: only the mid-stage "take exactly" transit is exact
     expect(day.book.find(i => i.calibrationStart)!.transit!.exact).toBe(false);
   });
   it('WATCH-009 a pause or timed segment with no stopwatch start/lap within 2 s of its anchor is flagged; a lap at the anchor clears it', () => {

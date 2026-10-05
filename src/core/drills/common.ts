@@ -18,6 +18,16 @@ export function generatorHook(): GenHook { return gen; }
 /** Gold tier: a hidden car variant (ramps +-15%) so the printed Ford table is only approximately right and the player must measure. */
 export function goldCar(seed: number, base = FORD_1939): typeof FORD_1939 { const r = rng(seed * 7919 + 13); return { ...base, name: `${base.name} (this one)`, a0: base.a0 * (0.85 + 0.3 * r.next()), aDec: base.aDec * (0.85 + 0.3 * r.next()) }; }
 
+/**
+ * PT-11 N-D2: the D06 measuring car (Silver, Gold). It is far enough from the stock Ford that copying the Ford's chart cannot pass (accelerating and braking both
+ * 36-65 % stronger: a slower car would lose more than the 15 s pause at a stop and go, so at least half the cells differ by 15 % or more), and each retry of the seed (`attempt`) draws a new one, so the
+ * Debrief of one attempt is never the answer key of the next.
+ */
+export function d06Car(seed: number, attempt = 0, base = FORD_1939): typeof FORD_1939 {
+  const r = rng(`d06car:${seed}:${attempt}`); const f = 1.4 + 0.2 * r.next(); const g = f * (0.97 + 0.06 * r.next());
+  return { ...base, name: `${base.name} (this one)`, a0: base.a0 * f, aDec: base.aDec * g };
+}
+
 export function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3, 2, 1]): DrillTier[] {
   const drivers: DriverSpec[] = [DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE];
   const names = ['Bronze', 'Silver', 'Gold'];
@@ -40,9 +50,10 @@ export function bookStyleFor(aids: AidsConfig): 'race' | 'example' { return book
 const PACKARD_BRONZE = new Set(['D03', 'D06']);
 const HIDDEN_FORD: Record<string, number> = { D03: 2, D04: 2, D05: 2, D18: 2, D06: 1 };
 
-export function carFor(id: string, seed: number, tier: DrillTier): typeof FORD_1939 {
+export function carFor(id: string, seed: number, tier: DrillTier, attempt = 0): typeof FORD_1939 {
   if (PACKARD_BRONZE.has(id) && tier.name === 'Bronze') return PACKARD_1936;
   const hiddenFrom = HIDDEN_FORD[id]; const idx = ['Bronze', 'Silver', 'Gold'].indexOf(tier.name);
+  if (id === 'D06' && hiddenFrom !== undefined && idx >= hiddenFrom) return d06Car(seed, attempt);
   if (hiddenFrom !== undefined && idx >= hiddenFrom) return goldCar(seed);
   return FORD_1939;
 }

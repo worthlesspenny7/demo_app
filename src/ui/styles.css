@@ -260,6 +260,13 @@ tr.ace td { color: var(--ok); }
 .lesson .lesson-pre pre { margin: 0; padding: 10px 12px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; font-family: var(--mono); font-size: 13px; line-height: 1.5; overflow-x: auto; white-space: pre; }
 .lesson .lesson-table { font-size: 14px; }
 .lesson .lesson-table th, .lesson .lesson-table td { text-align: left; vertical-align: top; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+/* PLAY-048: the lesson's link to a Reference section, and the sections on the Reference page (same block styles as the lesson) */
+.lesson .lesson-ref { font-size: 14px; color: var(--muted); margin: 0 0 12px; } .lesson .lesson-ref a { font-weight: 700; }
+.ref-lesson { margin: 10px 0 16px; padding-top: 6px; border-top: 1px solid var(--line); } .ref-lesson h4 { margin: 4px 0; }
+.ref-lesson ul, .ref-lesson ol.lesson-list { padding-left: 22px; } .ref-lesson li { margin-bottom: 6px; }
+.ref-lesson .lesson-pre pre { margin: 0; padding: 10px 12px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; font-family: var(--mono); font-size: 13px; line-height: 1.5; overflow-x: auto; }
+.ref-lesson .lesson-table th, .ref-lesson .lesson-table td { text-align: left; vertical-align: top; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+.ref-lesson.ref-target { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
 .lesson .printcard { margin: 14px 0; padding: 12px 16px; border: 2px dashed var(--accent); border-radius: 10px; background: var(--panel-2); }
 .lesson .printcard ol { margin: 0 0 8px; padding-left: 22px; font-size: 16px; } .lesson .printcard li { margin-bottom: 4px; }
 /* PLAY-031: the driver's card prints alone on one page, black on white (the copy in #print-root is the only thing shown) */
@@ -268,6 +275,8 @@ tr.ace td { color: var(--ok); }
 @media print {
   html.print-card-only body > *:not(#print-root) { display: none !important; }
   html.print-card-only, html.print-card-only body { background: #fff !important; color: #000 !important; margin: 0; padding: 0; }
+  /* PT-11 N-D10: the page margin is painted with the root's canvas: a light colour scheme and white tokens, so "Background graphics" prints no dark frame */
+  html.print-card-only { color-scheme: light !important; --bg: #fff; --bg-2: #fff; --panel: #fff; --panel-2: #fff; --text: #000; --line: #fff; background-color: #fff !important; }
   html.print-card-only #print-root { display: block; }
   html.print-card-only #print-root .printcard { margin: 0; padding: 0; border: 0; background: #fff; color: #000; break-inside: avoid; }
   html.print-card-only #print-root .printcard h3 { color: #000 !important; font-size: 15pt; margin: 0 0 6pt; }
@@ -334,6 +343,7 @@ tr.ace td { color: var(--ok); }
 .simplechart thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
 .simplechart th, .simplechart td { border: 1px solid #111; padding: 0 4px; text-align: center; }
 .simplechart th.c-dec, .simplechart td.c-dec { color: #c8312b; } .simplechart th.c-acc, .simplechart td.c-acc { color: #1f7a3a; } .simplechart th.c-sg, .simplechart td.c-sg { color: #1d4fb8; } .simplechart th.c-ts, .simplechart td.c-ts { color: #b35a00; } .simplechart th.c-t15, .simplechart td.c-t15 { color: #7a2f9a; } .simplechart th.c-t20, .simplechart td.c-t20 { color: #1b2a63; }
+.simplechart th.c-lead, .simplechart td.c-lead { color: #0d6b6b; white-space: nowrap; }
 .simplechart tr.cur td, .simplechart tr.cur th { background: #fff3a8; font-weight: 800; }
 .simplechart-wrap .sc-note { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
 

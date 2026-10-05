@@ -41,9 +41,13 @@ export function launchPlan(yourTime: number, loss: number): LaunchPlan {
   const l = isNum(loss) && loss > 0 ? loss : 0;
   const minus = Math.max(0, Math.round(l));
   const launchTod = Math.floor(yourTime) - minus;
-  return { yourTime, loss: r1(l), minus, launchTod, text: `your time ${formatClock(yourTime)}, launch at ${formatClock(launchTod)} (minus ${minus} s)` };
+  return { yourTime, loss: r1(l), minus, launchTod, text: minus === 0 ? `your time ${formatClock(yourTime)}, launch ON that second` : `your time ${formatClock(yourTime)}, launch at ${formatClock(launchTod)} (minus ${minus} s)` };   // PT-11 N-D8: never "(minus 0 s)"
 }
 
+/** PT-11 N-D7: Silver prints no launch second: the card names the arithmetic (your time minus the standing-start loss, the simple chart's Acc) instead. */
+export function withheldLaunchText(plan: LaunchPlan, speed?: number | null): string {
+  return plan.minus === 0 ? `your time ${formatClock(plan.yourTime)}, launch ON that second` : `your time ${formatClock(plan.yourTime)}: launch early by the standing-start loss (simple chart, Acc at ${speed ?? 'your speed'}), to the whole second`;
+}
 /** The plan for a start or restart book line, from the car's chart (a); null when the line is not a start/restart with a time. */
 export function startLaunchFor(sc: Pick<Scenario, 'book' | 'car'> & { tags?: string[] }, line: number): LaunchPlan | null {
   const ins = sc.book[line - 1];
@@ -74,7 +78,7 @@ export const GO_HOLD_SECONDS = 2;
  * "About 30 seconds" warning, then a visible count whose last beat (GO) lands exactly on the launch second:
  * beat n starts at launch - n s, so the count reads 10 at launch - 10, 1 at launch - 1 and GO at the launch second.
  */
-export function startCount(now: number, launchTod: number | null | undefined): StartCountVm {
+export function startCount(now: number, launchTod: number | null | undefined, withheld = false): StartCountVm {
   const idle: StartCountVm = { active: false, phase: 'idle', secondsLeft: Number.POSITIVE_INFINITY, warning: false, banner: null, beat: null, beatText: null };
   if (!isNum(now) || !isNum(launchTod)) return idle;
   const left = r3(launchTod - now);
@@ -82,10 +86,10 @@ export function startCount(now: number, launchTod: number | null | undefined): S
   if (left <= -GO_HOLD_SECONDS) return { ...idle, phase: 'done', secondsLeft: left };
   if (left <= 0) return { active: true, phase: 'go', secondsLeft: left, warning: false, banner: null, beat: 0, beatText: 'GO' };
   const beat = Math.ceil(left - 1e-9);
-  if (left <= COUNT_FROM) return { active: true, phase: 'counting', secondsLeft: left, warning: true, banner: warningText(launchTod), beat, beatText: String(beat) };
-  return { active: true, phase: 'warning', secondsLeft: left, warning: true, banner: warningText(launchTod), beat: null, beatText: null };
+  if (left <= COUNT_FROM) return { active: true, phase: 'counting', secondsLeft: left, warning: true, banner: warningText(launchTod, withheld), beat, beatText: String(beat) };
+  return { active: true, phase: 'warning', secondsLeft: left, warning: true, banner: warningText(launchTod, withheld), beat: null, beatText: null };
 }
-function warningText(launchTod: number): string { return `About 30 seconds: tell the driver. Launch at ${formatClock(launchTod)}; the last count lands on that second.`; }
+function warningText(launchTod: number, withheld = false): string { return withheld ? 'About 30 seconds: tell the driver. The last count lands on your launch second.' : `About 30 seconds: tell the driver. Launch at ${formatClock(launchTod)}; the last count lands on that second.`; }
 const r3 = (x: number): number => Math.round(x * 1000) / 1000;
 
 // ---------- MAKEUP-001: the make-up options ----------

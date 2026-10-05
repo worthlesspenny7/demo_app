@@ -61,7 +61,7 @@ describe('Time Allowance (REG V.H)', () => {
 
   it('TA-002 requests are accepted only inside the window of a printed TA point; elsewhere or after 15m00s they are refused with the reason; the end-of-stage point needs the scorecard', () => {
     const sc = trainStage(); const sim = new Simulator(sc); const bot = silentBot(sim); startLikeOracle(sim);
-    const taIns = sc.book.find(i => i.taPoint)!; expect(taIns.taPoint).toEqual({ windowSeconds: 900, endOfStage: true });
+    const taIns = sc.book.find(i => i.taPoint)!; expect(taIns.taPoint).toEqual({ windowSeconds: 900, endOfStage: true, stage: 1 });   // ENG-028: the Stage the row prints
     expect(sc.book[sc.book.indexOf(taIns) - 1]!.endTimed).toBe(true); // the yellow box follows "End timed portion"
     expect(sim.observe().ta.hasTaPoints).toBe(true); expect(sim.observe().ta.windowOpen).toBe(false);
     sim.step(100); bot.onTick();

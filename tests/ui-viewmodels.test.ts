@@ -896,7 +896,9 @@ describe('UI-026 S at the finish and the turn-loss block', () => {
 });
 
 // ---------- teaching content: LESSON-001..005, CHART-004/005 wording, UI-033 ----------
-import { LESSONS, lessonText, type Lesson } from '../content/lessons.js';
+import { LESSONS, LESSON_REFERENCE, lessonWithReferenceText as lessonText, type Lesson } from '../content/lessons.js';
+/** PLAY-048: a lesson's blocks plus the Reference sections it links to */
+const withRefs = (l: Lesson): LessonBlock[] => [...l.body, ...l.body.flatMap(b => (typeof b === 'object' && 'ref' in b ? LESSON_REFERENCE.find(r => r.id === b.ref.id)?.blocks ?? [] : []))];   // PLAY-048: a lesson teaches what it links to on the Reference page
 import { PACKARD_CHARTS, PACKARD_LABEL, AGE_FACTOR_ROWS, PENALTY_ROWS, TA_STEPS, TA_PATTERN, COLUMN_C_ROWS, SPEED_CHANGE_ROWS, packardValue, ageFactorFor } from '../content/reference-data.js';
 import { STOPWATCH_NOTE, CLOCK_NOTE } from '../src/ui/screens/settings.js';
 import { DEFAULT_SETTINGS, loadSettings, saveSettings } from '../src/ui/state.js';
@@ -917,7 +919,7 @@ describe('LESSON-001 The Four S\'s', () => {
   it('LESSON-001 gives the TA rules in plain words with the farm-tractor example and the real penalties', () => {
     const t = lessonText(lesson('recovery'));   // PT-10: the TA procedure moved from lesson 1 into the recovery lesson (one line points to it)
     hasAll(t, ['What qualifies', 'What never does', 'multiples of 10 s', 'within 15 minutes', 'TA point', 'could have made up', TA_PATTERN, 'Delayed 0m45s by a farm tractor. Made up 0m25s. Request 0m20s.']);
-    expect(lessonText(lesson('four-s'))).toMatch(/Time allowances \(TA\): only a train blocking the route or an accident scene qualifies \(REG V\.H\.1\).*lesson "Early, late and the 10 % rule"/);
+    expect(lessonText(lesson('four-s'))).toMatch(/Time allowances \(TA\) are for outside delays such as a train blocking the route or an accident scene \(REG V\.H\.1\).*lesson "Early, late and the 10 % rule"/);   // ENG-028: "such as" (V.H.1)
     hasAll(lessonText(lesson('four-s')), ['1 s per second', '2 min late, 5 min early', 'Missed timing checkpoint', '3 min', 'More than 30 min', 'Failure to stop at a STOP sign', 'DNF']);
     const l = lesson('four-s'); expect(l.check.options[l.check.answer]).toMatch(/stay on course/);   // PLAY-032 (fix sprint PT-08): the check now tests the S priority; the TA arithmetic stays in the text
   });
@@ -936,7 +938,7 @@ describe('LESSON-002 Team protocol', () => {
     hasAll(t, ['Next: STOP sign, crossroad, turn right, 35 after.', 'Stopped', '3, 2, 1, GO', 'always ends a countdown with the word GO', 'HB Appendix B']);
     hasAll(t, ['crossroad', 'T', 'sideroad', 'Y', 'soft right curve', 'soft offset right curve', 'blinker', 'yield', 'comes quick']);
     hasAll(t, ['repeats back every turn and every speed', 'timed section', 'cross off each instruction', 'names the next sign before looking down', 'never pull up to a restart point before your minute', 'make up a loss as soon as it is safe', 'team errors only', 'the driver watches the road']);
-    const glossary = l.body.find((b): b is Extract<typeof b, { table: unknown }> => typeof b !== 'string' && 'table' in b)!;
+    const glossary = withRefs(l).find((b): b is Extract<typeof b, { table: unknown }> => typeof b !== 'string' && 'table' in b)!;
     expect(glossary.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['crossroad', 'T', 'sideroad', 'Y', 'soft right curve', 'soft offset right curve', 'blinker', 'yield', 'comes quick']));
   });
   it('LESSON-002 PLAY-011 EDU-007 carries a printable card for the driver of twelve lines: who says "I see it" / "I see it too", the start routine, and rule 6 launches early by the start loss', () => {
@@ -1072,7 +1074,7 @@ describe('LESSON-006 Which timer, when', () => {
   });
   it('LESSON-006 has a situation / device / what-you-write-down table and a worked calibration-lap example against the box', () => {
     const l = lesson('which-timer');
-    const tab = l.body.find((b): b is Extract<typeof b, { table: { head: string[] } }> => typeof b !== 'string' && 'table' in b)!;
+    const tab = withRefs(l).find((b): b is Extract<typeof b, { table: { head: string[] } }> => typeof b !== 'string' && 'table' in b)!;
     expect(tab.table.head).toEqual(['Situation', 'Device', 'What you write down']);
     for (const r of tab.table.rows) expect(r).toHaveLength(3);
     expect(tab.table.rows.map(r => r[0])).toEqual(expect.arrayContaining(['Start or restart', 'Exact transit', 'TA window (15 min)', 'Calibration run', 'Timed speed change', 'Pause', '10 % make-up count']));
@@ -1234,7 +1236,7 @@ describe('UI-030 the three handbook charts as IN x OUT grids with the current pa
 
 describe('UI-031 TA point screen', () => {
   it('UI-031 at an open TA window the form lists the eligible legs with measured delay, recoverable and suggested from sim.taAdvice, and the window counts down from 15 minutes', () => {
-    const sim = stageAtTaWindow(6); const ta = sim.observe({ peek: true }).ta;
+    const sim = stageAtTaWindow(21); const ta = sim.observe({ peek: true }).ta;   // realism v4 (GEN-015..017) moved the layouts: seed 21 is the day whose leg 3 holds a qualifying delay
     expect(ta.windowOpen).toBe(true);
     const vm = taFormVm(ta, l => sim.taAdvice(l));
     expect(vm.visible).toBe(true); expect(vm.endOfStage).toBe(false); expect(vm.countdown).toBe('15:00'); expect(vm.legs.map(l => l.legIndex)).toEqual(ta.eligibleLegs);
@@ -1257,7 +1259,7 @@ describe('UI-031 TA point screen', () => {
     expect(windowClock(900)).toBe('15:00'); expect(windowClock(59.2)).toBe('1:00'); expect(windowClock(null)).toBe('--:--');
   });
   it('UI-031 the end-of-stage TA point offers the scorecard acknowledgement and the debrief shows each request with status, adjusted amount and reason', () => {
-    const sim = new Simulator(generateStage(6), { watch: 'digital' }); const bot = new OracleBot(sim);
+    const sim = new Simulator(generateStage(21), { watch: 'digital' }); const bot = new OracleBot(sim);
     let filed = false;
     for (let n = 0; n < 3_000_000 && sim.phase !== 'finished'; n++) {
       bot.onTick(); sim.step(0.1);

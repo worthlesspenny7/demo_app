@@ -13,6 +13,8 @@ export interface TaFormState {
   /** the leg to start on and what the engine suggests for it (lines, claim, cause) */
   first?: { legIndex: number; fromLine: number | null; toLine: number | null; suggested: number; cause: string | null } | null;
   carDefault: string;
+  /** ENG-028: the Stage the TA row prints ("Today is Stage N."): the 2026 form shows it filled in (frame 2026-110m28s) */
+  stageDefault?: string;
   /** web: the login page has been passed */
   loggedIn: boolean;
   /** show the red end-of-stage button (the engine only accepts it at the end-of-stage TA point) and whether it has been pressed */
@@ -38,7 +40,7 @@ export function taWebHtml(st: TaFormState): string {
       <button id="ta-login" class="taweb-btn green" type="button">${esc(TA_WEB.login.button)}</button>
     </div>
     <div class="taweb-screen taweb-entry" id="ta-entry-screen"${st.loggedIn ? '' : ' hidden'}>
-      <div class="taweb-stage">${esc(TA_WEB.entry.stage)} <input id="ta-stage" type="number" min="0" step="1" value="${v(st, 'ta-stage')}"></div>
+      <div class="taweb-stage">${esc(TA_WEB.entry.stage)} <input id="ta-stage" type="number" min="0" step="1" value="${v(st, 'ta-stage', st.stageDefault ?? '')}"></div>
       <label class="taweb-row">${esc(TA_WEB.entry.leg)} <select id="ta-leg">${legOptions(st, 'Leg ')}</select></label>
       <div class="taweb-block"><div>${esc(TA_WEB.entry.between)}</div><div class="taweb-pair"><input id="ta-from" type="number" min="1" step="1" value="${v(st, 'ta-from', f?.fromLine != null ? String(f.fromLine) : '')}"> <b>${esc(TA_WEB.entry.and)}</b> <input id="ta-to" type="number" min="1" step="1" value="${v(st, 'ta-to', f?.toLine != null ? String(f.toLine) : '')}"></div></div>
       <div class="taweb-block"><div>${esc(TA_WEB.entry.allowance)}</div><div class="taweb-pair"><input id="ta-min" type="number" min="0" step="1" value="${v(st, 'ta-min', f ? minOf(claim) : '')}"> ${esc(TA_WEB.entry.minutes)} <input id="ta-sec" type="number" min="0" max="59" step="${TA_STEP}" value="${v(st, 'ta-sec', f ? secOf(claim) : '')}"> ${esc(TA_WEB.entry.seconds)}</div></div>
@@ -59,7 +61,7 @@ export function taPaperHtml(st: TaFormState): string {
   const w = (n: number): string => `<tr><td><input id="ta-w${n}-car" type="text" size="4" value="${v(st, `ta-w${n}-car`)}"></td><td><input id="ta-w${n}-name" type="text" value="${v(st, `ta-w${n}-name`)}"></td><td>${role(`ta-w${n}-role`)}</td></tr>`;
   const type = st.draft['ta-type'] ?? 'time-allowance';
   return `<div class="tapaper" id="tapaper">
-    <div class="tapaper-top"><label>Car # <input id="ta-car" type="text" inputmode="numeric" size="4" value="${v(st, 'ta-car', st.carDefault)}"></label> <label>Stage # <input id="ta-stage" type="number" min="0" step="1" value="${v(st, 'ta-stage')}"></label> <label>Leg # <select id="ta-leg">${legOptions(st, '')}</select></label></div>
+    <div class="tapaper-top"><label>Car # <input id="ta-car" type="text" inputmode="numeric" size="4" value="${v(st, 'ta-car', st.carDefault)}"></label> <label>Stage # <input id="ta-stage" type="number" min="0" step="1" value="${v(st, 'ta-stage', st.stageDefault ?? '')}"></label> <label>Leg # <select id="ta-leg">${legOptions(st, '')}</select></label></div>
     <p class="tapaper-intro">${esc(TA_PAPER.intro)}</p>
     <fieldset class="tapaper-types" id="ta-types">${TA_PAPER.types.map(t => `<label><input type="radio" name="ta-type" value="${t.id}"${type === t.id ? ' checked' : ''}> ${esc(t.label)}</label>`).join('')}</fieldset>
     <p>${esc(TA_PAPER.conditions)} <input id="ta-from" type="number" min="1" step="1" size="4" value="${v(st, 'ta-from', f?.fromLine != null ? String(f.fromLine) : '')}"> and # <input id="ta-to" type="number" min="1" step="1" size="4" value="${v(st, 'ta-to', f?.toLine != null ? String(f.toLine) : '')}">.</p>

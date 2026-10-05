@@ -52,18 +52,20 @@ test('PLAY-026 "Fast-forward" on the D16 full start stops 45 s before the launch
   await expect(page.locator('#driverlog')).toContainText('Give me about 30 seconds before we go');
 });
 
-test('PLAY-027 D06 chart notes from the last run of the seed are kept on a retry', async ({ page }) => {
+test('PLAY-027 PLAY-043 D06 chart notes from the last run of the seed are kept on a Bronze retry; a Silver retry is a new hidden car with no notes carried over', async ({ page }) => {
   await page.goto('/#/settings');
-  await page.evaluate(([k, v]) => localStorage.setItem(k!, v!), [CHART_NOTES_KEY, JSON.stringify({ 'D06:1:1': ['stopgo 30>40 = 8.4', 'turn 40>35 = 4.0'] })]);
-  await page.goto('/#/cockpit/drill/D06/1/1'); await expect(page.locator('#cockpit')).toBeVisible();
+  await page.evaluate(([k, v]) => localStorage.setItem(k!, v!), [CHART_NOTES_KEY, JSON.stringify({ 'D06:0:1': ['stopgo 30>40 = 8.4', 'turn 40>35 = 4.0'], 'D06:1:1': ['stopgo 30>40 = 8.4'] })]);
+  await page.goto('/#/cockpit/drill/D06/0/1'); await expect(page.locator('#cockpit')).toBeVisible();
   const notes = await page.evaluate(() => window.__rally!.observe().notes); expect(notes).toEqual(['stopgo 30>40 = 8.4', 'turn 40>35 = 4.0']);
   await expect(page.locator('#alert')).toContainText(/2 chart notes are kept from the last run of this seed/);
+  // PT-11 N-D2: Silver measures the car in front of it: the retry (attempt 2) draws a new hidden car and carries no notes
+  await page.goto('/#/cockpit/drill/D06/1/1/1'); await page.reload(); await expect(page.locator('#cockpit')).toBeVisible();
+  expect(await page.evaluate(() => window.__rally!.observe().notes)).toEqual([]); await expect(page.locator('#alert')).toContainText(/Attempt 2 of this seed: a new hidden car/);
 });
 
 test('PLAY-031 Dad\'s card prints on one page', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => { (window as unknown as { __printed: number }).__printed = ((window as unknown as { __printed?: number }).__printed ?? 0) + 1; }; });
-  await page.goto('/#/school/protocol');
-  await page.locator('#lesson-next-page').click();   // PT-10: the card is on page 2 of the lesson
+  await page.goto('/#/school/protocol');   // PT-11 (PLAY-048): one page again, the card on it
   const pagesOf = (b: Buffer): number => (b.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
   expect(pagesOf(await page.pdf({ format: 'Letter' }))).toBeGreaterThan(1);   // control: the whole lesson is several pages
   await page.locator('#print-card').click();

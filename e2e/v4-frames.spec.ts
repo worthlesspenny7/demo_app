@@ -39,7 +39,7 @@ test('CHART-007 the performance card shows the simple chart by default (12 speed
   const rows = page.locator('#simplechart-table tbody tr');
   await expect(rows).toHaveCount(12);
   expect(await page.locator('#simplechart-table tbody tr').evaluateAll(trs => trs.map(t => t.getAttribute('data-speed')))).toEqual(['55', '50', '48', '45', '40', '35', '30', '25', '20', '15', '12', '10']);
-  expect(await page.locator('#simplechart-table thead th').allInnerTexts()).toEqual(['SPEED', 'DEC', 'ACC', 'S/G', 'TS/G', 'T@15', 'T@20']);
+  expect(await page.locator('#simplechart-table thead th').allInnerTexts()).toEqual(['SPEED', 'DEC', 'ACC', 'S/G', 'TS/G', 'T@15', 'T@20', 'LEAD']);   // PT-11 N-D1: the Lead column
   // S/G = Dec + Acc, as printed
   const first = await rows.first().locator('td').allInnerTexts(); expect(Math.round((Number(first[0]) + Number(first[1])) * 10) / 10).toBeCloseTo(Number(first[2]), 1);
   await page.goto('/#/cockpit/drill/D18/0/1'); await expect(page.locator('#cockpit')).toBeVisible();
@@ -89,7 +89,7 @@ test('GRIID-015 GRIID-016 the book draws the CAMEO with its sign inside the cell
 });
 
 test('TAF-003 the classic paper Time Delay Form is filled in and handed in with the request type, status and the witness rows; a Formal Problem Resolution Request needs no allowance', async ({ page }) => {
-  await resumeAtFirstTaWindow(page, 6);
+  await resumeAtFirstTaWindow(page, 21);
   await page.locator('#ta-paper').check();
   await expect(page.locator('#tapaper')).toBeVisible();
   await page.locator('#ta-car').fill('99'); await page.locator('#ta-stage').fill('2');

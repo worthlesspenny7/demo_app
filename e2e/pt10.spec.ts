@@ -28,7 +28,7 @@ test('PLAY-033 D06 Silver and Gold hide the car\'s charts everywhere: the overla
     await expect(page.locator('.row .ann', { hasText: /card \d/ })).toHaveCount(0);
     const stopLine = await page.evaluate(() => window.__rally!.observe().book.find(i => i.pause)!.n);
     await page.evaluate(n => { window.__rally!.act({ type: 'line.set', n } as never); }, stopLine);
-    await expect(page.locator('#hidden-car-card')).toContainText(/Silver and Gold hide the car's numbers/); await expect(page.locator('#perfcard')).not.toContainText(/dwell \d|loss \d|Chart \(b\)/);
+    await expect(page.locator('#hidden-car-card')).toContainText(/No car numbers on this line/); await expect(page.locator('#perfcard')).toContainText(/Silver and Gold hide the car's numbers/); expect((await page.locator('#perfcard').innerText()).split("Your car's chart is what you measure today").length - 1).toBe(1);   // PT-11 N-D8: the sentence once await expect(page.locator('#perfcard')).not.toContainText(/dwell \d|loss \d|Chart \(b\)/);
   }
   await openDrill(page, 'D06', 0); await hold(page);
   await page.keyboard.press('c'); await expect(page.locator('#charts-overlay .charttable')).toHaveCount(3); await expect(page.locator('#charts-hidden')).toHaveCount(0); await page.keyboard.press('Escape');
@@ -57,10 +57,10 @@ test('PLAY-036 a lesson check shuffles its options each time it is drawn, and cl
 
 test('PLAY-037 the simple chart has a turning-stop column on a model car (D08 Bronze drives the Ford) and none on the Packard (D03 Bronze)', async ({ page }) => {
   await openDrill(page, 'D08', 0); await hold(page);
-  await expect(page.locator('#simplechart-table thead th')).toHaveText(['Speed', 'Dec', 'Acc', 'S/G', 'TS/G', 'T@15', 'T@20']);
+  await expect(page.locator('#simplechart-table thead th')).toHaveText(['Speed', 'Dec', 'Acc', 'S/G', 'TS/G', 'T@15', 'T@20', 'Lead']);   // PT-11 N-D1: the Lead column
   await expect(page.locator('#simplechart-table')).toHaveAttribute('id', 'simplechart-table'); await expect(page.locator('#simplechart')).toHaveAttribute('title', /TS\/G: a stop and go that turns 90 degrees/);
   await openDrill(page, 'D03', 0); await hold(page);
-  await expect(page.locator('#simplechart-table thead th')).toHaveText(['Speed', 'Dec', 'Acc', 'S/G', 'T@15']);
+  await expect(page.locator('#simplechart-table thead th')).toHaveText(['Speed', 'Dec', 'Acc', 'S/G', 'T@15', 'Lead']);   // PT-11 N-D1: the Lead column (the Packard too)
 });
 
 test('PLAY-038 a finished path\'s Next replays D18 at Silver, then D07 at Silver, then opens D11', async ({ page }) => {
@@ -87,13 +87,14 @@ test('PLAY-039 at Silver the perf card prints no dwell and no call times (it nam
   }
   await openDrill(page, 'D04', 1); await hold(page);
   const timedLine = await page.evaluate(() => window.__rally!.observe().book.find(i => i.timed)!.n); await page.evaluate(n => { window.__rally!.act({ type: 'line.set', n } as never); }, timedLine);
-  await expect(page.locator('#withheld-timed')).toContainText(/call \d+ at \d+ s minus the ramp lead/);
+  await expect(page.locator('#withheld-timed')).toContainText(/call \d+ at \d+ s minus the lead for \d+ → \d+ \(simple chart, Lead column, row \d+, [↑↓]\)/);   // PT-11 N-D1: never chart (a)
   await openDrill(page, 'D04', 0); await hold(page); await page.evaluate(n => { window.__rally!.act({ type: 'line.set', n } as never); }, timedLine);
   await expect(page.locator('#perfcard')).toContainText(/call \d+ at [\d.]+ s \(lead [\d.]+\)/);
 });
 
 test('PLAY-040 a long lesson is two pages (page 1, Next page, then the source, the check and the path button); D16 starts at 8x', async ({ page }) => {
-  await page.goto('/#/school/transits');
+  await page.goto('/#/school/transits'); await expect(page.locator('#lesson-next-page')).toHaveCount(0); await expect(page.locator('.lesson-ref a').first()).toHaveAttribute('href', /^#\/reference\/[a-z-]+$/);   // PT-11 (PLAY-048): one page, its lists on the Reference page
+  await page.goto('/#/school/recovery');
   await expect(page.locator('#lesson-pageno')).toHaveText('Page 1 of 2'); await expect(page.locator('#lesson-page-2')).toBeHidden(); await expect(page.locator('.quiz')).toBeHidden();
   await page.locator('#lesson-next-page').click(); await expect(page.locator('#lesson-pageno')).toHaveText('Page 2 of 2'); await expect(page.locator('#lesson-page-1')).toBeHidden(); await expect(page.locator('.quiz')).toBeVisible();
   await page.locator('#lesson-prev-page').click(); await expect(page.locator('#lesson-page-1')).toBeVisible();
@@ -121,7 +122,7 @@ test('PLAY-041 status line says Dad, the D03 keys say "digital watch: lap L", th
 
 test('PLAY-041 Dad\'s card prints on one page with 0.6 in margins at 13 pt', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => undefined; });
-  await page.goto('/#/school/protocol'); await page.locator('#lesson-next-page').click();
+  await page.goto('/#/school/protocol');   // PT-11 (PLAY-048): one page, the card on it
   const margin = await page.evaluate(() => { for (const sh of Array.from(document.styleSheets)) for (const r of Array.from(sh.cssRules)) if (r instanceof CSSPageRule) return r.style.margin; return null; });
   expect(margin).toBe('0.6in');
   await page.locator('#print-card').click(); await expect(page.locator('html')).toHaveClass(/print-card-only/);

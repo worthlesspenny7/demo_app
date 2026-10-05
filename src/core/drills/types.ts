@@ -20,7 +20,8 @@ export interface Drill {
   /** Approximate minutes of sim time per run. */
   minutes: number;
   /** Build a fresh scenario; `tier` picks aids/driver; `seed` makes runs reproducible/variable. */
-  scenario(seed: number, tier: number): Scenario;
+  /** PT-11 N-D2: `attempt` (D06 Silver / Gold) draws a new hidden car for each retry of the same seed; other drills ignore it. */
+  scenario(seed: number, tier: number, attempt?: number): Scenario;
   tiers: DrillTier[];
   /** Grade a finished run. */
   rubric(result: StageResult, scenario: Scenario): Rubric;

@@ -37,7 +37,7 @@ function route(): void {
       case 'cockpit': { const src = parseSource(parts.slice(1)); if (!src) { renderHome(view); break; } cleanup = renderCockpit(view, src); view.focus(); break; }
       case 'debrief': renderDebrief(view); break;
       case 'book': renderBookPage(view, parts.slice(1)); break;
-      case 'reference': renderReference(view); break;
+      case 'reference': renderReference(view, parts[1]); break;
       case 'settings': renderSettings(view); break;
       case 'campaign': {
         // N9: the campaign follows the D13 lock (D12 needs Silver/Gold stars like every other unlock)

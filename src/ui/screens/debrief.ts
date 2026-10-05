@@ -7,7 +7,7 @@ import { drawTimeline } from '../render/timeline.js';
 import { prepare, themeFromCss } from '../render/common.js';
 import { formatClock, formatSigned } from '../../core/units.js';
 import { allDrills } from '../../core/drills/index.js';
-import { app, el, escapeHtml, sourceHash, restoreLastRun } from '../state.js';
+import { app, el, escapeHtml, sourceHash, retrySource, restoreLastRun } from '../state.js';
 import { fmtMMSS } from '../viewmodels/book.js';
 import { debriefNext } from '../viewmodels/curriculum.js';
 import { scorecardViewModel } from '../viewmodels/scorecard.js';
@@ -36,7 +36,7 @@ export function renderDebrief(root: HTMLElement): void {
   page.append(head);
   // actions
   const actions = el('div', { style: 'display:flex;gap:8px;margin:14px 0' });
-  const retry = el('button', { class: 'primary', id: 'retry' }, 'Retry this run'); retry.onclick = () => { location.hash = sourceHash(run.source); };
+  const retry = el('button', { class: 'primary', id: 'retry' }, 'Retry this run'); retry.onclick = () => { location.hash = sourceHash(retrySource(run.source)); };   // PT-11 N-D2: a D06 measuring retry draws a new hidden car
   const next = el('button', { id: 'next' }, run.source.kind === 'drill' ? 'Next seed' : 'Next scenario'); next.onclick = () => { const s = run.source; location.hash = sourceHash({ ...s, seed: s.seed + 1 }); };
   const home = el('button', {}, 'Home'); home.onclick = () => { location.hash = '#/'; };
   actions.append(retry, next, home);

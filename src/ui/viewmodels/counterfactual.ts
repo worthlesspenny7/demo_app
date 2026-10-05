@@ -7,7 +7,7 @@
  */
 import { Simulator, type StageResult, type SimEvent, type SimOptions } from '../../core/sim.js';
 import type { Scenario, TurnDir } from '../../core/course.js';
-import { nodeById } from '../../core/course.js';
+import { nodeById, timedFinalSpeed } from '../../core/course.js';
 import { rampLead } from '../../core/perf-table.js';
 import { chartStopLoss } from './charts.js';
 import { formatSigned } from '../../core/units.js';
@@ -64,7 +64,7 @@ export function speedsByNode(sc: Scenario | null | undefined): Map<string, { vIn
     const vIn = v;
     if (ins.timed) v = ins.timed.holdSpeed; else if (typeof ins.speed === 'number') v = ins.speed;
     m.set(ins.nodeId, { vIn, vOut: v, line: ins.n, pause: num(ins.pause), turn: ins.turn });
-    if (ins.timed) v = ins.timed.thenSpeed;
+    if (ins.timed) v = timedFinalSpeed(ins.timed);
   }
   return m;
 }

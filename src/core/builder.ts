@@ -22,6 +22,7 @@ export interface NodeSpec {
   stopLineOffset?: number;
   label?: string;
   ramp?: boolean;
+  fullStop?: boolean;
 }
 export interface InsSpec {
   text?: string;
@@ -39,7 +40,9 @@ export interface InsSpec {
   transitGuide?: number;
   freeZone?: 'begin' | 'end';
   endTimed?: boolean;
-  taPoint?: { windowSeconds: number; endOfStage: boolean };
+  taPoint?: { windowSeconds: number; endOfStage: boolean; stage?: number };
+  /** ENG-027: an explicit advisory countdown on this row ("(10m00s)"), time left to the end of the transit */
+  transitCountdown?: number;
   promotedStop?: { kind: 'pit' | 'meal' | 'refuel' | 'rest'; leaveBeforeEndSeconds: number; noHost?: boolean };
   infoBox?: string;
   calibrationStart?: boolean;
@@ -58,6 +61,8 @@ export interface BuilderOptions {
   prereadSeconds?: number; excursionFt?: number; tags?: string[]; trafficWaitProbability?: number;
   /** PLAY-005: 'drill' = drill-sized start (no queue, no count; the car launches itself on the printed launch second). */
   startProcedure?: 'full' | 'drill';
+  /** ENG-028: the Stage number printed on the TA rows ("Today is Stage N."); default 1. */
+  stage?: number;
 }
 
 /** Standard exits for common intersections (angle: negative = left). */
@@ -162,9 +167,10 @@ export function describeInstruction(spec: InsSpec, node: NodeSpec, ctx: Describe
   if (spec.endTimed) parts.push('End timed portion. The timed portion of the stage resumes at the next restart, if there is one; otherwise, this is the end of the timed portion of the stage.');
   if (spec.taPoint) {
     const w = formatInterval(spec.taPoint.windowSeconds);
+    const stageSentence = spec.taPoint.stage !== undefined ? ` Today is Stage ${spec.taPoint.stage}.` : '';   // ENG-028: REG Example #18 / #36, frame 2026-110m28s
     parts.push(spec.taPoint.endOfStage
-      ? `Within ${w}, go to https://www.grscores.com/timeallowance. Submit your Time Allowance(s) for this afternoon's run, if any. Then, whether or not you submitted any Time Allowances today, click the red button at the bottom of the Time Allowance web page, so we can print your scorecard.`
-      : `Within ${w}, go to https://www.grscores.com/timeallowance. Submit your Time Allowance(s) for this morning's run, if any. If you have no Time Allowances, no action is required at this time.`);
+      ? `Within ${w}, go to https://www.grscores.com/timeallowance. Submit your Time Allowance(s) for this afternoon's run, if any.${stageSentence} Then, whether or not you submitted any Time Allowances today, click the red button at the bottom of the Time Allowance web page, so we can print your scorecard.`
+      : `Within ${w}, go to https://www.grscores.com/timeallowance. Submit your Time Allowance(s) for this morning's run, if any.${stageSentence} If you have no Time Allowances, no action is required at this time.`);
   }
   if (spec.infoBox !== undefined) parts.push(`Information Box: ${spec.infoBox}`);
   if (spec.section === 'finish') parts.push('Finish Line. End Stage. Stop at Observation Checkpoint.');
@@ -186,6 +192,8 @@ export function describeInstruction(spec: InsSpec, node: NodeSpec, ctx: Describe
     const t = spec.timed; const iv = intervalWords(t.seconds);
     if (t.delayed) parts.push(`${hasPause ? `Pause ${spec.pause} seconds, then continue` : 'Continue'} at the previous average speed (in this case ${mphWords(t.holdSpeed)}) for ${iv}, then change average speed to ${mphWords(t.thenSpeed)}.`);
     else parts.push(`${hasPause ? `Pause ${spec.pause} seconds, then begin` : 'Begin'} average speed of ${mphWords(t.holdSpeed)} ${hasPause ? '' : where}${hasPause ? '' : ' '}for ${iv}, then change average speed to ${mphWords(t.thenSpeed)}.`.replace(/\s+/g, ' '));
+    // GEN-017: a chained timed change (REG Example #14): "..., then 45 for 1m12s, then 50"
+    (t.chain ?? []).forEach((c, k) => parts.push(`Hold ${mphWords(k === 0 ? t.thenSpeed : t.chain![k - 1]!.thenSpeed)} for ${intervalWords(c.seconds)}, then change average speed to ${mphWords(c.thenSpeed)}.`));
   } else if (spec.speed !== undefined && !spec.transit) {
     if (spec.section === 'restart' || isStart) parts.push(`Begin average speed of ${mphWords(spec.speed)}.`);
     else if (hasPause) parts.push(`Pause ${spec.pause} seconds, then change average speed to ${mphWords(spec.speed)}.`);
@@ -236,8 +244,11 @@ export class ScenarioBuilder {
     };
     this.trafficWaitProbability = o.trafficWaitProbability ?? 0;
     this.startProcedure = o.startProcedure;
+    this.stageNo = Math.max(1, Math.floor(o.stage ?? 1));
   }
   private readonly startProcedure: 'full' | 'drill' | undefined;
+  /** ENG-028: the Stage number the TA rows print (default 1; a generated day stage N is Stage N). */
+  readonly stageNo: number;
 
   get position(): number { return this.s; }
   /** Number of instruction lines added so far. */
@@ -260,7 +271,7 @@ export class ScenarioBuilder {
 
   node(spec: NodeSpec): string {
     const id = `n${++this.nid}`;
-    this.nodes.push({ id, s: this.s, kind: spec.kind ?? (spec.exits ? 'intersection' : spec.sign ? 'sign' : 'landmark'), control: spec.control ?? 'none', exits: spec.exits, sign: spec.sign, sightDistance: spec.sightDistance ?? 600, stopLineOffset: spec.stopLineOffset, label: spec.label, ...(spec.ramp ? { ramp: true } : {}) });
+    this.nodes.push({ id, s: this.s, kind: spec.kind ?? (spec.exits ? 'intersection' : spec.sign ? 'sign' : 'landmark'), control: spec.control ?? 'none', exits: spec.exits, sign: spec.sign, sightDistance: spec.sightDistance ?? 600, stopLineOffset: spec.stopLineOffset, label: spec.label, ...(spec.ramp ? { ramp: true } : {}), ...(spec.fullStop ? { fullStop: true } : {}) });
     return id;
   }
 
@@ -277,11 +288,11 @@ export class ScenarioBuilder {
     const text = ins.text ?? describeInstruction(spec, node, ctx);
     this.book.push({
       n, nodeId: id, text, section, turn: ins.turn, speed: ins.speed, pause: ins.pause, timed: ins.timed, hint: remark, remark, restartTime: ins.restartTime, baseTime: ins.baseTime,
-      transit: ins.transit, ...(ins.transitGuide !== undefined ? { transitGuide: ins.transitGuide } : {}), freeZone: ins.freeZone, endTimed: ins.endTimed, taPoint: ins.taPoint, promotedStop: ins.promotedStop, calibrationStart: ins.calibrationStart, ...(ins.infoBox !== undefined ? { infoBox: ins.infoBox } : {}),
+      transit: ins.transit, ...(ins.transitGuide !== undefined ? { transitGuide: ins.transitGuide } : {}), ...(ins.transitCountdown !== undefined ? { transitCountdown: ins.transitCountdown } : {}), freeZone: ins.freeZone, endTimed: ins.endTimed, taPoint: ins.taPoint, promotedStop: ins.promotedStop, calibrationStart: ins.calibrationStart, ...(ins.infoBox !== undefined ? { infoBox: ins.infoBox } : {}),
       ...(ins.printed ? { printed: ins.printed } : {}), ...(ins.omitted ? { omitted: true } : {}),
     });
     this.meta.push({ spec, node, ctx, customText: ins.text !== undefined });
-    if (ins.timed) this.curSpeed = ins.timed.thenSpeed; else if (ins.speed !== undefined) this.curSpeed = ins.speed;
+    if (ins.timed) this.curSpeed = ins.timed.chain?.length ? ins.timed.chain[ins.timed.chain.length - 1]!.thenSpeed : ins.timed.thenSpeed; else if (ins.speed !== undefined) this.curSpeed = ins.speed;
     return this;
   }
 
@@ -318,6 +329,8 @@ export class ScenarioBuilder {
     const begin = this.book[o.idx]!; const t = begin.transit; if (!t || t.exact || t.end || !(t.seconds > 0)) return;
     this.markTransitCountdown(o.idx, o.s, t.seconds, endS);
     const prev = this.book[this.book.length - 1]!; if (!prev || prev.n <= begin.n || prev.transitGuide !== undefined || prev.restartTime !== undefined || prev.promotedStop) return;
+    // ENG-027 (realism v4 section 4.2): one time-left figure per row: the last row keeps its exact guide and drops a countdown rung that landed on it
+    if (prev.transitCountdown !== undefined) delete prev.transitCountdown;
     const prevS = this.nodes.find(n => n.id === prev.nodeId)?.s; if (prevS === undefined || !(endS > prevS) || !(endS > o.s)) return;
     const left = Math.round(t.seconds * (endS - prevS) / (endS - o.s) / 5) * 5;
     if (left >= 5 && left < t.seconds) prev.transitGuide = left;
@@ -329,6 +342,7 @@ export class ScenarioBuilder {
    */
   private markTransitCountdown(beginIdx: number, beginS: number, seconds: number, endS: number): void {
     if (!(endS > beginS)) return;
+    if (this.book.slice(beginIdx + 1).some(x => x.transitCountdown !== undefined)) return;   // ENG-027: an explicit ladder (the lunch transit) is the generator's
     const used = new Set<number>();
     for (const target of [600, 480, 180]) {
       if (seconds < target + 180) continue;
@@ -385,16 +399,20 @@ export class ScenarioBuilder {
     const gaps = o.gaps ?? Array.from({ length: n }, () => o.miles / n);
     const total = gaps.reduce((a, b) => a + b, 0);
     const official = Math.ceil(total * 3600 / speed / 60) * 60;
-    this.calibrationInfo = { officialSeconds: official, allowanceSeconds: official + (o.allowanceExtraSeconds ?? 120) };
+    const extra = o.allowanceExtraSeconds ?? 120;
+    this.calibrationInfo = { officialSeconds: official, allowanceSeconds: official + extra };
     this.sectionDefault = 'calibration';
+    // ENG-027 (REG Example #5 / #10, 2014 row 6): the start row prints the OFFICIAL time = the run time rounded up to the minute (25m17.8s -> 26m00s);
+    // the allowance beyond it rides on the transit after the last box (below), printed plain
     this.instruction({ sign: { text: 'CALIBRATION START', shape: 'rect', side: 'R' }, sightDistance: 500 },
-      { section: 'calibration', speed, calibrationStart: true, transit: { exact: false, plain: true, seconds: official + (o.allowanceExtraSeconds ?? 120), miles: Math.round(total * 10) / 10 } });
+      { section: 'calibration', speed, calibrationStart: true, transit: { exact: false, plain: true, seconds: official, miles: Math.round(total * 10) / 10 } });
     for (let k = 0; k < n; k++) {
       this.advanceMiles(gaps[k]!);
       const last = k === n - 1;
       const lm = o.landmarks?.[k];
       const node: NodeSpec = lm ? { label: lm, sightDistance: 500 } : { sign: { text: `CAL ${k + 1}`, shape: 'rect', side: 'R' }, sightDistance: 500 };
-      this.instruction(node, { section: 'calibration', transit: last && o.thenTransit ? { exact: o.thenTransit.exact ?? false, seconds: o.thenTransit.seconds } : undefined });
+      // ENG-027 (2014 row 18 "55m00s", REG #10 "Begin Transit ~4.5 miles, 9 minutes"): the transit after the last box is printed plain (no parentheses) and carries the allowance
+      this.instruction(node, { section: 'calibration', transit: last && o.thenTransit ? { exact: o.thenTransit.exact ?? false, ...(o.thenTransit.exact ? {} : { plain: true }), seconds: o.thenTransit.seconds + (o.thenTransit.exact ? 0 : extra) } : undefined });
       if (last && o.thenTransit) { this.markTransitOpen(); this.sectionDefault = 'transit'; }
     }
     if (!(n > 0 && o.thenTransit)) this.sectionDefault = undefined;
@@ -452,7 +470,7 @@ export class ScenarioBuilder {
     this.instruction({ sign: { text: 'END TIMED', shape: 'rect', side: 'R' }, sightDistance: 500 }, { endTimed: true, transit: o.transit ? { exact: o.transit.exact ?? false, ...(o.transit.plain ? { plain: true } : {}), seconds: o.transit.seconds, miles: o.transit.miles } : undefined });
     if (o.transit) { this.markTransitOpen(); this.sectionDefault = 'transit'; }
     this.advanceFt(100);
-    this.instruction({ kind: 'landmark', control: 'none', sightDistance: 300, label: 'Time Allowance point' }, { taPoint: { windowSeconds: o.windowSeconds ?? 900, endOfStage: o.endOfStage ?? false } });
+    this.instruction({ kind: 'landmark', control: 'none', sightDistance: 300, label: 'Time Allowance point' }, { taPoint: { windowSeconds: o.windowSeconds ?? 900, endOfStage: o.endOfStage ?? false, stage: this.stageNo } });
     return this;
   }
 

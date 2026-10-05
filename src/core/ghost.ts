@@ -84,12 +84,14 @@ export function buildGhost(sc: Scenario): GhostTable {
   let anchorTod = sc.startTime;      // ghost TOD of the current leg's anchor
   let officialGhostTod = sc.startTime; // ghost TOD of the most recent official anchor
   let resumeV = 0;                    // assigned speed in force before the current transit
-  let pending: { s: number; v: number } | null = null;
+  let pending: { s: number; v: number; rest?: { seconds: number; thenSpeed: number }[] } | null = null;
 
   const travelTo = (target: number): void => {
     while (pending && pending.s <= target) {
       if (v > 0) t += (pending.s - s) / v;
-      s = pending.s; v = pending.v; pending = null;
+      s = pending.s; v = pending.v; const rest = pending.rest; pending = null;
+      // GEN-017: a chained timed change ("30 MPH / 0m36s / 45 MPH / 1m12s / 50 MPH", REG Example #14): the next hold starts where the last one ended
+      if (rest && rest.length) pending = { s: s + v * rest[0]!.seconds, v: mphToFps(rest[0]!.thenSpeed), rest: rest.slice(1) };
       bps.push({ s, t, v });
     }
     if (target > s) { if (v > 0) t += (target - s) / v; s = target; }
@@ -119,7 +121,7 @@ export function buildGhost(sc: Scenario): GhostTable {
     if (ins.pause) { bps.push({ s, t, v }); t += ins.pause; changed = true; }
     if (ins.timed) {
       v = mphToFps(ins.timed.holdSpeed);
-      pending = { s: s + v * ins.timed.seconds, v: mphToFps(ins.timed.thenSpeed) };
+      pending = { s: s + v * ins.timed.seconds, v: mphToFps(ins.timed.thenSpeed), ...(ins.timed.chain?.length ? { rest: ins.timed.chain } : {}) };
       changed = true;
     } else if (ins.speed !== undefined) { v = mphToFps(ins.speed); changed = true; }
     else if ((ins.transit?.end || ins.restartTime !== undefined) && resumeV > 0) { v = resumeV; changed = true; }

@@ -99,7 +99,7 @@ describe('PLAY-034 D06 MARK lines give positive cells when followed literally; t
 describe('PLAY-035 the D09 red-light card says a red light is not a Time Allowance by default (REG V.H.1)', () => {
   it('PLAY-035 speed-at-signal: the tip and the right answer teach the 10 % rule; only a train or an accident scene qualifies; no card says a red light IS a Time Allowance', () => {
     const t = TRAPS.find(x => x.id === 'speed-at-signal')!; const q = TRAP_QUIZ['speed-at-signal']!;
-    expect(t.tip).toMatch(/A red light is not a Time Allowance by default: make it up with the 10 % rule; only a train or an accident scene qualifies \(REG V\.H\.1\)/);
+    expect(t.tip).toMatch(/A red light is not a Time Allowance by default: make it up with the 10 % rule; a TA is for delays such as a train or an accident scene \(REG V\.H\.1\)/);   // ENG-028 (realism v4 slip 1): V.H.1 gives examples ("such as"), not a closed list
     expect(q.right).toMatch(/make up a red with the 10 % rule/); expect(q.right).not.toMatch(/Time Allowance/); expect(q.wrong.join(' | ')).toMatch(/File a Time Allowance for any red light/);
     for (const c of TRAPS) expect(`${c.tip} ${TRAP_QUIZ[c.id]?.right ?? ''}`, c.id).not.toMatch(/red light is a Time Allowance/i);
   });
@@ -232,15 +232,15 @@ describe('PLAY-039 Silver replays are a real step: the card prints no dwell and 
         if (cs.stop) stops++; if (cs.timed) timed++; }
     }
     expect(stops).toBeGreaterThan(3); expect(timed).toBeGreaterThan(2);
-    const src = readFileSync('src/ui/screens/cockpit.ts', 'utf8'); expect(src).toMatch(/work the dwell out from the simple chart \(pause - Dec at/); expect(src).toMatch(/call \$\{card\.timed\.then\} at \$\{card\.timed\.seconds\} s minus the ramp lead/); expect(src).toMatch(/showTimes/);
+    const src = readFileSync('src/ui/screens/cockpit.ts', 'utf8'); expect(src).toMatch(/work the dwell out from the simple chart \(pause - Dec at/); expect(src).toMatch(/call \$\{card\.timed\.then\} at \$\{card\.timed\.seconds\} s minus the lead for/); expect(src).toMatch(/showTimes/);   // PT-11 N-D1: the Lead column, never chart (a)
   });
 });
 
 describe('PLAY-040 lighter evening one: the TA procedure leaves lesson 1, long lessons are two pages, D16 runs at 8x with the 45 s stop before the launch', () => {
-  const bodyWords = (b: LessonBlock): number => (typeof b === 'string' ? b : 'heading' in b ? b.heading : 'list' in b ? b.list.join(' ') : 'pre' in b ? b.pre.join(' ') : 'table' in b ? [...b.table.head, ...b.table.rows.flat()].join(' ') : [b.card.title, ...b.card.lines].join(' ')).split(/\s+/).length;
+  const bodyWords = (b: LessonBlock): number => (typeof b === 'string' ? b : 'heading' in b ? b.heading : 'list' in b ? b.list.join(' ') : 'pre' in b ? b.pre.join(' ') : 'table' in b ? [...b.table.head, ...b.table.rows.flat()].join(' ') : 'ref' in b ? b.ref.title : [b.card.title, ...b.card.lines].join(' ')).split(/\s+/).length;
   it('PLAY-040 lesson 1 keeps a one-line pointer; the TA list lives in the recovery lesson (qualifies, never, multiples of 10 s, the method, the pattern)', () => {
     const f = lessonText(LESSONS.find(l => l.id === 'four-s')!); const r = lessonText(LESSONS.find(l => l.id === 'recovery')!);
-    expect(f).toMatch(/Time allowances \(TA\): only a train blocking the route or an accident scene qualifies \(REG V\.H\.1\), never a red light or a wrong turn/);
+    expect(f).toMatch(/Time allowances \(TA\) are for outside delays such as a train blocking the route or an accident scene \(REG V\.H\.1\), never for a wrong turn or a breakdown; a red light is made up, not claimed/);   // ENG-028: V.H.1 gives examples ("such as")
     for (const p of ['What qualifies', 'What never does', 'multiples of 10 s', 'Delayed 0m45s by a farm tractor']) { expect(f, p).not.toContain(p); expect(r, p).toContain(p); }
     expect(f.split('\n').filter(x => /Time allowance|TA\b/.test(x) && !/^docs/.test(x)).length).toBeLessThanOrEqual(3);
     expect(LESSONS.find(l => l.id === 'four-s')!.body.reduce((a, b) => a + bodyWords(b), 0)).toBeLessThan(800);
@@ -252,7 +252,7 @@ describe('PLAY-040 lighter evening one: the TA procedure leaves lesson 1, long l
       expect(l.splitAt, l.id).toBeGreaterThan(0); expect(l.splitAt!).toBeLessThan(l.body.length);
       const p1 = l.body.slice(0, l.splitAt).reduce((a, b) => a + bodyWords(b), 0), p2 = total - p1; expect(p1, `${l.id} page 1`).toBeLessThanOrEqual(1250); expect(p2, `${l.id} page 2`).toBeLessThanOrEqual(1250);
     }
-    expect(['four-s', 'transits', 'protocol', 'recovery', 'rally-school'].filter(id => LESSONS.find(l => l.id === id)!.splitAt !== undefined)).toEqual(['transits', 'protocol', 'recovery', 'rally-school']);
+    expect(['four-s', 'transits', 'protocol', 'recovery', 'rally-school'].filter(id => LESSONS.find(l => l.id === id)!.splitAt !== undefined)).toEqual(['recovery', 'rally-school']);   // PT-11 (PLAY-048): transits and protocol moved their tables and lists to the Reference page and read as one page
     const src = readFileSync('src/ui/screens/school.ts', 'utf8'); expect(src).toMatch(/lesson-next-page/); expect(src).toMatch(/Page 1 of 2/); expect(src).toMatch(/rest\.append\(quiz\)/);
   });
   it('PLAY-040 D16 starts at 8x (its own default; other drills keep the setting, D01 / D03 stay at 1x) and a hold fast-forward stops 45 s before the launch, the same 45 s as the pre-read', () => {
@@ -300,7 +300,7 @@ describe('PLAY-041 text hygiene: D10, residual lines, lock chips, D03 keys, the 
     expect(card[7]).toBe('Do not move until the navigator says GO. If traffic blocks the car, say "keep counting" and the navigator counts on.'); expect(card[7]).not.toMatch(/0, 1, 2/);
     expect(card[10]).toBe('Green sign = timing checkpoint: just drive on. Never stop or slow to 5 mph or less in sight of it: 30 second penalty.'); expect(card[10]).not.toMatch(/\(30 s\)/);
     expect(card[16]).toBe('A Day-Glo "GR" sign overrides the book. A sign marked "I" means ignore it. "End Leg" means the leg is cancelled; drive on.'); expect(card[16]).not.toMatch(/"I" = ignore that sign/);
-    expect(card[19]).toBe('Phones off and out of reach from start to finish. The first use gets a warning, the next 10 seconds, then 1 minute.'); expect(card[19]).not.toMatch(/warning, then 10 s, then 1 min/);
+    expect(card[19]).toBe('Phones off and out of reach from start to finish. First use: a warning. Second use: 10 seconds. Third use: 1 minute.');   // PT-11 N-D10: line 20 rewritten expect(card[19]).not.toMatch(/warning, then 10 s, then 1 min/);
   });
   it('PLAY-041 the folded pre-read strip sits below the toolbar and its button cannot overlap the title (CSS)', () => {
     const css = readFileSync('src/ui/styles.css', 'utf8'); expect(css).toMatch(/\.preread\.collapsed \.preread-top \{[^}]*flex-wrap: nowrap/); expect(css).toMatch(/\.preread\.collapsed \.preread-top h2 \{[^}]*text-overflow: ellipsis/);
