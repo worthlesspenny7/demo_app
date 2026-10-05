@@ -261,3 +261,7 @@ Resumed on 9f9a21c after a container restart (the previous agent's 21 edited fil
 - Tests: tests/pt11-fixes.test.ts (17), tests/realism-v4.test.ts (10), tests/gen-v4-oracle-1/2.test.ts (50 seeds, about 65 s each in parallel), e2e/pt11.spec.ts (4). Changed with the reason in the test: CHART-006, CHART-007, PLAY-035/036/039/040/041, INST-001/ENG-004 (3.4.0), GEN-001, STAGE-006/007/009, DRILL-025, GRIID-011/017, GEN-009/010, SPEED-001, TA-002, WATCH-009, UI-031 (seed 21; layouts moved), LESSON-001/002/006 and EDU tests (rules found through the Reference links), e2e protocol/transits one page, Lead column headers, TA e2e seed 21.
 - Checks: tsc clean, 650 unit (was 621 at 3.3.0), build clean, 360/360 specs (was 348), 94 e2e (was 90).
 - Not done: N-D12 (D06 Bronze is still a full drive graded on copying); five bold "must" lines on Dad's card (PT-11 nit 4); realism v4 items 6 (timed change right after a stop or restart), 8-10 (place-name calibration signs, race-style book default, mid-skill bot, pace-car visibility); the exact transit prints no "(0m45s)" guide on its blinker row; PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14.
+
+## 2026-10-05 playtest cycle 3
+- Fix sprint PT-11/realism v4 landed (b5e02d3, ENGINE 3.4.0). PT-12 (5a9ef85): 46/55, 0 regressed, no wall on the path.
+  Fix sprint PT-12 launched (Opus).

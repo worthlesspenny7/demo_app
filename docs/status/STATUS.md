@@ -14,11 +14,12 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-05): PT-12 playability replay (Opus, read-only) on the fix-sprint PT-11/realism-v4 commit (650 unit,
-  94 e2e, 360/360, ENGINE 3.4.0). When it lands: commit the report; fix sprint if warranted; five checks; commit; push.
-  Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14; realism v4 items 6, 8-10 (place-name calibration
-  signs, race-style builtin default, mid-skill bot, pace-car visibility); D06 Bronze is a full drive graded on copying;
-  two of 50 generated days have one leg over 5 s (seeds 31, 38).
+- In flight (2026-10-05): fix sprint PT-12 (Opus) on 5a9ef85. PT-12 = 46/55, 0 regressed, path complete in ~5 h.
+  Fixing: posted limits enforced by the driver with a 'limit' bucket, train release keeps the pause row stop, chained
+  timed changes on card/next-call/debrief, Lead column for every pair, D06 retry car re-randomised, no compensation
+  advice on measuring runs, legal-rung TA helper shows only own laps, D06 Bronze under 10 min, last-runs stars, polish.
+  When it lands: five checks, commit, push, PT-13 replay. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10,
+  12-14; realism v4 items 6, 8-10; two of 50 generated days with one leg over 5 s (seeds 31, 38).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
