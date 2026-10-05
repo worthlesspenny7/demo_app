@@ -265,3 +265,23 @@ Resumed on 9f9a21c after a container restart (the previous agent's 21 edited fil
 ## 2026-10-05 playtest cycle 3
 - Fix sprint PT-11/realism v4 landed (b5e02d3, ENGINE 3.4.0). PT-12 (5a9ef85): 46/55, 0 regressed, no wall on the path.
   Fix sprint PT-12 launched (Opus).
+
+## 2026-10-05 Fix sprint PT-12 (docs/playtest/PT-12-playability-v3-4.md N-E1..N-E10 and top-10; stopped at the user's wrap-up request, nothing landed)
+One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85 re-verified: tsc clean, 650 unit (107 s).
+- Done: none of the ten top fixes. The wrap-up request came while N-E1 was still being analysed, before any code was edited. The tree is HEAD plus this entry and the STATUS line.
+- N-E1 analysis (for the next sprint): over 50 day seeds the generator emits 403 "SPEED LIMIT NN" rows. 108 of them are below the assigned speed. None of the zones is closed by a later row: zones run 0.4-50 mi, 121 of them cross a transit, lunch or restart, and 159 of the 295 "above" limits are later exceeded by an assigned speed. So capping the driver in the sim first needs the generator to bound every zone:
+  - close each below zone within the leg by turning a later sign-free or cosmetic-sign row into a "SPEED LIMIT >= assigned" row (no new rows, so line numbers do not move);
+  - raise or close an "above" limit before any assigned speed exceeds it;
+  - put the zone's loss into the item cost and exclude checkpoints inside the zone (costAfter).
+  Then: in the sim, cap targetTrue at the limit from the sign (braking before it) to the next speedlimit / "LEAVING ... CITY LIMIT" row, and add a 'limit' Bucket (sim, debrief BUCKETS / labels / colours / tip naming the 10 % rule and VII.E.1.c). Then the card and next-call line, the recovery-lesson sentence, and a re-check of the gen-v4-oracle tolerance.
+  - Files: src/core/generator/generate.ts planLeg/buildLine 'speedSign' (l.641-656), src/core/sim.ts driverStep (l.926) and currentBucket (l.831), src/ui/viewmodels/debrief.ts BUCKETS.
+  - Hand-built drills are unaffected: their "SPEED LIMIT NN" signs use shape 'rect' (builder.speedAtSign default), not 'speedlimit'.
+- Other notes for the next sprint:
+  - N-E2: release at sim.ts l.973 (`waitReason === 'train'` on a fullStop node should become a 'stop' wait with waitStartTod / dwellStart / pause anchor reset to the clear).
+  - N-E4: rampTime is not additive (the ramp ends within 0.15 ft/s of the target), so "add the rows" cannot be exact. Use an IN x OUT lead grid (chartLead per pair) that leadSource points to for pairs other than ±10 mph.
+  - N-E6: the strings are at debrief.ts l.418 (go-late bias) and sim.ts l.1472 (next-call "count the chart pause time").
+  - N-E10: the strings are at drills/index.ts l.27 (D03 Packard objective) and debrief.ts l.399 (driver wandered at |pct| >= 0.3).
+- Not done (all ten items, plus everything left over from the earlier lists): N-E1..N-E10, N-D12, Dad's five bold "must" lines; PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14; realism v4 items 6, 8-10.
+- Wrap-up (Josh: "leave a little capacity for after I play"). Fix sprint PT-12 stopped before any code change; its
+  N-E1 design notes are above. Final head: verified 3.4.0 build. Scores this weekend: playability 34.5 -> 46 /55,
+  realism 54 -> 59 /70, education tip accuracy 94 %. Next session starts from the HANDOFF block in STATUS.md.

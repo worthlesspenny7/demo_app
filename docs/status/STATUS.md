@@ -14,12 +14,13 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-05): fix sprint PT-12 (Opus) on 5a9ef85. PT-12 = 46/55, 0 regressed, path complete in ~5 h.
-  Fixing: posted limits enforced by the driver with a 'limit' bucket, train release keeps the pause row stop, chained
-  timed changes on card/next-call/debrief, Lead column for every pair, D06 retry car re-randomised, no compensation
-  advice on measuring runs, legal-rung TA helper shows only own laps, D06 Bronze under 10 min, last-runs stars, polish.
-  When it lands: five checks, commit, push, PT-13 replay. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10,
-  12-14; realism v4 items 6, 8-10; two of 50 generated days with one leg over 5 s (seeds 31, 38).
+- In flight: nothing. Session wrapped 2026-10-05 at Josh's request so he can play. Head = verified build (ENGINE
+  3.4.0; 650 unit, 94 e2e, 360/360 specs). README has the play guide.
+- Next session, in order: (1) PT-12's top-10 (docs/playtest/PT-12-playability-v3-4.md; the LOG entry 'Fix sprint
+  PT-12' has the N-E1 posted-limit design: the generator must end every limit zone before the driver can obey limits);
+  (2) whatever Josh reports from playing (drill, seed, tier from the Debrief); (3) his Ford measurements into the car
+  preset (Q12/Q22) and the 6 V / 12 V answer; (4) a PT-13 replay. Known not-done: PT-06 LOW 14, 20, 21, 25-27; PT-09
+  LOW 10, 12-14; realism v4 items 6, 8-10; two of 50 generated days with one leg over 5 s (seeds 31, 38).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
