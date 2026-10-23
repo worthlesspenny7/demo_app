@@ -115,7 +115,7 @@ export function renderReference(root: HTMLElement, sub?: string): void {
     ['Speed change at a landmark', 'REG VII.E.2: at a sign or landmark when the front tires come even with it; at an intersection, at the referenced sign if there is one, otherwise at the centre of the intersection or the apex of the turn. Handbook: split the speed change at the sign, crossing it at the midpoint speed. Be mid-ramp as the bumper passes it.'],
     ['Checkpoint', 'A hidden timing line; your crossing is recorded to the second and the next leg is timed from it. Never stop or travel 5 MPH or slower within sight of a Timing Checkpoint: 30 s (REG V.E.3.a).'],
     ['Observation checkpoint', 'A manned stop (typically the finish, where you also submit any Time Allowance Requests). Missing one costs 3 minutes, or DNF/FNS for the final one (REG V.E.2.c-d).'],
-    ['Time Allowance (TA)', 'Request the seconds a train or an accident held you (V.H.1; V.H.5\'s own example is a farm tractor), in multiples of 10 s, by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint; in 2026 the web form) at the TA point within the time it gives (REG V.H; see the TA procedure below). The committee denies time you could have made up. The measured delay is the time stopped plus the chart stop-and-go loss for your speeds (Time Delay Form [01:38], [04:44]; video, not in the documents). Never also make the same seconds up.'],
+    ['Time Allowance (TA)', 'Request the seconds a delay beyond your control held you: a train, an accident scene, a school bus, a farm tractor or combine you cannot pass, construction holding traffic (V.H.1; V.H.5\'s own example is a farm tractor; Time Delay Form [00:04], video); never a slow truck you can pass, a red light or traffic you can get around (RULE-031), in multiples of 10 s, by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint; in 2026 the web form) at the TA point within the time it gives (REG V.H; see the TA procedure below). The committee denies time you could have made up. The measured delay is the time stopped plus the chart stop-and-go loss for your speeds (Time Delay Form [01:38], [04:44]; video, not in the documents). Never also make the same seconds up.'],
     ['Ace', 'A checkpoint crossed at exactly the perfect second (error 0).'],
     ['Age factor', 'Raw seconds times a factor for the car\'s year: 0.845 for a 1939 car.'],
     ['Transit / free zone', 'A transit has no timing checkpoints and no assigned speed: a time for the passage (or a restart time at its end) is given, and transit times are part of the scoring time (glossary; REG V.B.2.c), so it is not scored but not untimed: an exact transit ("take exactly") must be left on IN + interval. A free zone has no timing checkpoint (section symbols in Column B).'],
@@ -132,7 +132,7 @@ export function renderReference(root: HTMLElement, sub?: string): void {
     ['Stop/start and speed-change losses are measured per car (performance table); teams subtract them from the printed pause ("34 not 36").', 'docs/research/07 §2.1-2.3; docs/research/03 §1.7'],
     ['Calibration run each morning: k = perfect / actual; indicated speed to hold = assigned / k; a 1 % error is about 9 s over 15 minutes.', 'docs/research/07 §3; DESIGN §12'],
     ['Recovery: 10 % over for 10x the delay or 20 % over for 5x (exact on the stopwatch: t = E x v / d); penalties are symmetric so never overshoot into early; stop correcting before likely checkpoint spots.', 'docs/research/03 §4.3; docs/research/07 §6'],
-    ['Time allowances are requested by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint), at the TA point, within the time it gives (15 minutes in the 2026 example), in multiples of 10 s, for delays beyond your control that V.H.1 names (a train, an accident); the committee denies time you could have made up.', 'docs/research/09 §14 (REG V.H); docs/research/08 §6'],
+    ['Time allowances are requested by the method printed in the day\'s instructions (web page, phone, or at the Observation Checkpoint), at the TA point, within the time it gives (15 minutes in the 2026 example), in multiples of 10 s, for delays beyond your control (V.H.1 names a train and an accident; V.H.5\'s example is a farm tractor; the Time Delay Form video adds a school bus, construction and a combine), not a slow truck you can pass, a red light or traffic you can get around; the committee denies time you could have made up.', 'docs/research/09 §14 (REG V.H); docs/research/08 §6'],
     ['Typical scores: champions about 1 s per leg; a normal rookie day is 20-46 s (Team Hagerty 34, 46 and 20 s; 13 s is the best rookie on record); well over 46 s is a blown day.', 'docs/research/06 §4; STATUS.md key facts'],
     ['Course following: dashed CAMEO lines are driveways/lots/unpaved/dead ends; spelling is supposed to be exact but there are no traps based on spelling, and a referenced sign may be quoted in whole or in part (REG VII.D); never go past the leading edge of an intersection you are unsure of.', 'docs/research/04 §2.2, §4; REQUIREMENTS P8'],
   ];
@@ -140,9 +140,24 @@ export function renderReference(root: HTMLElement, sub?: string): void {
   rules.append(rl, el('p', { class: 'cite' }, 'Penalty and Time Allowance values come from the 2026 Event Regulations (docs/research/09-event-regulations-2026.md, REG V.E and V.H); the tables below quote them with their rule numbers. The regulations list no penalty for starting late: the leg score is the penalty.'));
   g.append(spm, rec, pa, cam, gi, rules, ...regPanels(), lessonPanel(), longFormPanel());
   page.append(g);
+  if (narrowScreen()) phoneSections(g);
   root.replaceChildren(page);
   // PLAY-048: a lesson's "On the Reference page" link opens #/reference/<id> at its section
-  if (sub) { const t = (page.querySelector(`#ref-lesson-${CSS.escape(sub)}`) ?? page.querySelector(`#ref-${CSS.escape(sub)}`)) as HTMLElement | null; if (t) { t.classList.add('ref-target'); if (t instanceof HTMLDetailsElement) t.open = true; /* MOB-010: #/reference/long-<lesson id> opens that long form */ try { t.scrollIntoView({ block: 'start' }); } catch { /* jsdom */ } } }
+  if (sub) { const t = (page.querySelector(`#ref-lesson-${CSS.escape(sub)}`) ?? page.querySelector(`#ref-${CSS.escape(sub)}`)) as HTMLElement | null; if (t) { t.classList.add('ref-target'); if (t instanceof HTMLDetailsElement) t.open = true; for (let a = t.parentElement?.closest('details'); a; a = a.parentElement?.closest('details') ?? null) a.open = true; /* MOB-010: #/reference/long-<lesson id> opens that long form */ try { t.scrollIntoView({ block: 'start' }); } catch { /* jsdom */ } } }
+}
+
+/** PT-14 item 10 (BUG-10): a phone-width screen (the School and the Reference lay out as one column of collapsible sections there). */
+export function narrowScreen(): boolean { try { return typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 700px)').matches; } catch { return false; } }
+/** PT-14 item 10: on a phone each Reference panel becomes a collapsible section (closed; its heading is the tap target), in one column. */
+export function phoneSections(grid: HTMLElement): void {
+  grid.classList.add('ref-phone');
+  for (const p of [...grid.children] as HTMLElement[]) {
+    const head = p.firstElementChild; if (!p.classList.contains('panel') || !head || head.tagName !== 'H3') continue;
+    const d = el('details', { class: 'panel ref-sec', ...(p.id ? { id: p.id } : {}) }) as HTMLDetailsElement;
+    d.append(el('summary', { class: 'ref-sec-head' }, head));
+    while (p.firstChild) d.append(p.firstChild);
+    p.replaceWith(d);
+  }
 }
 
 /** PLAY-048: the tables, lists and worked examples the evening-one lessons link to (every rule kept, with its source). */

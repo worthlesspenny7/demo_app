@@ -12,7 +12,7 @@
  */
 import { SKILLS, type DecisionResponse, type Skill, type Verdict } from '../../core/decision/index.js';
 import { renderMobileHome } from './home.js';
-import { renderRun, view } from './run.js';
+import { renderRun, view, cardSeconds } from './run.js';
 import { renderRecap } from './recap.js';
 import { startRun, resumeRun, type RunRequest } from './engine.js';
 import { loadProgress, dailyState, dailySkills, saveProgress, clearUnfinished } from './progress.js';
@@ -124,7 +124,7 @@ function installHelpers(): void {
       return { screen, phase: screen === 'run' ? view.phase : screen, kind: d?.kind ?? null, id: d?.id ?? null, timing: d?.timing ?? null, options: d?.options?.map(o => o.id) ?? [], elapsed: d ? wallSeconds() - view.shownAt : 0, n: pos.n, of: pos.of, correct: (h?.verdicts ?? session.last?.result.verdicts ?? []).filter(v => v.correct).length, answered: (h?.verdicts ?? session.last?.result.verdicts ?? []).length };
     },
     oracle: () => (view.phase === 'decision' && view.decision && session.handle ? session.handle.oracle(view.decision) : null),
-    elapsed: () => (view.phase === 'decision' ? wallSeconds() - view.shownAt : 0),
+    elapsed: () => (view.phase === 'decision' ? cardSeconds() : 0),
     advance: (s: number) => { if (Number.isFinite(s) && s > 0) session.skew += s; },
     verdicts: () => [...(session.handle?.verdicts ?? session.last?.result.verdicts ?? [])],
     pwa: () => ({ ...pwaStatus }),

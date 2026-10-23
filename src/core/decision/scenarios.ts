@@ -41,6 +41,22 @@ export interface MicroScenario {
   maxPerKind?: number;
 }
 
+/** PT-14 N3: the sub-case a micro spec's `variant` picks for its kind (the rule card before the slot is the rule of this sub-case). */
+export function microSubcase(kind: DecisionKind, variant: number): string {
+  const v = ((variant % 12) + 12) % 12;
+  switch (kind) {
+    case 'preread': return (['turn', 'pause', 'speed'] as const)[v % 3]!;
+    case 'hazard': return (['truck', 'train', 'tractor', 'light'] as const)[v % 4]!;
+    case 'ta': return v % 2 === 0 ? 'train' : 'tractor';
+    case 'restart': return (['own', 'transitOut', 'base', 'own'] as const)[v % 4]!;
+    case 'clock': return (['minute', 'minute', 'second', 'interval'] as const)[v % 4]!;
+    case 'checkpoint': return (['green', 'red', 'carAhead'] as const)[v % 3]!;
+    case 'lost': return v % 2 === 1 ? 'detour' : 'deadEnd';
+    case 'makeup': return (['open', 'limit', 'timed', 'open'] as const)[v % 4]!;
+    default: return 'default';
+  }
+}
+
 const SIGNS = ['SPEED LIMIT', 'CURVE', 'BRIDGE', 'END ROAD WORK'];
 const LANDMARKS = ['bridge', 'water tower', 'church on R', 'grain elevator'];
 const SPEEDS = [25, 30, 35, 40, 45] as const;
@@ -78,7 +94,8 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
   switch (kind) {
     case 'pause': {
       const v = r.pick([25, 30, 35, 40, 45]); const b = builder(kind, seed, rung).start(v);
-      b.advanceMiles(0.35 + r.next() * 0.2).stop(r.pick(['S', 'L', 'R'] as const), r.pick([25, 30, 35, 40, 45]), { pause: r.pick([15, 15, 20, 30]) });
+      // PT-14 N7: 15-20 s rows (a 30 s row sat 25 s on one card)
+      b.advanceMiles(0.35 + r.next() * 0.2).stop(r.pick(['S', 'L', 'R'] as const), r.pick([25, 30, 35, 40, 45]), { pause: r.pick([15, 15, 20, 20]) });
       return one(close(b, 0.4 + r.next() * 0.2));
     }
     case 'speedChange': {
@@ -90,7 +107,7 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
     case 'timedStart': case 'watch': {
       // watch (MOB-053): the same timed line; the card comes after the lap at the sign and asks when the watch says to call
       const v = r.pick([30, 35]); const b = builder(kind, seed, rung).start(v);
-      const hold = r.pick([v, v - 5, v + 5]); const secs = r.int(kind === 'watch' ? 14 : 10, 25); const then = r.pick([hold + 10, hold - 5, hold + 5]);
+      const hold = r.pick([v, v - 5, v + 5]); const secs = kind === 'watch' ? r.int(14, 25) : r.int(10, 15); /* PT-14 N7: 10-15 s holds on the timed-start card */ const then = r.pick([hold + 10, hold - 5, hold + 5]);
       b.advanceMiles(0.45 + r.next() * 0.15).timedAt(r.pick(LANDMARKS), { holdSpeed: hold, seconds: secs, thenSpeed: then });
       b.advanceFt(Math.round(hold * 1.4667 * secs + 500));
       return one(close(b, 0.3));
@@ -113,8 +130,9 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
       // MOB-055: 0 green (do nothing), 1 the red GREAT RACE STOP board (stop), 2 green with a rally car ahead pulling off (do not follow it)
       const look = (['green', 'red', 'carAhead'] as const)[variant % 3]!;
       const b = builder(kind, seed, rung).start(r.pick([30, 35, 40]));
-      if (look === 'red') { b.advanceMiles(0.55 + r.next() * 0.2).checkpoint('observation', 450); return one(close(b, 0.45 + r.next() * 0.15), { hint: { checkpoint: look } }); }
-      b.advanceMiles(0.7 + r.next() * 0.3).checkpoint('timing', 450);
+      const sight = 50 * r.int(7, 13);   // PT-14 item 10: 350-650 ft, not always "450 ft ahead"
+      if (look === 'red') { b.advanceMiles(0.55 + r.next() * 0.2).checkpoint('observation', sight); return one(close(b, 0.45 + r.next() * 0.15), { hint: { checkpoint: look } }); }
+      b.advanceMiles(0.7 + r.next() * 0.3).checkpoint('timing', sight);
       return one(b.advanceMiles(0.25).finish().build(), { hint: { checkpoint: look } });
     }
     case 'lost': {

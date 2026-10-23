@@ -170,10 +170,10 @@ describe('MOB-005 Scheduler', () => {
     const p = emptyProgress(); p.meters.stayOnTime = { value: 0.85, correct: 20, total: 21, lastDay: '2026-10-22', passed: true };
     const passed = new Scheduler(['stayOnTime', 'recovery'], 9, p).plan();
     expect(passed.items.filter(i => i.type === 'rule').map(i => i.type === 'rule' ? i.card.skill : '')).toEqual(['recovery']);
-    // a card already seen is swapped for another card of the same skill when there is one
+    // PT-14 N3 (MOB-062): the card is the rule of the slot it stands before, seen or not (no swap for an unrelated card of the skill)
     const seen = emptyProgress(); const first = plan.items[0]!; if (first.type === 'rule') seen.rulesSeen = [first.card.id];
     const again = new Scheduler(['stayOnTime', 'recovery'], 9, seen).plan(); const c = again.items[0]!;
-    if (c.type === 'rule' && first.type === 'rule') expect(c.card.id).not.toBe(first.card.id);
+    if (c.type === 'rule' && first.type === 'rule') expect(c.card.id).toBe(first.card.id);
   });
   it('MOB-005 a missed skill comes back later in the same run, in the place of a planned card (the count stays)', () => {
     const run = new Scheduler([...SKILLS], 3).start();

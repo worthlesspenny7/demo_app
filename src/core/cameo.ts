@@ -95,7 +95,9 @@ export function wrapWords(text: string, maxChars: number): string[] {
 }
 
 const textEl = (x: number, y: number, s: string, size: number, opts: { anchor?: 'start' | 'middle' | 'end'; fill?: string; weight?: string; cls?: string } = {}): string =>
-  `<text${opts.cls ? ` class="${opts.cls}"` : ''} x="${f1(x)}" y="${f1(y)}" font-size="${size}" text-anchor="${opts.anchor ?? 'middle'}" font-weight="${opts.weight ?? '700'}" font-family="${FONT}" fill="${opts.fill ?? 'currentColor'}">${esc(s)}</text>`;
+  // PT-14 item 10 (BUG-15): the size is also an inline style, so a page rule such as the phone shell's ".mob * { font-size: 16px }" can never
+  // enlarge a CAMEO label through its icon or the arrow (CSS beats the font-size attribute; an inline style beats CSS)
+  `<text${opts.cls ? ` class="${opts.cls}"` : ''} x="${f1(x)}" y="${f1(y)}" font-size="${size}" style="font-size:${size}px" text-anchor="${opts.anchor ?? 'middle'}" font-weight="${opts.weight ?? '700'}" font-family="${FONT}" fill="${opts.fill ?? 'currentColor'}">${esc(s)}</text>`;
 
 // ---------- control glyphs (small, outlined, black and white) ----------
 

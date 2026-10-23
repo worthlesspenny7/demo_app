@@ -8,7 +8,6 @@
 import type { Scenario, Instruction, TurnDir, Hazard, Node } from '../course.js';
 import { nodeById, type Exit } from '../course.js';
 import { Simulator, turnWord, type StageResult } from '../sim.js';
-import { ghostTimeAt } from '../ghost.js';
 import { accelLoss, stopLoss, rampLead, chartLead } from '../perf-table.js';
 import { columnBSymbols, columnCLines, columnD, odometerBox, formatInterval, formatClockFace } from '../griid.js';
 import { signalIsRed, trainActive } from '../hazards.js';
@@ -33,6 +32,31 @@ function clip(s: string): string { const w = s.trim().split(/\s+/); return w.len
 /** Correct-answer tolerances for the timed kinds (seconds), after the drill rubrics: D03 (1 s legs), D16 (late > 2 s finding), D04 / D05 call errors. */
 export const TIMING_TOLERANCE: Record<'pause' | 'restart' | 'timedStart' | 'speedChange', number> = { pause: 1.0, restart: 1.0, timedStart: 1.3, speedChange: 1.3 };
 
+/** PT-14 N6: no card stays open longer than this many seconds of wall time; a hold whose last tap is later than HOLD_MAX_SECONDS is
+ *  shown compressed (the watch jumps to SKIP_LEAD_SECONDS before the tap). */
+export const WALL_MAX_SECONDS = 30;
+export const HOLD_MAX_SECONDS = 25;
+export const SKIP_LEAD_SECONDS = 5;
+/** Card seconds -> wall seconds on a card's timing (after a skip the card clock runs `to - at` ahead of the wall). */
+export function wallOf(t: Pick<TimingSpec, 'skip'>, cardSeconds: number): number { const k = t.skip; return k && cardSeconds >= k.to ? cardSeconds - (k.to - k.at) : k && cardSeconds > k.at ? k.at : cardSeconds; }
+/** Wall seconds -> card seconds (what the watch shows). */
+export function cardOf(t: Pick<TimingSpec, 'skip'>, wallSeconds: number): number { const k = t.skip; return k && wallSeconds >= k.at ? wallSeconds + (k.to - k.at) : wallSeconds; }
+/** The wall time the card may stay open (its timeout in wall seconds). */
+export function wallMaxOf(t: Pick<TimingSpec, 'skip' | 'maxSeconds'>): number { return wallOf(t, t.maxSeconds); }
+/** PT-14 N6: compress a long hold and cap the card's open time at WALL_MAX_SECONDS of wall time. */
+export function fitWall(t: TimingSpec): TimingSpec {
+  const last = t.secondTapSeconds ?? t.truthSeconds;
+  let skip = t.skip;
+  if (!skip && last > HOLD_MAX_SECONDS) {
+    const at = r1(t.kind === 'startStop' ? t.truthSeconds + 2 : 3);
+    const to = r1(last - SKIP_LEAD_SECONDS);
+    if (to > at + 1) skip = { at, to, note: `Long hold: the watch skips ahead to ${SKIP_LEAD_SECONDS} s before the ${t.kind === 'startStop' ? 'CALL' : t.tapLabel}.` };
+  }
+  const jump = skip ? skip.to - skip.at : 0;
+  const maxSeconds = r1(Math.max(Math.min(t.maxSeconds, WALL_MAX_SECONDS + jump), last + t.toleranceSeconds + 2));
+  return { ...t, maxSeconds, ...(skip ? { skip } : {}) };
+}
+
 type Variant = string;
 interface Pending {
   d: Decision; key: string; tod0: number; pace0: number; oracle: DecisionResponse;
@@ -46,14 +70,16 @@ function dirForAngle(a: number): TurnDir { if (a <= -120) return 'AL'; if (a < -
 function hazardScene(h: Hazard, d: number, size: 'short' | 'long'): { scene: string; label: string } {
   const ft = `${Math.max(0, Math.round(d / 50) * 50)} ft`;
   switch (h.kind) {
-    case 'slow': return { scene: `A truck pulls out ${ft} ahead at ${h.speedMph} mph, no room to pass.`, label: 'Slow truck' };
-    case 'tractor': return size === 'long' ? { scene: `A tractor at ${h.speedMph} mph ${ft} ahead; no room to pass for miles.`, label: 'Tractor' } : { scene: `A tractor ${ft} ahead, blinker on for a field gate just ahead.`, label: 'Tractor' };
-    case 'combine': return { scene: `A combine ${ft} ahead fills the road.`, label: 'Combine' };
+    // PT-14 C-1: the scene says what RULE-031 decides on: a slow truck you can pass (not a cause), a farm tractor or combine you cannot pass,
+    // construction holding traffic, a school bus, a train, an accident scene (REG V.H.1, V.H.5; Time Delay Form [00:04])
+    case 'slow': return { scene: `A slow truck ${ft} ahead at ${h.speedMph} mph; you can pass it soon.`, label: 'Slow truck' };
+    case 'tractor': return size === 'long' ? { scene: `A farm tractor ${ft} ahead at ${h.speedMph} mph; you cannot pass for miles.`, label: 'Farm tractor' } : { scene: `A farm tractor ${ft} ahead is turning into a field gate.`, label: 'Farm tractor' };
+    case 'combine': return { scene: `A combine ${ft} ahead fills the road; you cannot pass it.`, label: 'Combine' };
     case 'train': return size === 'long' ? { scene: `Gates down ${ft} ahead: a long freight is just starting across.`, label: 'Crossing gates' } : { scene: `Gates down ${ft} ahead: the last cars are passing.`, label: 'Crossing gates' };
-    case 'signal': return { scene: `The signal ${ft} ahead has just turned red.`, label: 'Signal' };
+    case 'signal': return { scene: `The signal ${ft} ahead has just turned red.`, label: 'Red light' };
     case 'schoolBus': return { scene: `A school bus ${ft} ahead stops, red lights flashing.`, label: 'School bus' };
-    case 'construction': return { scene: `Road work ${ft} ahead: one lane, a flagger.`, label: 'Road work' };
-    case 'accident': return { scene: `An accident ${ft} ahead; people need help.`, label: 'Accident' };
+    case 'construction': return { scene: `Road work ${ft} ahead: one lane, a flagger holding traffic.`, label: 'Road work' };
+    case 'accident': return { scene: `An accident scene ${ft} ahead; people need help.`, label: 'Accident scene' };
   }
 }
 const CLOCK_OPTS = [{ id: 'tod', label: 'Watch, TOD mode' }, { id: 'chrono', label: 'Watch, chrono' }, { id: 'min', label: 'Clock minute hand' }, { id: 'sec', label: 'Clock second hand' }];
@@ -191,7 +217,21 @@ export class DecisionRunner {
   // ------------------------------------------------------------------ helpers
   private lead(key: string, lo: number, hi: number): number { return lo + rng(`${this.scenario.seed}:dp:${key}`).next() * (hi - lo); }
   private shuffle<T>(key: string, arr: T[]): T[] { const r = rng(`${this.scenario.seed}:opt:${key}`); const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r.next() * (i + 1)); [a[i], a[j]] = [a[j]!, a[i]!]; } return a; }
-  private ctx(extra: Partial<DecisionContext> = {}): DecisionContext { return { tod: this.sim.tod, elapsed: r1(this.sim.tod - this.scenario.startTime), ...extra }; }
+  private ctx(extra: Partial<DecisionContext> = {}): DecisionContext { return { tod: this.sim.tod, elapsed: r1(this.sim.tod - this.scenario.startTime), zone: this.scenario.timeZone, ...extra }; }
+  /** PT-14: one clock format on the card: 12-hour with the zone label in front, as Column C prints it ("CDT 9:31:50"). */
+  private clk(tod: number): string { return `${this.scenario.timeZone} ${clockStr(tod)}`; }
+  /** PT-14 N4: the right answer's rank among the option values is drawn uniformly (0 = smallest .. k - 1) and the distractors are taken
+   *  from plausible mistakes on each side (`below` / `above`, most plausible first); the shown order is shuffled. Returns the values. */
+  private ranked(key: string, truth: number, below: number[], above: number[], k: number, eq: (a: number, b: number) => boolean = (a, b) => a === b): number[] {
+    const r = rng(`${this.scenario.seed}:rank:${key}`);
+    const uniq = (xs: number[]): number[] => xs.filter((x, i) => !eq(x, truth) && xs.findIndex(y => eq(x, y)) === i);
+    const lo = uniq(below.filter(x => x < truth)); const hi = uniq(above.filter(x => x > truth));
+    const feasible = Array.from({ length: k }, (_, i) => i).filter(i => lo.length >= i && hi.length >= k - 1 - i);
+    const rank = feasible.length ? feasible[r.int(0, feasible.length - 1)]! : Math.min(lo.length, k - 1);
+    const pickN = (xs: number[], n: number): number[] => { const a = xs.slice(); const out: number[] = []; while (out.length < n && a.length) out.push(a.splice(r.int(0, Math.min(a.length, 3) - 1), 1)[0]!); return out; };
+    const vals = [...pickN(lo, rank), truth, ...pickN(hi, k - 1 - rank)];
+    return vals;
+  }
   private row(ins: Instruction | undefined): BookRowView | undefined {
     if (!ins) return undefined; const sc = this.scenario;
     const node = sc.course.nodes.find(nd => nd.id === ins.nodeId);
@@ -204,6 +244,7 @@ export class DecisionRunner {
   private chartAvail(): boolean { return this.rung >= 1; }
   private make(kind: DecisionKind, key: string, prompt: string, context: DecisionContext, extra: { options?: DecisionOption[]; timing?: TimingSpec; deadlineSeconds?: number }, oracle: DecisionResponse, x: Record<string, unknown> = {}): Pending {
     this.seen.add(key);
+    if (extra.timing) { extra = { ...extra, timing: fitWall(extra.timing) }; if (extra.timing!.skip) prompt = `${prompt} ${extra.timing!.skip.note}`; }
     const d: Decision = { id: `${kind}:${key.split(':').slice(1).join(':') || '0'}:${++this.n}`, kind, skill: SKILL_OF_KIND[kind], prompt: clip(prompt), context, ...extra };
     return { d, key, tod0: this.sim.tod, pace0: this.safePace(), oracle, x };
   }
@@ -264,9 +305,14 @@ export class DecisionRunner {
         const dwell = r1(chartDwell(sc, p)); ctx.speeds = { current: p.vIn, assigned: p.vIn, in: p.vIn, out: p.vOut }; ctx.times = { pauseSeconds: pause };
         // MOB-050: the pre-read chip is the LOSS to subtract (the pause card's chip is the time to SIT)
         if (this.chartAvail()) ctx.chart = { kind: 'stopGo', vIn: p.vIn, vOut: p.vOut, seconds: r1(stopLoss(p.vIn || p.vOut, p.vOut, sc.car, capFor(sc, ins.turn))), meaning: 'loss' };
-        const cands = [...new Set([dwell, pause, 0].map(r1))];
+        // PT-14 N4: the right wait is the smallest, the middle or the largest equally often (mistakes: go at once, the loss itself, the
+        // loss taken twice / the printed pause, the loss added)
+        const loss = r1(Math.max(0, pause - dwell));
+        const cands = this.ranked(key, dwell, [0, loss, r1(dwell - loss)].filter(x => x >= 0), [pause, r1(pause + loss), r1(dwell + 2 * loss)], 3, (a, b) => Math.abs(a - b) < 0.95);
         const opts = this.shuffle(key, cands).map(v => ({ id: `w${v}`, label: v === 0 ? 'Go at once' : `Wait ${v} s` }));
-        return this.make('preread', key, `Pre-read, line ${ins.n}: STOP, pause ${pause} s, in ${p.vIn}, out ${p.vOut}. How long do you sit?`, ctx, { options: opts }, { optionId: `w${dwell}` }, { what: 'pause', truth: dwell, ins, plan: p });
+        // PT-14 item 9: the loss the rule needs is on the card itself at rung 2
+        const lossTxt = this.showChart() ? `, loss ${loss.toFixed(1)} s` : '';
+        return this.make('preread', key, `Line ${ins.n}: pause ${pause} s, in ${p.vIn}, out ${p.vOut}${lossTxt}. How long do you sit?`, ctx, { options: opts }, { optionId: `w${dwell}` }, { what: 'pause', truth: dwell, ins, plan: p });
       }
       const v = speedCh!; ctx.speeds = { current: p.vIn, assigned: p.vIn };   // MOB-055: never the answer in a chip; Column C is the book
       const cands = [...new Set([v, p.vIn, v + 5 <= 55 ? v + 5 : v - 10, v - 5 >= 10 ? v - 5 : v + 10])].filter(x => x > 0).slice(0, 4);
@@ -321,9 +367,9 @@ export class DecisionRunner {
     ctx.clock = this.clockView();
     if (this.chartAvail() && what !== 'lunch') ctx.chart = { kind: 'accel', vIn: 0, vOut, seconds: netLoss, meaning: 'loss' };
     const name = what === 'start' ? 'Start' : what === 'lunch' ? 'Lunch departure' : what === 'transitOut' ? 'Transit OUT' : 'Restart';
-    const yours = byBase ? `base ${clockStr(base!)}, you start ${ordinal(asp)}` : `your time ${clockStr(own)}`;
+    const yours = byBase ? `base ${this.clk(base!)}, you start ${ordinal(asp)}` : `your time ${this.clk(own)}`;
     const prompt = what === 'lunch'
-      ? `${name}, line ${ins.n}: leave at ${clockStr(own)}. Tap LEAVE on that second.`
+      ? `${name}, line ${ins.n}: leave at ${this.clk(own)}. Tap LEAVE on that second.`
       : this.showChart()
         ? `${name}, line ${ins.n}: ${yours}; standing-start loss ${netLoss.toFixed(1)} s. Tap LAUNCH on the launch second.`
         : `${name}, line ${ins.n}: ${yours}. Lead by the standing-start loss; tap LAUNCH on the launch second.`;
@@ -366,9 +412,9 @@ export class DecisionRunner {
     if (to < 8) { this.seen.add(key); return null; }
     const h = sim.clock.hands(launch); const shown = Math.floor(h.minuteAngle / 6 + 1e-9) % 60; const misleading = shown !== h.minute;
     const ctx = this.ctx({ line, clock: this.clockView(), times: { launch } });
-    const at = clockStr(launch); const inS = Math.round(to / 5) * 5;
+    const at = this.clk(launch); const inS = Math.round(to / 5) * 5;
     const prompt = q === 'minute' ? `You launch at ${at}, in about ${inS} s. Where do you read the minute from?`
-      : q === 'second' ? `You launch at ${at}, in about ${inS} s, and you know the minute. What do you count the second in from?`
+      : q === 'second' ? `Launch at ${at}, in about ${inS} s; you know the minute. What do you count the second in from?`
         : `After the launch the book times an interval. What do you time it with?`;
     // the right instruments: the watch in TOD mode always gives the minute; the clock's minute hand only away from a minute change
     const good = q === 'minute' ? (atChange ? ['tod'] : ['tod', 'min']) : q === 'second' ? ['sec', 'tod'] : ['chrono'];
@@ -404,10 +450,11 @@ export class DecisionRunner {
       const t = p.ins.transit; if (!t || !t.exact || t.end) continue;
       const tin = sim.transitIn[p.ins.n]; const key = `transitOut:${p.ins.n}`; if (tin === undefined || this.seen.has(key)) continue;
       const out = tin + t.seconds; const endIns = this.scenario.book.find(i => i.n > p.ins.n && i.transit?.end);
-      const cands = this.shuffle(key, [out, out + 60, out - 60]);
+      // PT-14 N4: OUT is the earliest, the middle or the latest of the three equally often (mistakes: a minute carried wrong, 30 s or 10 s off)
+      const cands = this.shuffle(key, this.ranked(key, out, [out - 60, out - 30, out - 10], [out + 60, out + 30, out + 10], 3));
       const opts = cands.map(c => ({ id: `t${c}`, label: clockStr(c) }));
       const ctx = this.ctx({ line: p.ins.n, row: this.row(p.ins), times: { in: tin, intervalSeconds: t.seconds } });
-      return this.make('transitOut', key, `Exact transit, line ${p.ins.n}: IN ${clockStr(tin)}, take exactly ${formatInterval(t.seconds)}. What is your OUT time?`, ctx, { options: opts }, { optionId: `t${out}` }, { out, endIns });
+      return this.make('transitOut', key, `Exact transit, line ${p.ins.n}: IN ${this.clk(tin)}, take exactly ${formatInterval(t.seconds)}. What is your OUT time?`, ctx, { options: opts }, { optionId: `t${out}` }, { out, endIns });
     }
     return null;
   }
@@ -419,8 +466,10 @@ export class DecisionRunner {
       const key = `ta:${leg}`; if (this.seen.has(key) || this.ov.ta.has(leg)) continue;
       const adv = this.sim.taAdvice(leg); if (!(adv.measuredDelay > 0)) continue;
       const M = Math.round(adv.measured); const R = Math.min(M, Math.round(adv.recoverable)); const truth = ruleClaim(M, R);
-      const all = Math.floor(M / 10) * 10;
-      const cands = [...new Set([truth, truth + 10, Math.max(0, truth - 10), all, truth + 20, all + 10])].sort((a, b) => a - b).slice(0, 4);
+      // PT-14 N4: the right claim is the smallest, second, third or largest of the four equally often (mistakes: claim everything,
+      // round up, forget the made-up part, take it off twice, a step either way, no claim)
+      const all = Math.floor(M / 10) * 10; const up = Math.ceil(Math.max(0, M - R) / 10) * 10;
+      const cands = this.ranked(key, truth, [Math.max(0, truth - 10), Math.max(0, truth - 20), Math.floor(Math.max(0, M - 2 * R) / 10) * 10, Math.max(0, truth - 30), 0], [truth + 10, all, up, truth + 20, all + 10, truth + 30], 4).sort((a, b) => a - b);
       this.ov.ta.set(leg, 'wait');
       const opts = cands.map(c => ({ id: `c${c}`, label: c === 0 ? 'No claim' : `Claim ${formatInterval(c)}` }));
       const ctx = this.ctx({ ta: { measured: M, claim: truth, cause: adv.cause, legIndex: leg, madeUp: R } });
@@ -456,12 +505,15 @@ export class DecisionRunner {
       if (h.s < s - 5) { if (!('lengthFt' in h) || h.s + h.lengthFt < s) continue; }
       const d = h.s - s; const v = Math.max(sim.car.v, mphToFps(10)); const arrive = sim.tod + Math.max(0, d) / v;
       let show = false;
-      if (h.kind === 'slow' || h.kind === 'construction' || h.kind === 'accident' || h.kind === 'tractor' || h.kind === 'combine') show = d <= 400;
-      else if (h.kind === 'train') show = d <= 600 && (trainActive(h, sim.tod) || trainActive(h, arrive));
-      else if (h.kind === 'signal') show = d <= 500 && d > 30 && signalIsRed(h, arrive) && !this.nav.plans.some(p => p.ins.pause !== undefined && Math.abs(p.s - h.s) < 5);
+      // PT-14 item 10: the distance at which the card comes varies (no stamped "400 ft ahead")
+      const f = this.lead(`${key}:d`, 0.6, 1.4);
+      if (h.kind === 'slow' || h.kind === 'construction' || h.kind === 'accident' || h.kind === 'tractor' || h.kind === 'combine') show = d <= 400 * f;
+      else if (h.kind === 'train') show = d <= 600 * f && (trainActive(h, sim.tod) || trainActive(h, arrive));
+      else if (h.kind === 'signal') show = d <= 500 * f && d > 30 && signalIsRed(h, arrive) && !this.nav.plans.some(p => p.ins.pause !== undefined && Math.abs(p.s - h.s) < 5);
       else if (h.kind === 'schoolBus') show = d <= 600 && d > 0 && arrive >= h.startTod && arrive < h.startTod + h.durationSeconds;
       if (!show) { if (d < 0 && !('lengthFt' in h)) this.seen.add(key); continue; }
-      const qualifying = (TA_CAUSES as readonly string[]).includes(h.kind) || (h.kind === 'signal' && !!sc.rules.taForSignals);
+      // PT-14 C-1: the card follows RULE-031 (a red light is never a cause on the card, whatever rules.taForSignals says)
+      const qualifying = (TA_CAUSES as readonly string[]).includes(h.kind);
       const size = this.hazardSize(h, arrive);
       const opts = this.shuffle(key, [{ id: 'ta', label: 'Claim the whole delay' }, { id: 'both', label: 'Make up what you can, claim the rest' }, { id: 'makeup', label: 'Make it all up' }]);
       const truth = qualifying && size === 'long' ? 'both' : 'makeup';
@@ -524,10 +576,12 @@ export class DecisionRunner {
 
   // turn: the decision point of a turn line is within the lead distance
   private detectTurn(): Pending | null {
-    const sim = this.sim; const car = sim.car; const lead = Math.max(600, car.v * 9) + car.v * 0.5;
+    const sim = this.sim; const car = sim.car;
     for (const p of this.nearPlans()) {
       const ins = p.ins; if (!ins.turn || ins.turn === 'S' || p.turnCalled) continue;
       const key = `turn:${ins.n}`; if (this.seen.has(key)) continue;
+      // PT-14 item 10: the call comes 1-1.5 x the navigator's own call distance out (no stamped "600 ft ahead")
+      const lead = Math.max(600, car.v * 9) * this.lead(`${key}:d`, 1.0, 1.5) + car.v * 0.5;
       const o = this.ov.turn.get(ins.n); if (o && o !== 'wait' && o.dir === null) continue;   // a deliberately missed turn (lost scenarios)
       const d = p.s - car.s; if (d > lead || d < 0) continue;
       if (d < 250 && car.v > mphToFps(15)) { this.seen.add(key); continue; }   // too close to be fair: the navigator calls it
@@ -549,21 +603,21 @@ export class DecisionRunner {
       const key = `timedStart:${ins.n}`; if (this.seen.has(key)) continue;
       const node = nodeById(sc.course, ins.nodeId); if (node.control === 'STOP' || node.fullStop || isHoldIns(ins)) continue;
       const d = p.s - car.s; if (d < 0) { this.seen.add(key); continue; }
-      const tSign = d / Math.max(car.v, 1); const lead = this.lead(key, 4, 8);
+      const tSign = d / Math.max(car.v, 1); const lead = this.lead(key, 3.5, 6);   // PT-14 N7: the sign 3.5-6 s after the card (was 4-8)
       if (tSign > lead) continue;
       if (tSign < 1.5 || !this.steadyAt(p.vIn || seg.holdSpeed) || this.hazardBefore(p.s + mphToFps(seg.holdSpeed) * seg.seconds)) { this.seen.add(key); continue; }
-      const ghostSign = sim.legAnchorActual + (ghostTimeAt(sim.ghost, p.s) - sim.legAnchorGhost);
-      const change = ghostSign + seg.seconds; const ld = rampLead(seg.holdSpeed, seg.thenSpeed, sc.car);
-      const t1 = r1(tSign); const t2 = r1(change - ld - sim.tod);
+      // PT-14 C-2: the interval starts where the speed change is, the moment the car's own front reaches the sign (REG VII.E.2.d), as
+      // the watch card's lap does; never the ghost's arrival (a car off pace would be graded against a time the card never showed)
+      const L = chartLead(seg.holdSpeed, seg.thenSpeed, sc.car);
+      const t1 = r1(tSign); const t2 = r1(t1 + seg.seconds - L);
       this.ov.timed.set(ins.n, 'wait');
       const ctx = this.ctx({ line: ins.n, row: this.row(ins), distanceFt: Math.round(d), speeds: { current: Math.round(car.mph()), assigned: seg.holdSpeed }, times: { intervalSeconds: seg.seconds } });
-      const L = chartLead(seg.holdSpeed, seg.thenSpeed, sc.car);
       if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: seg.holdSpeed, vOut: seg.thenSpeed, seconds: L, meaning: 'lead' };
       // MOB-052: Dad says "Mark!" as the front of the car reaches the sign (RULE-022); the distance bar reaches zero then
       const prompt = this.showChart()
         ? `Line ${ins.n}: START on Dad's Mark!, then CALL ${seg.thenSpeed} ${L.toFixed(1)} s before the ${formatInterval(seg.seconds)} ends.`
         : `Line ${ins.n}: START on Dad's Mark!, then CALL ${seg.thenSpeed} half a ramp before the ${formatInterval(seg.seconds)} ends.`;
-      const timing: TimingSpec = { kind: 'startStop', truthSeconds: t1, secondTapSeconds: t2, toleranceSeconds: TIMING_TOLERANCE.timedStart, maxSeconds: t2 + 15, tapLabel: 'START', secondTapLabel: `CALL ${seg.thenSpeed}`, signSeconds: t1, signFt: Math.round(d) };
+      const timing: TimingSpec = { kind: 'startStop', truthSeconds: t1, secondTapSeconds: t2, toleranceSeconds: TIMING_TOLERANCE.timedStart, maxSeconds: Math.max(t2 + 12, t1 + seg.seconds + 8), tapLabel: 'START', secondTapLabel: `CALL ${seg.thenSpeed}`, signSeconds: t1, signFt: Math.round(d) };
       return this.make('timedStart', key, prompt, ctx, { timing }, { taps: [t1, t2] }, { ins, t1, t2 });
     }
     return null;
@@ -578,7 +632,7 @@ export class DecisionRunner {
       const node = nodeById(sc.course, ins.nodeId); if (node.control === 'STOP' || node.fullStop || isHoldIns(ins) || ins.section === 'start' || ins.section === 'restart') continue;
       const o = this.ov.speed.get(ins.n); const mph = o && o !== 'wait' ? o.mph : ins.speed;
       const ld = rampLead(p.vIn, ins.speed, sc.car); const d = p.s - car.s; const tCall = (d - mphToFps(p.vIn) * ld - 1) / Math.max(car.v, 1);
-      const lead = this.lead(key, 8, 16);
+      const lead = this.lead(key, 5, 10);   // PT-14 N7: the call 5-10 s after the card (was 8-16)
       if (tCall > lead) continue;
       if (tCall < 2 || !this.steadyAt(p.vIn) || this.hazardBefore(p.s)) { if (tCall < 2 || this.hazardBefore(p.s)) this.seen.add(key); continue; }
       void mph;
@@ -610,12 +664,17 @@ export class DecisionRunner {
       if (!lap || !sim.watch.running) { this.fallbackWatch(w); return null; }
       const reading = sim.watch.reading(sim.tod); const L = chartLead(seg.holdSpeed, seg.thenSpeed, sc.car);
       const truth = r1(lap.cumulative + seg.seconds - L);
-      const cands = [truth, r1(lap.cumulative + seg.seconds), r1(lap.cumulative + seg.seconds + L + 1), r1(Math.max(reading + 1, lap.cumulative + seg.seconds - L - 3))];
-      const uniq = [...new Set(cands)];
-      const opts = this.shuffle(w.key, uniq).map(x => ({ id: `r${x}`, label: formatInterval(x, true) }));
+      // PT-14 N4: the right reading is the smallest .. largest of the four equally often (mistakes: no lead, the lead added, the lead twice,
+      // a second or two off the interval)
+      const floor = reading + 1;
+      const vals = this.ranked(w.key, truth, [r1(truth - L), r1(truth - 2), r1(truth - L - 2), r1(truth - 3)].filter(x => x > floor), [r1(truth + L), r1(truth + 2 * L), r1(truth + 2), r1(truth + 3)], 4, (a, b) => Math.abs(a - b) < 0.45);
+      const opts = this.shuffle(w.key, vals).map(x => ({ id: `r${x}`, label: formatInterval(x, true) }));
       const ctx = this.ctx({ line: w.n, row: this.row(w.plan.ins), speeds: { current: Math.round(car.mph()), assigned: seg.holdSpeed }, times: { intervalSeconds: seg.seconds }, watch: { reading: r1(reading), laps: laps.slice(-3).map(x => ({ interval: r1(x.interval), cumulative: r1(x.cumulative) })) } });
       if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: seg.holdSpeed, vOut: seg.thenSpeed, seconds: L, meaning: 'lead' };
-      const prompt = `Line ${w.n}: ${seg.holdSpeed} for ${formatInterval(seg.seconds)}, then ${seg.thenSpeed}. You lapped at the sign. Call ${seg.thenSpeed} when the main digits read?`;
+      // PT-14 item 9: the lap and the lead the rule needs are in the prompt at rung 2 (the lead stays behind the Chart button at rung 1)
+      const prompt = this.showChart()
+        ? `Line ${w.n}: ${seg.holdSpeed} for ${formatInterval(seg.seconds)}, then ${seg.thenSpeed}; lead ${L.toFixed(1)} s. You lapped ${formatInterval(lap.cumulative, true)} at the sign. Call ${seg.thenSpeed} at?`
+        : `Line ${w.n}: ${seg.holdSpeed} for ${formatInterval(seg.seconds)}, then ${seg.thenSpeed}. You lapped ${formatInterval(lap.cumulative, true)} at the sign. Call ${seg.thenSpeed} at?`;
       return this.make('watch', w.key, prompt, ctx, { options: opts }, { optionId: `r${truth}` }, { n: w.n, truth, L, reading, seg });
     }
     for (const p of this.nearPlans()) {

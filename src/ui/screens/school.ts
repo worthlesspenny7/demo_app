@@ -8,6 +8,7 @@ import { LESSONS, type LessonBlock } from '../../../content/lessons.js';
 import { CARD_PARTS, cardPartText, checkCards, dadCard, dadPages, dadStep, dadSwipe, schoolGroups, schoolIntro, SCHOOL_TITLE, tryHash, DAD_TITLE, type CheckCard } from '../../../content/school-layout.js';
 import { type RuleCard } from '../../../content/rules.js';
 import { app, el } from '../state.js';
+import { narrowScreen } from './reference.js';
 import { allDrills } from '../../core/drills/index.js';
 import { shuffleCheck } from '../viewmodels/lessoncheck.js';
 import { startPathFromProgress, pathNext, beyondPathNext, unlockBest, pathStars, type PathNext } from '../viewmodels/curriculum.js';
@@ -56,6 +57,17 @@ const SCHOOL_CSS = `
 .dad-reader .dad-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 18px; }
 .dad-reader .dad-text { flex: 1; display: flex; align-items: center; font-size: clamp(28px, 7.5vw, 52px); line-height: 1.22; font-weight: 700; overflow-y: auto; }
 .dad-reader .dad-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .dad-reader .dad-nav button { min-height: 72px; font-size: 22px; }
+/* PT-14 item 10 (BUG-10): on a phone the grid is a list, every text at least 16 px, each group a collapsible section */
+@media (max-width: 700px) {
+  .rule-grid { display: flex; flex-direction: column; gap: 10px; }
+  .school-page, .school-page :is(p, li, a, span, div, summary, .cite, .muted, .meta, button) { font-size: max(16px, 1em); }
+  .school-page .rule-card .cite, .school-page .group-note, .school-page .meta { font-size: 16px; }
+  .school-page :is(h3, h4) { font-size: max(17px, 1em); }
+  .school-sec > summary { display: flex; align-items: center; min-height: 52px; cursor: pointer; list-style: none; }
+  .school-sec > summary::-webkit-details-marker { display: none; }
+  .school-sec > summary h2 { margin: 0; font-size: 22px; } .school-sec > summary::after { content: '+'; margin-left: auto; font-size: 24px; color: var(--muted); }
+  .school-sec[open] > summary::after { content: '−'; }
+}
 `;
 
 /** One rule card, its parts in the order of CARD_PARTS (the "Try it" button sits in the header row, so little is read before the first tap). */
@@ -95,14 +107,20 @@ function checkCardEl(c: CheckCard): HTMLElement {
 function renderRuleIndex(page: HTMLElement): void {
   page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, SCHOOL_TITLE), el('p', { class: 'muted', id: 'school-intro' }, schoolIntro()));
   const groups = el('div', { class: 'school-groups' });
-  for (const g of schoolGroups()) {
-    groups.append(el('h2', { 'data-skill': g.skill }, g.title), el('p', { class: 'muted group-note' }, g.fourS));
-    const grid = el('div', { class: 'rule-grid' }); for (const c of g.cards) grid.append(ruleCardEl(c)); groups.append(grid);
-  }
+  // PT-14 item 10: on a phone each skill group is a collapsible section (the first one open), its cards one list
+  const phone = narrowScreen(); page.classList.add('school-page');
+  const section = (title: HTMLElement, open: boolean, ...body: HTMLElement[]): HTMLElement[] => {
+    if (!phone) return [title, ...body];
+    const d = el('details', { class: 'school-sec' }) as HTMLDetailsElement; d.open = open; d.append(el('summary', {}, title), ...body); return [d];
+  };
+  schoolGroups().forEach((g, i) => {
+    const grid = el('div', { class: 'rule-grid' }); for (const c of g.cards) grid.append(ruleCardEl(c));
+    groups.append(...section(el('h2', { 'data-skill': g.skill }, g.title), i === 0, el('p', { class: 'muted group-note' }, g.fourS), grid));
+  });
   page.append(groups);
   const dad = el('p', {}, el('a', { href: '#/school/dad', id: 'dad-link' }, `${DAD_TITLE}: print it, or read it while you drive`));
-  const checks = el('div', { class: 'school-checks' }, el('h2', {}, 'Check yourself'), el('p', { class: 'muted' }, 'One tap per question. A right answer marks the reading passed.'));
-  const grid = el('div', { class: 'rule-grid' }); for (const c of checkCards()) grid.append(checkCardEl(c)); checks.append(grid);
+  const grid = el('div', { class: 'rule-grid' }); for (const c of checkCards()) grid.append(checkCardEl(c));
+  const checks = el('div', { class: 'school-checks' }, ...section(el('h2', {}, 'Check yourself'), false, el('p', { class: 'muted' }, 'One tap per question. A right answer marks the reading passed.'), grid));
   page.append(dad, checks);
 }
 

@@ -675,3 +675,29 @@ body.mob-landscape .mob-run .mrow-a svg { max-height: 90px; }
 .mob-confirm { display: flex; flex-direction: column; gap: 14px; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); min-height: 100dvh; }
 .mob-confirm .mob-actions { height: auto; flex: none; border-top: 0; padding-left: 0; padding-right: 0; }
 .mob-note { font-size: 18px; }
+/* ---------------------------------------------------------------- PT-14 fix sprint: phone display finish */
+/* item 8: the call tick on the sign bar is labelled CALL (a row under the bar, 16 px) */
+.msign.has-call { grid-template-areas: "track ft" "ticks ticks" "mark mark"; }
+.msign-ticks { grid-area: ticks; position: relative; height: 1.4em; margin-right: 0; }
+.msign-calllbl { position: absolute; top: 0; transform: translateX(-50%); font-size: 16px; font-weight: 800; color: var(--accent); white-space: nowrap; line-height: 1.2; }
+.msign-calllbl::before { content: ''; position: absolute; left: 50%; top: -6px; width: 2px; height: 6px; margin-left: -1px; background: var(--accent); }
+/* N6: a compressed hold says when the watch jumps */
+.mskip { margin: 0; color: var(--accent); font-weight: 700; }
+/* item 10: verdict seconds never wrap; the headline takes the rest of the line */
+.mv-head { gap: 10px; }
+.mv-head > span { min-width: 0; overflow-wrap: anywhere; }
+.mv-sec { white-space: nowrap; flex: none; }
+/* item 10 (BUG-10): the Reference on a phone: one column of collapsible sections, every text at least 16 px, wide tables scroll inside */
+@media (max-width: 700px) {
+  .page.ref .grid2.ref-phone { display: flex; flex-direction: column; gap: 10px; }
+  .page.ref .ref-phone > .panel { grid-column: auto !important; margin: 0; min-width: 0; }
+  .page.ref :is(p, li, dd, dt, td, th, span, a, summary, figcaption, label, input, div, pre, .cite, .muted, .warn) { font-size: max(16px, 1em) !important; }
+  .page.ref :is(h2, h3, h4) { font-size: 17px; }
+  .page.ref .ref-sec > summary { display: flex; align-items: center; min-height: 52px; cursor: pointer; list-style: none; }
+  .page.ref .ref-sec > summary::-webkit-details-marker { display: none; }
+  .page.ref .ref-sec > summary h3 { margin: 0; font-size: 19px; text-transform: none; letter-spacing: 0; }
+  .page.ref .ref-sec > summary::after { content: '+'; margin-left: auto; padding-left: 10px; font-size: 24px; color: var(--muted); }
+  .page.ref .ref-sec[open] > summary::after { content: '−'; }
+  .page.ref table { display: block; max-width: 100%; overflow-x: auto; }
+  .page.ref pre { white-space: pre-wrap; }
+}

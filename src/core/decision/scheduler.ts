@@ -7,9 +7,9 @@
 import type { Scenario } from '../course.js';
 import { rng } from '../rng.js';
 import { DecisionRunner } from './runner.js';
-import { buildMicro, bossScenario, KINDS_OF_SKILL, BOSS_LEG_DECISIONS, type MicroScenario } from './scenarios.js';
-import { allRuleCards, introCardFor, verdictRule } from './rules.js';
-import { SKILLS, SKILL_OF_KIND, DECISION_KINDS, type Decision, type DecisionKind, type DecisionProgressState, type DecisionResponse, type MicroSpec, type RuleCard, type RunItem, type RunPlan, type RunResult, type RunStep, type Skill, type SkillTally, type Verdict } from './types.js';
+import { buildMicro, bossScenario, KINDS_OF_SKILL, BOSS_LEG_DECISIONS, microSubcase, type MicroScenario } from './scenarios.js';
+import { introCardFor, verdictRule } from './rules.js';
+import { SKILLS, SKILL_OF_KIND, DECISION_KINDS, TIMED_KINDS, type Decision, type DecisionKind, type DecisionProgressState, type DecisionResponse, type MicroSpec, type RunItem, type RunPlan, type RunResult, type RunStep, type Skill, type SkillTally, type Verdict } from './types.js';
 
 export const RUN_MIN_DECISIONS = 10;
 export const RUN_MAX_DECISIONS = 15;
@@ -17,6 +17,46 @@ export const MAX_RULE_CARDS = 3;
 export const MAX_REPEATS_PER_SKILL = 2;
 /** MOB-053: at most this many cards of one kind in a run, repeats included. */
 export const MAX_PER_KIND = 2;
+/** PT-14 N5: a single-skill run is at least this share of its skill. */
+export const SKILL_RUN_SHARE = 2 / 3;
+/** PT-14 N5: the per-kind cap of a run: MAX_PER_KIND, relaxed in a single-skill run to 3 (4 for a skill of two kinds) so that the skill's
+ *  own kinds fill at least two thirds of the run before any other skill tops it up. */
+export function maxPerKindFor(skills: readonly Skill[], n: number): number {
+  if (skills.length !== 1) return MAX_PER_KIND;
+  const kinds = KINDS_OF_SKILL[skills[0]!].length;
+  return Math.max(3, Math.ceil(Math.ceil(n * SKILL_RUN_SHARE) / kinds));
+}
+/** PT-14 N7: an option card between two timing cards (pause, restart, timed start, speed change), so real-time waits do not come in a row.
+ *  When there are enough option cards, the fewest moves (the skill mix of the plan stays); otherwise the timing cards are cut into
+ *  (options + 1) groups as even as possible with an option card between two groups. */
+export function interleave<T>(items: T[], timed: (x: T) => boolean): T[] {
+  const T_ = items.filter(timed); const O = items.filter(x => !timed(x));
+  if (!T_.length || !O.length) return items.slice();
+  if (T_.length <= O.length + 1) {
+    // the fewest, nearest swaps of a timing card with an option card (the skill rounds of the plan stay as they were)
+    const a = items.slice();
+    const pairs = (xs: T[]): number => xs.reduce((n, x, i) => n + (i > 0 && timed(x) && timed(xs[i - 1]!) ? 1 : 0), 0);
+    for (let guard = 0; guard < items.length; guard++) {
+      const i = a.findIndex((x, k) => k > 0 && timed(x) && timed(a[k - 1]!)); if (i < 0) break;
+      const before = pairs(a); let done = false;
+      const ks = a.map((_, k) => k).filter(k => k !== i && k !== i - 1 && !timed(a[k]!)).sort((x, y) => Number(x > i) - Number(y > i) || Math.abs(x - i) - Math.abs(y - i));
+      for (const k of ks) {
+        const t = k < i ? i - 1 : i; const b = a.slice(); [b[k], b[t]] = [b[t]!, b[k]!];
+        if (pairs(b) < before) { a.splice(0, a.length, ...b); done = true; break; }
+      }
+      if (!done) break;
+    }
+    if (!a.some((x, i) => i > 0 && timed(x) && timed(a[i - 1]!))) return a;
+  }
+  const groups = Math.min(O.length + 1, T_.length); const out: T[] = []; let ti = 0; let oi = 0;
+  for (let g = 0; g < groups; g++) {
+    const size = Math.floor(T_.length / groups) + (g < T_.length % groups ? 1 : 0);
+    for (let i = 0; i < size; i++) out.push(T_[ti++]!);
+    if (oi < O.length && g < groups - 1) out.push(O[oi++]!);
+  }
+  while (oi < O.length) out.push(O[oi++]!);
+  return out;
+}
 /** MOB-059: the Boss run's fixed card count: the generated leg (one card per kind) then micro cards for every kind it did not give. */
 export const BOSS_DECISIONS = 22;
 
@@ -51,14 +91,20 @@ export class Scheduler {
     if (mode === 'boss') { plan.items = [{ type: 'decision', micro: { kind: 'turn', skill: 'safetyCourse', seed: this.seed, variant: 0, bossLeg: BOSS_LEG_DECISIONS } }]; plan.decisionCount = BOSS_DECISIONS; return plan; }
     const r = rng(`plan:${this.seed}:${plan.skills.join(',')}`);
     const n = Math.max(RUN_MIN_DECISIONS, Math.min(RUN_MAX_DECISIONS, Math.round(this.opts.decisions ?? r.int(10, 12))));
+    const cap = maxPerKindFor(plan.skills, n); if (cap !== MAX_PER_KIND) plan.maxPerKind = cap;
     // mix the skills: rounds of the skill list in a fresh order each round, each skill cycling through its kinds, at most MAX_PER_KIND
     // cards of one kind (MOB-053); when the planned skills run out of kinds the other skills fill the run
     const kindIdx: Record<string, number> = {}; const perKind: Partial<Record<DecisionKind, number>> = {}; const slots: MicroSpec[] = [];
+    // PT-14 N5 / N7: a single-skill run of a skill whose cards are all real-time waits (Stay on time) keeps two thirds for the skill and
+    // tops up with option cards, so an option card can sit between its timing cards (>= 4 decisions a minute)
+    const ownMax = plan.skills.length === 1 && KINDS_OF_SKILL[plan.skills[0]!].every(k => TIMED_KINDS.includes(k)) ? Math.ceil(n * SKILL_RUN_SHARE) : n;
     const take = (sk: Skill): boolean => {
+      if (plan.skills.length === 1 && sk === plan.skills[0] && slots.filter(m => m.skill === sk).length >= ownMax) return false;
       const kinds = KINDS_OF_SKILL[sk]; let i = kindIdx[sk] ?? r.int(0, kinds.length - 1);
       for (let j = 0; j < kinds.length; j++, i++) {
         const kind = kinds[i % kinds.length]!;
-        if ((perKind[kind] ?? 0) >= MAX_PER_KIND) continue;
+        if ((perKind[kind] ?? 0) >= cap) continue;
+        if (ownMax < n && sk !== plan.skills[0] && TIMED_KINDS.includes(kind)) continue;   // the top-up of a Stay-on-time run is option cards
         kindIdx[sk] = i + 1; perKind[kind] = (perKind[kind] ?? 0) + 1;
         slots.push({ kind, skill: sk, seed: seedOf(`slot:${this.seed}:${slots.length}`), variant: r.int(0, 3) });
         return true;
@@ -75,12 +121,14 @@ export class Scheduler {
       }
     }
     const items: RunItem[] = []; const shownSkills = new Set<Skill>(); let rules = 0;
-    const seen = new Set(this.progress?.rulesSeen ?? []);
-    for (const m of slots) {
+    // PT-14 N7: an option card between timing cards (the planned skills keep their share; only the order changes)
+    const ordered = interleave(slots, m => TIMED_KINDS.includes(m.kind));
+    for (const m of ordered) {
       if (!shownSkills.has(m.skill)) {
         shownSkills.add(m.skill);
         const passed = this.progress?.meters?.[m.skill]?.passed === true;
-        if (!passed && rules < MAX_RULE_CARDS) { items.push({ type: 'rule', card: pickCard(m.skill, m.kind, seen) }); rules++; }
+        // PT-14 N3: the rule card is the rule of the slot it stands before (its kind and sub-case), seen before or not
+        if (!passed && rules < MAX_RULE_CARDS) { items.push({ type: 'rule', card: introCardFor(m.skill, m.kind, microSubcase(m.kind, m.variant)) }); rules++; }
       }
       items.push({ type: 'decision', micro: m });
     }
@@ -91,13 +139,6 @@ export class Scheduler {
 }
 
 function shuffled<T>(arr: readonly T[], r: ReturnType<typeof rng>): T[] { const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r.next() * (i + 1)); [a[i], a[j]] = [a[j]!, a[i]!]; } return a; }
-/** A card for the skill that precedes this kind, preferring one the player has not seen yet. */
-function pickCard(skill: Skill, kind: DecisionKind, seen: Set<string>): RuleCard {
-  const primary = introCardFor(skill, kind);
-  if (!seen.has(primary.id)) return primary;
-  const alt = allRuleCards().find(c => c.skill === skill && c.kinds?.includes(kind) && !seen.has(c.id));
-  return alt ?? primary;
-}
 
 /** Plays a RunPlan: rule cards and decisions in order, repeats for misses, then the RunResult. */
 export class DecisionRun {
@@ -113,7 +154,9 @@ export class DecisionRun {
   private skipped = 0;
   private current: RunItem | null = null;
   private retries = 0;
-  constructor(readonly plan: RunPlan) { this.queue = plan.items.slice(); this.planned = plan.decisionCount; }
+  /** PT-14 N5: the run's per-kind cap (relaxed in a single-skill run). */
+  private readonly cap: number;
+  constructor(readonly plan: RunPlan) { this.queue = plan.items.slice(); this.planned = plan.decisionCount; this.cap = plan.maxPerKind ?? MAX_PER_KIND; }
 
   /** Rebuild an unfinished run from its plan and the answers so far (deterministic replay, MOB-030 "Continue"). */
   static restore(plan: RunPlan, responses: (DecisionResponse | null)[]): DecisionRun {
@@ -143,9 +186,9 @@ export class DecisionRun {
   private answeredStep = false;
   /** A kind of `skill` (or any kind, when `skill` is null) still under the cap, preferring `kind` itself; null when none is. */
   private kindUnderCap(kind: DecisionKind | null, skill: Skill | null, salt: string): DecisionKind | null {
-    if (kind && this.kindCount(kind) < MAX_PER_KIND) return kind;
+    if (kind && this.kindCount(kind) < this.cap) return kind;
     const pool = skill ? [...KINDS_OF_SKILL[skill]] as DecisionKind[] : [...DECISION_KINDS];
-    const c = shuffled(pool, rng(`cap:${this.plan.seed}:${salt}`)).filter(k => this.kindCount(k) < MAX_PER_KIND);
+    const c = shuffled(pool, rng(`cap:${this.plan.seed}:${salt}`)).filter(k => this.kindCount(k) < this.cap);
     return c[0] ?? null;
   }
   private bossFilled = false;
@@ -179,7 +222,8 @@ export class DecisionRun {
           // a micro scenario that offered no decision (rare): another layout, then another kind of the same skill (the count stays fixed)
           this.retries++;
           const kind = this.retries < 3 ? cur.micro.kind : (this.kindUnderCap(null, cur.micro.skill, `skip:${this.verdicts.length}`) ?? cur.micro.kind);
-          this.queue.unshift({ type: 'decision', micro: { ...cur.micro, kind, skill: SKILL_OF_KIND[kind], seed: cur.micro.seed + 7919, variant: cur.micro.variant + 1 } });
+          // (variant + 12 keeps the sub-case, so the rule card shown before it still fits: PT-14 N3)
+          this.queue.unshift({ type: 'decision', micro: { ...cur.micro, kind, skill: SKILL_OF_KIND[kind], seed: cur.micro.seed + 7919, variant: cur.micro.variant + 12 } });
         } else this.skipped += this.runnerMax - this.runner.decisions.length;
       }
       if (this.plan.mode === 'boss' && !this.bossFilled && this.current?.type === 'decision' && this.current.micro.bossLeg) this.fillBoss();

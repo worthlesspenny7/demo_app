@@ -5,8 +5,8 @@
  * on a wall-clock time base measured from the moment the card was shown, which is the time base of the decision's TimingSpec.
  */
 import { Stopwatch } from '../../core/stopwatch.js';
-import { chronoText, todText } from '../viewmodels/digitalwatch.js';
-import { formatInterval } from '../../core/griid.js';
+import { chronoText } from '../viewmodels/digitalwatch.js';
+import { formatInterval, formatClockFace } from '../../core/griid.js';
 import { el } from '../state.js';
 
 export type FaceMode = 'split' | 'go';
@@ -22,6 +22,10 @@ export interface TapWatchOptions {
   todPrimary?: boolean;
   /** Start the watch at the card's moment (a pause: the car has just stopped). */
   autoStart?: boolean;
+  /** PT-14: the stage's zone label for the time of day ("CDT 9:31:50", 12-hour, as the book prints it). */
+  zone?: string;
+  /** PT-14 item 8: no elapsed digits (a speed-change card times nothing: the sign bar is the cue). */
+  hideDigits?: boolean;
   /** Called with the seconds since the card's moment for every scoring tap (GO, or START then LAP in split mode). */
   onTap(seconds: number, kind: 'go' | 'start' | 'stop' | 'lap'): void;
   /** Wall clock in seconds (tests inject a fake). */
@@ -44,6 +48,7 @@ export function mountTapWatch(host: HTMLElement, o: TapWatchOptions): TapWatch {
   const watch = new Stopwatch('digital', 60, 0);
   if (o.autoStart) watch.start(0);
   const digits = el('div', { class: `mw-digits${o.todPrimary ? ' mw-small' : ''}`, 'aria-live': 'off', 'data-testid': 'watch-digits' }, '0:00.00');
+  if (o.hideDigits) digits.hidden = true;
   const tod = el('div', { class: `mw-tod${o.todPrimary ? ' mw-big' : ''}`, 'data-testid': 'tod-digits' }, '');
   const laps = el('table', { class: 'mw-laps', 'aria-label': 'laps: interval and cumulative' });
   const root = el('div', { class: `mw-face mw-${o.mode}`, 'data-face': o.mode });
@@ -72,7 +77,8 @@ export function mountTapWatch(host: HTMLElement, o: TapWatchOptions): TapWatch {
   function render(): void {
     const t = elapsed();
     digits.textContent = chronoText(watch.reading(t));
-    if (o.todAtZero !== undefined) tod.textContent = `TOD ${todText(o.todAtZero + t).replace(/\.\d\d$/, '')}`;
+    // PT-14 item 10: one clock format, 12-hour with the zone label in front, as Column C prints it
+    if (o.todAtZero !== undefined) tod.textContent = `${o.zone ?? 'TOD'} ${formatClockFace(Math.floor(o.todAtZero + t + 1e-6))}`;
     if (watch.laps.length !== lastLaps) {
       lastLaps = watch.laps.length;
       laps.replaceChildren(...(lastLaps ? [el('tr', {}, el('th', {}, '#'), el('th', {}, 'interval'), el('th', {}, 'cumulative'))] : []), ...lapRows(watch).map(r => el('tr', {}, el('td', {}, String(r.n)), el('td', {}, r.interval), el('td', {}, r.cumulative))));

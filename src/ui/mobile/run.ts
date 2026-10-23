@@ -5,6 +5,7 @@
  * (MOB-030 Continue) until the recap.
  */
 import { SKILL_TITLE, type Decision, type DecisionResponse, type Verdict } from '../../core/decision/index.js';
+import { cardOf, wallMaxOf } from '../../core/decision/runner.js';
 import { el } from '../state.js';
 import { app } from '../state.js';
 import { decisionCardHtml, ruleCardHtml, verdictParts, driverLine, signState } from './cards.js';
@@ -16,6 +17,8 @@ import { session, wallSeconds } from './session.js';
 
 export interface RunView { screen: 'run'; phase: 'rule' | 'decision' | 'verdict' | 'done'; decision: Decision | null; shownAt: number; verdict: Verdict | null }
 export const view: RunView = { screen: 'run', phase: 'done', decision: null, shownAt: 0, verdict: null };
+/** PT-14 N6: seconds on the card's own clock (the TimingSpec time base): wall seconds since the card, plus the jump of a compressed hold. */
+export function cardSeconds(): number { const w = wallSeconds() - view.shownAt; const t = view.decision?.timing; return t ? cardOf(t, w) : w; }
 
 /** Persist the run so far (Continue survives a reload). */
 function persist(): void {
@@ -39,21 +42,25 @@ export function renderRun(root: HTMLElement): () => void {
   let signRaf = 0;
   const clearTimers = (): void => { while (timers.length) clearTimeout(timers.pop()); if (watch) { watch.destroy(); watch = null; } if (signRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(signRaf); signRaf = 0; };
 
-  /** MOB-052: the sign arrives: the bar shrinks to zero at the sign and Dad says "Mark!" (text, speech, a short buzz) as it lines up. */
+  /** MOB-052: the sign arrives: the bar shrinks to zero at the sign and Dad says "Mark!" (text, speech, a short buzz) as it lines up.
+   *  PT-14 N6: a compressed hold shows its note when the watch jumps. */
   function animateSign(d: Decision): void {
-    const t = d.timing; const bar = card.querySelector<HTMLElement>('.msign'); if (!t?.signSeconds || !bar) return;
-    const fill = bar.querySelector<HTMLElement>('.msign-fill'); const ft = bar.querySelector<HTMLElement>('.msign-ft'); const mark = bar.querySelector<HTMLElement>('.msign-mark');
+    const t = d.timing; const bar = card.querySelector<HTMLElement>('.msign'); const skipNote = card.querySelector<HTMLElement>('[data-testid=skip-note]');
+    if (!t || (!(t.signSeconds && bar) && !(t.skip && skipNote))) return;
+    const fill = bar?.querySelector<HTMLElement>('.msign-fill'); const ft = bar?.querySelector<HTMLElement>('.msign-ft'); const mark = bar?.querySelector<HTMLElement>('.msign-mark');
     let marked = false;
     const frame = (): void => {
       if (view.decision !== d || view.phase !== 'decision') return;
-      const st = signState(t, wallSeconds() - view.shownAt);
+      if (skipNote && t.skip && skipNote.hidden && wallSeconds() - view.shownAt >= t.skip.at) { skipNote.hidden = false; driver.textContent = 'Dad: "Holding. Tell me when."'; }
+      if (!bar || !t.signSeconds) { signRaf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(frame) : 0; return; }
+      const st = signState(t, cardSeconds());
       if (fill) fill.style.width = `${(st.frac * 100).toFixed(1)}%`;
       if (ft) ft.textContent = `${st.ft} ft`;
       if (st.mark && !marked) {
-        marked = true; bar.classList.add('marked'); if (mark) mark.textContent = 'Mark!';
+        marked = true; bar!.classList.add('marked'); if (mark) mark.textContent = 'Mark!';
         driver.textContent = 'Dad: "Mark!"'; speak('Mark', speechOn());
         try { if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(40); } catch { /* no haptics */ }
-      } else if (marked && !st.mark && mark) { mark.textContent = ''; bar.classList.remove('marked'); }
+      } else if (marked && !st.mark && mark) { mark.textContent = ''; bar!.classList.remove('marked'); }
       signRaf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(frame) : 0;
     };
     frame();
@@ -130,17 +137,20 @@ export function renderRun(root: HTMLElement): () => void {
     const t = d.timing;
     if (t) {
       const taps: number[] = [];
+      // the watch runs on the card's clock (it jumps at a compressed hold, PT-14 N6); the time base the taps are graded on
+      const cardNow = (): number => view.shownAt + cardSeconds();
       if (t.kind === 'startStop') {
-        watch = mountTapWatch(actions, { mode: 'split', lapLabel: t.secondTapLabel ?? 'LAP', todAtZero: d.context.tod, now: wallSeconds, onTap: (s, kind) => {
+        watch = mountTapWatch(actions, { mode: 'split', lapLabel: t.secondTapLabel ?? 'LAP', todAtZero: d.context.tod, zone: d.context.zone, now: cardNow, onTap: (s, kind) => {
           if (kind === 'start' && taps.length === 0) taps.push(s);
           else if ((kind === 'lap' || kind === 'stop') && taps.length === 1) { taps.push(s); submit({ taps: [...taps] }); }
         } });
       } else {
-        watch = mountTapWatch(actions, { mode: 'go', label: t.tapLabel, autoStart: true, todAtZero: d.context.tod, todPrimary: !!t.todPrimary, now: wallSeconds, onTap: s => submit({ tapSeconds: s }) });
+        // PT-14 item 8: a speed-change card times nothing, so no elapsed digits (the sign bar is the cue)
+        watch = mountTapWatch(actions, { mode: 'go', label: t.tapLabel, autoStart: true, todAtZero: d.context.tod, zone: d.context.zone, todPrimary: !!t.todPrimary, hideDigits: d.kind === 'speedChange', now: cardNow, onTap: s => submit({ tapSeconds: s }) });
       }
       animateSign(d);
       // no tap by maxSeconds: answer with what was tapped (a late or missing call)
-      timers.push(window.setTimeout(() => submit(taps.length ? { taps: [...taps] } : null), Math.max(1, t.maxSeconds) * 1000));
+      timers.push(window.setTimeout(() => submit(taps.length ? { taps: [...taps] } : null), Math.max(1, wallMaxOf(t)) * 1000));
     } else {
       const opts = d.options ?? [];
       const grid = el('div', { class: `mob-opts n${Math.min(4, opts.length)}` });

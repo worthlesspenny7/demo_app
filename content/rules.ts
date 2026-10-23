@@ -30,6 +30,8 @@ export interface RuleCard {
   videoOnly?: boolean;
   /** the card carries a simulator convention (car model numbers, house habit): the card says "(simulator convention)" */
   sim?: boolean;
+  /** PT-14: a shorter phone text when the full rule is too long for the rule card screen (the full text stays the verdict's source) */
+  short?: string;
 }
 
 export const VIDEO_LABEL = '(video, not in the documents)';
@@ -122,7 +124,7 @@ export const RULES: RuleCard[] = [
     source: "HB p.15 tip 6; Rally School Part 2 [12:36], [14:10]; going around: Rally School Part 1 [44:27] (video)",
   },
   {
-    id: 'RULE-014', skill: 'startOnTime', title: 'Exact transit: IN plus interval', lesson: 'transits', kinds: ['transitOut'],
+    id: 'RULE-014', skill: 'startOnTime', title: 'Exact transit: IN plus interval', lesson: 'transits', kinds: ['transitOut', 'restart'],
     text: "For an exact transit (take exactly 20 minutes), write the time of day at the IN sign and add the interval: IN 2:41:20 plus 20m00s is OUT 3:01:20. Arrive early, pull up to the sign, and leave exactly on the OUT second.",
     source: "HB p.11-12; 2026 Example Rally #31",
   },
@@ -134,7 +136,7 @@ export const RULES: RuleCard[] = [
 
   // ---------------------------------------------------------------- Stay on time (Four S's 4)
   {
-    id: 'RULE-016', skill: 'stayOnTime', title: 'Pause = chart cell, not 15', lesson: 'pause-arithmetic', kinds: ['pause'], sim: true,
+    id: 'RULE-016', skill: 'stayOnTime', title: 'Pause = chart cell, not 15', lesson: 'pause-arithmetic', kinds: ['pause', 'preread'], sim: true,
     text: "Wait the chart time, not the printed pause: dwell = pause minus Dec(in) minus Acc(out), the stop-and-go loss for your two speeds. The handbook's Packard chart gives 8.6 s for 30 in, 40 out. Dec and Acc are the simulator's performance card; measure your car.",
     source: "HB p.8; Rally School Part 2 [22:02]",
   },
@@ -212,9 +214,11 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-031', skill: 'recovery', title: 'TA only for outside delays', lesson: 'recovery', kinds: ['hazard', 'ta', 'lost'],
-    text: "Ask for a Time Allowance only for a delay beyond your control, such as a train or helping at an accident. Never for a wrong turn, a flat tire or a breakdown. A traffic light is not named: make that time up.",
-    source: "REG V.H.1; HB p.13",
+    text: "Claim time only for a delay beyond your control, such as a train, an accident scene, a school bus, a farm tractor or combine you cannot pass, construction holding traffic. A slow truck you can pass, a red light and traffic you can get around are not: make that time up. Never for a wrong turn or a breakdown.",
+    short: "Claim time only for a delay beyond your control: a train, an accident scene, a school bus, a farm tractor or combine you cannot pass, construction holding traffic. Not a slow truck you can pass, a red light or traffic you can get around.",
+    source: "REG V.H.1, V.H.5 (\"Delayed 0m45s by a farm tractor\"); Time Delay Form [00:04], [02:41] (video); HB p.13",
   },
+
   {
     id: 'RULE-032', skill: 'recovery', title: 'TA: 10 s steps, 15 minutes', lesson: 'recovery', kinds: ['ta'],
     text: "Request time in multiples of 10 seconds, within the time the book gives (15 minutes in the 2026 example). Claim only what you could not make up: the committee denies time you could have made up. An odd amount is rounded, possibly against you.",

@@ -48,6 +48,9 @@ export interface TimingSpec {
   signFt?: number;
   /** MOB-058: the big digits of the face show the time of day (restart / launch cards); the elapsed count is small. */
   todPrimary?: boolean;
+  /** PT-14 N6: a long hold shown compressed. When the card's clock reaches `at` s it jumps to `to` s (the watch and the TOD digits jump,
+   *  the card says so with `note`); taps are still reported in card seconds. Wall time after the jump = card time - (to - at). */
+  skip?: { at: number; to: number; note: string };
   /** What the tap does in the car ("GO", "LAUNCH", "CALL 45", "START"). */
   tapLabel: string;
   secondTapLabel?: string;
@@ -74,6 +77,8 @@ export interface DecisionContext {
   tod: number;
   /** Seconds since the stage start. */
   elapsed: number;
+  /** PT-14: the stage's time-zone label as the book prints it ("CDT"); times on the card read "CDT 9:31:50" (12-hour). */
+  zone?: string;
   line?: number;
   row?: BookRowView;
   nextRow?: BookRowView;
@@ -178,6 +183,8 @@ export interface RunPlan {
   day?: string; dailyIndex?: number;
   /** MOB-032: the Desk drill this run stands in for (its stars are recorded there too). */
   drillId?: string;
+  /** PT-14 N5: the per-kind cap of this run (MAX_PER_KIND, relaxed in a single-skill run so the run is two thirds that skill). */
+  maxPerKind?: number;
 }
 
 export interface SkillTally { skill: Skill; correct: number; total: number; seconds: number }

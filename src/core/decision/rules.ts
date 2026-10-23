@@ -23,7 +23,7 @@ export const FALLBACK_RULES: Record<DecisionKind, RuleCard> = {
   restart: { id: 'FB-restart', skill: 'startOnTime', text: 'Launch at your own time minus the standing-start loss, on the second.', source: 'HB p.7', kinds: ['restart'] },
   transitOut: { id: 'FB-transitOut', skill: 'startOnTime', text: 'For an exact transit the OUT time is the IN time plus the printed interval.', source: 'HB p.11-12', kinds: ['transitOut'] },
   makeup: { id: 'FB-makeup', skill: 'recovery', text: 'To make up S seconds drive 10 % over the assigned speed for 10 times S seconds.', source: 'HB p.10', kinds: ['makeup'] },
-  hazard: { id: 'FB-hazard', skill: 'recovery', text: 'Claim a Time Allowance only for a delay beyond your control, such as a train; make up a light or a slow truck.', source: 'REG V.H.1', kinds: ['hazard'] },
+  hazard: { id: 'FB-hazard', skill: 'recovery', text: 'Claim time only for a delay beyond your control, such as a train, an accident scene, a school bus, a farm tractor or combine you cannot pass, construction holding traffic; make up a red light or a slow truck you can pass.', source: 'REG V.H.1, V.H.5; Time Delay Form [00:04] (video)', kinds: ['hazard'] },
   ta: { id: 'FB-ta', skill: 'recovery', text: 'Claim in multiples of 10 seconds, only what you could not make up.', source: 'REG V.H.3, V.H.5', kinds: ['ta'] },
   lost: { id: 'FB-lost', skill: 'recovery', text: 'When you know you missed a turn, turn around at once and time the way back.', source: '2026 Training Session [94:27] (video)', kinds: ['lost'] },
   checkpoint: { id: 'FB-checkpoint', skill: 'safetyCourse', text: 'At a green timing checkpoint sign do nothing: hold your speed through it.', source: 'REG V.A.1.a', kinds: ['checkpoint'] },
@@ -45,7 +45,8 @@ const PREFERRED: Record<DecisionKind, Record<string, string[]>> = {
   restart: { default: ['RULE-011', 'RULE-010'], minute: ['RULE-038', 'RULE-037'], base: ['RULE-010', 'RULE-011'], lunch: ['RULE-015', 'RULE-011'] },
   transitOut: { default: ['RULE-014'] },
   makeup: { default: ['RULE-025'], big: ['RULE-026', 'RULE-025'], limit: ['RULE-026~posted limit', 'RULE-005'], room: ['RULE-027~before or after the interval', 'RULE-026'], stop: ['RULE-029', 'RULE-025'] },
-  hazard: { default: ['RULE-033~odd seconds', 'RULE-031'], light: ['RULE-031~traffic light', 'RULE-031'], small: ['RULE-032~Claim only what', 'RULE-031'], claim: ['RULE-033~odd seconds', 'RULE-032'], noTa: ['RULE-031', 'RULE-031'] },
+  // PT-14 C-1: a cause miss cites RULE-031's cause sentence (what qualifies), a light or a truck its "are not" sentence
+  hazard: { default: ['RULE-031~beyond your control', 'RULE-033'], light: ['RULE-031~red light', 'RULE-031'], small: ['RULE-032~Claim only what', 'RULE-031'], claim: ['RULE-031~beyond your control', 'RULE-032'], noTa: ['RULE-031~are not', 'RULE-031'] },
   ta: { default: ['RULE-033~odd seconds', 'RULE-032'], over: ['RULE-032~Claim only what', 'RULE-033'] },
   lost: { default: ['RULE-034', 'RULE-035'], loop: ['RULE-043', 'RULE-034'], ta: ['RULE-031~wrong turn', 'RULE-035'] },
   checkpoint: { default: ['RULE-003', 'RULE-004'], slow: ['RULE-004', 'RULE-003'], red: ['RULE-003~red GREAT RACE STOP', 'RULE-003'] },
@@ -67,8 +68,28 @@ function ruleRefFor(kind: DecisionKind, variant = 'default'): { card: RuleCard; 
   const byKind = LOADED.filter(r => r.kinds?.includes(kind)).sort((a, b) => (a.kinds?.length ?? 0) - (b.kinds?.length ?? 0) || a.id.localeCompare(b.id));
   return { card: byKind[0] ?? FALLBACK_RULES[kind], words: null };
 }
-/** The card the Scheduler shows before the first decision of a skill (the card behind that decision's kind, if it belongs to the skill). */
-export function introCardFor(skill: Skill, kind: DecisionKind): RuleCard {
+/** PT-14 N3: the rule the card of a kind and sub-case (scenarios.ts microSubcase) is answered by: the card the Scheduler shows before it. */
+const INTRO: Partial<Record<DecisionKind, Record<string, string>>> = {
+  preread: { turn: 'RULE-041', pause: 'RULE-016', speed: 'RULE-042' },
+  turn: { default: 'RULE-041' },
+  checkpoint: { green: 'RULE-003', red: 'RULE-003', carAhead: 'RULE-004' },
+  restart: { own: 'RULE-011', transitOut: 'RULE-014', base: 'RULE-010' },
+  transitOut: { default: 'RULE-014' },
+  pause: { default: 'RULE-016' },
+  speedChange: { default: 'RULE-020' },
+  timedStart: { default: 'RULE-021' },
+  makeup: { open: 'RULE-025', limit: 'RULE-026', timed: 'RULE-027' },
+  hazard: { truck: 'RULE-031', train: 'RULE-031', tractor: 'RULE-031', light: 'RULE-031' },
+  ta: { default: 'RULE-033' },
+  lost: { deadEnd: 'RULE-034', detour: 'RULE-043' },
+  clock: { minute: 'RULE-038', second: 'RULE-038', interval: 'RULE-039' },
+  watch: { default: 'RULE-021' },
+};
+/** The card the Scheduler shows before the first decision of a skill: the rule of that slot's own kind and sub-case (PT-14 N3). */
+export function introCardFor(skill: Skill, kind: DecisionKind, subcase = 'default'): RuleCard {
+  const m = INTRO[kind]; const id = m ? (m[subcase] ?? m.default ?? Object.values(m)[0]) : undefined;
+  const byId = id ? LOADED.find(r => r.id === id) : undefined;
+  if (byId) return byId;
   const c = ruleCardFor(kind);
   if (c.skill === skill) return c;
   const same = LOADED.find(r => r.skill === skill && r.kinds?.includes(kind)) ?? LOADED.find(r => r.skill === skill);

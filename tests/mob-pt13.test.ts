@@ -105,12 +105,15 @@ describe('MOB-053 the Scheduler caps a kind and varies Instruments', () => {
     for (let seed = 1; seed <= 40; seed++) {
       const skills = SKILLS.filter((_, i) => (seed >> (i % 5)) & 1); const plan = new Scheduler(skills.length ? skills : [...SKILLS], seed).plan();
       const ks = kindsOf(plan); expect(ks.length).toBeGreaterThanOrEqual(10);
-      for (const k of new Set(ks)) expect(ks.filter(x => x === k).length, `${seed} ${k}`).toBeLessThanOrEqual(MAX_PER_KIND);
+      for (const k of new Set(ks)) expect(ks.filter(x => x === k).length, `${seed} ${k}`).toBeLessThanOrEqual(plan.maxPerKind ?? MAX_PER_KIND);
+      if (plan.skills.length > 1) expect(plan.maxPerKind).toBeUndefined();
       const inst = ks.filter(k => (KINDS_OF_SKILL.instruments as readonly string[]).includes(k)); if (inst.length >= 2) expect(new Set(inst).size, `seed ${seed}`).toBe(2);
     }
     for (const pair of [['instruments', 'startOnTime'], ['instruments'], ['startOnTime']] as Skill[][]) {
       const ks = kindsOf(new Scheduler(pair, 5).plan()); expect(ks.length).toBeGreaterThanOrEqual(10);
-      expect(new Set(ks).size).toBeGreaterThanOrEqual(5); expect(ks.filter(k => k === 'clock').length).toBeLessThanOrEqual(2);
+      // PT-14 N5 (MOB-066): a single-skill run is two thirds its skill (cap relaxed); a two-skill run keeps the cap of 2
+      if (pair.length > 1) { expect(new Set(ks).size).toBeGreaterThanOrEqual(5); expect(ks.filter(k => k === 'clock').length).toBeLessThanOrEqual(2); }
+      else expect(ks.filter(k => (KINDS_OF_SKILL[pair[0]!] as readonly string[]).includes(k)).length / ks.length).toBeGreaterThanOrEqual(2 / 3);
     }
   });
   it('MOB-053 repeats count toward the cap and "Card n of N" is fixed at plan time (random answers, 12 seeds)', () => {
@@ -143,7 +146,7 @@ describe('MOB-054 the verdict names what decided it', () => {
     const ts = one('timedStart', 3); const t = ts.d.timing!; const v = ts.answer({ taps: [t.truthSeconds - 2, t.secondTapSeconds!] });
     expect(v.correct).toBe(false); expect(v.secondsDelta).toBeCloseTo(-2, 1); expect(v.missed).toBe('START 2.0 s early'); expect(v.ruleId).toBe('RULE-022');
     const light = one('hazard', 1, 3); expect(light.d.context.hazard!.kind).toBe('signal');
-    const lv = light.answer({ optionId: 'ta' }); expect(lv.rule).toMatch(/^A traffic light is not named: make that time up \(REG V\.H\.1; HB p\.13\)\.$/);
+    const lv = light.answer({ optionId: 'ta' }); expect(lv.rule).toMatch(/^A slow truck you can pass, a red light and traffic you can get around are not: make that time up \(REG V\.H\.1, V\.H\.5/);
     for (let seed = 1; seed <= 12; seed++) {
       const h = one('hazard', seed, 1); if (h.oracle.optionId !== 'both') continue;
       const hv = h.answer({ optionId: 'ta' }); expect(hv.ruleId).toBe('RULE-032'); expect(hv.rule).toMatch(/^Claim only what you could not make up/); break;
@@ -235,7 +238,7 @@ describe('MOB-058 restart numbers vary; base + position', () => {
     for (let seed = 1; seed <= 24; seed++) {
       const r = one('restart', seed, seed % 4); expect(r.d.timing!.todPrimary).toBe(true);
       losses.add(r.d.context.chart?.seconds ?? -1); owns.add(r.d.prompt);
-      const m = /base (\d+):(\d\d):(\d\d), you start (\d+)(st|nd|rd|th); standing-start loss ([\d.]+) s/.exec(r.d.prompt);
+      const m = /base [A-Z]{3} (\d+):(\d\d):(\d\d), you start (\d+)(st|nd|rd|th); standing-start loss ([\d.]+) s/.exec(r.d.prompt);
       if (m) {
         base++;
         const launch = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) * 60 - Number(m[6]);

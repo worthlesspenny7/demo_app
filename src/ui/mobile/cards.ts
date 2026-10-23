@@ -51,10 +51,11 @@ export function chartCellHtml(chart: Decision['context']['chart'], rung: number)
   return `<div class="mchart" aria-label="chart cell">${inner}</div>`;
 }
 
-const fmtTod = (t: number | undefined): string => (t === undefined ? '' : formatClockFace(t));
 /** The facts of a card (speeds, distance, times, lateness, hazard, TA ledger, clock): short chips. MOB-061: shown behind "details". */
 export function factsHtml(d: Decision, rung: number): string {
   const c = d.context; const f: string[] = [];
+  // PT-14 item 10: one clock format, 12-hour with the zone label in front ("CDT 9:31:50")
+  const fmtTod = (t: number | undefined): string => (t === undefined ? '' : `${c.zone ? `${c.zone} ` : ''}${formatClockFace(t)}`);
   if (c.speeds) f.push(c.speeds.in !== undefined && c.speeds.out !== undefined ? `in ${c.speeds.in} · out ${c.speeds.out}` : `holding ${c.speeds.current}`);
   if (c.distanceFt !== undefined) f.push(`${d.kind === 'checkpoint' || d.kind === 'hazard' ? 'ahead' : 'to the line'} ${Math.round(c.distanceFt)} ft`);
   if (c.room) f.push(`${c.room.what === 'timed' ? 'to the timed line' : 'to the checkpoint'} ${c.room.ft} ft`);
@@ -83,13 +84,16 @@ export function signState(t: Pick<NonNullable<Decision['timing']>, 'signSeconds'
   return { frac, ft: Math.round((t.signFt ?? 0) * frac / 10) * 10, mark: elapsed >= T && elapsed < T + 1.5 };
 }
 /** MOB-052: the distance-to-sign bar of a timed card (the run screen animates it; it reaches zero at the sign, where Dad says "Mark!").
- *  A speed-change card at rung 2 marks the call point (the chart lead before the sign). */
+ *  A speed-change card at rung 2 marks the call point (the chart lead before the sign) with a tick labelled CALL (PT-14 item 8). */
 export function signBarHtml(d: Decision, rung: number): string {
   const t = d.timing; if (!t?.signSeconds) return '';
   const lead = d.kind === 'speedChange' && rung >= 2 && d.context.chart?.meaning === 'lead' ? Math.min(1, d.context.chart.seconds / t.signSeconds) : null;
-  return `<div class="msign" data-testid="sign-bar" data-sign-seconds="${t.signSeconds}" data-sign-ft="${t.signFt ?? 0}">`
-    + `<div class="msign-track"><span class="msign-fill" style="width:100%"></span>${lead !== null ? `<span class="msign-call" style="left:${(lead * 100).toFixed(1)}%" aria-hidden="true"></span>` : ''}<span class="msign-post" aria-hidden="true"></span></div>`
-    + `<b class="msign-ft">${t.signFt ?? 0} ft</b><b class="msign-mark" data-testid="mark" aria-live="assertive"></b></div>`;
+  const at = lead !== null ? (lead * 100).toFixed(1) : null;
+  return `<div class="msign${at !== null ? ' has-call' : ''}" data-testid="sign-bar" data-sign-seconds="${t.signSeconds}" data-sign-ft="${t.signFt ?? 0}">`
+    + `<div class="msign-track"><span class="msign-fill" style="width:100%"></span>${at !== null ? `<span class="msign-call" style="left:${at}%" aria-hidden="true"></span>` : ''}<span class="msign-post" aria-hidden="true"></span></div>`
+    + `<b class="msign-ft">${t.signFt ?? 0} ft</b>`
+    + (at !== null ? `<div class="msign-ticks"><span class="msign-calllbl" data-testid="call-tick" style="left:${Math.min(90, Math.max(10, Number(at))).toFixed(1)}%" aria-label="call when the bar reaches here">CALL</span></div>` : '')
+    + `<b class="msign-mark" data-testid="mark" aria-live="assertive"></b></div>`;
 }
 /** MOB-053: the stopwatch on a watch card: the main digits and the lap at the sign. */
 export function watchCardHtml(w: NonNullable<Decision['context']['watch']>): string {
@@ -112,6 +116,7 @@ export function decisionCardHtml(d: Decision, rung: number): string {
     + `<div class="mcard-kind">${esc(KIND_TITLE[d.kind])}</div>`
     + `<p class="mprompt">${esc(d.prompt)}</p>`
     + row + (c.clock ? clockFaceSvg(c.clock) : '') + (c.watch ? watchCardHtml(c.watch) : '') + signBarHtml(d, rung)
+    + (d.timing?.skip ? `<p class="mskip" data-testid="skip-note" hidden>Jumped ahead ${Math.round(d.timing.skip.to - d.timing.skip.at)} s.</p>` : '')
     + (rung === 1 ? chartCellHtml(c.chart, 1) : '') + detailsHtml(d, rung)
     + `</article>`;
 }

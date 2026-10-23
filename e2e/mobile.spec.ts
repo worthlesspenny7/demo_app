@@ -60,7 +60,7 @@ test.describe('phone 390x844', () => {
       if (st.screen === 'recap') { await page.goto('/?mode=mobile#/m/play/practice'); continue; }
       if (st.phase === 'decision' && st.timing) {
         const t = st.timing as { kind: string; tapLabel: string };
-        await expect(page.locator('.mw-tod')).toHaveText(/^TOD \d{1,2}:\d\d:\d\d$/);
+        await expect(page.locator(".mw-tod")).toHaveText(/^CDT \d{1,2}:\d\d:\d\d$/);   // PT-14: one clock format, zone first, 12-hour
         if (t.kind === 'startStop') {
           await expect(page.locator('.mw-face[data-face=split]')).toBeVisible();
           const left = await page.locator('[data-action=startstop]').boundingBox(), right = await page.locator('[data-action=lap]').boundingBox();
@@ -243,7 +243,7 @@ test.describe('phone 390x844', () => {
       const st = await state(page);
       if (st.screen === 'recap') break;
       if (st.phase === 'decision' && st.kind === 'restart') {
-        const big = page.locator('.mw-tod.mw-big'); await expect(big).toHaveText(/^TOD \d{1,2}:\d\d:\d\d$/);
+        const big = page.locator(".mw-tod.mw-big"); await expect(big).toHaveText(/^CDT \d{1,2}:\d\d:\d\d$/);
         const fs = async (sel: string): Promise<number> => page.locator(sel).evaluate(e => parseFloat(getComputedStyle(e).fontSize));
         expect(await fs('.mw-tod.mw-big')).toBeGreaterThan(await fs('[data-testid=watch-digits]'));
         seen = true;
