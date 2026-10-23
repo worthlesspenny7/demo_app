@@ -40,6 +40,16 @@ export async function loadScenario(spec: string, seed: number): Promise<Scenario
 
 async function main(): Promise<void> {
   const seed = Number(arg('seed', '1'));
+  // MOB-007: npm run sim -- --mode decision --bot oracle|random --seed 3 [--run practice|daily|boss] [--json]
+  if (arg('mode') === 'decision') {
+    const rep = new Session(builtinScenario('varied', seed)).handle({ type: 'decision.run', bot: (arg('bot', 'oracle') === 'random' ? 'random' : 'oracle'), seed, mode: (arg('run', 'practice') as 'practice' | 'daily' | 'boss') });
+    if (rep.type !== 'run') { console.error(rep.type === 'error' ? rep.message : 'unexpected reply'); process.exit(1); }
+    if (flag('json')) { console.log(JSON.stringify(rep.result, null, flag('pretty') ? 2 : 0)); return; }
+    const r = rep.result;
+    console.log(`decision run (${r.mode}) seed ${seed} bot ${rep.bot}: ${r.correct}/${r.total} correct, ${r.secondsTotal} s, ${r.stars} stars, rule cards ${r.ruleCardsShown.join(' ') || 'none'}`);
+    for (const v of r.verdicts) console.log(`  ${v.correct ? 'ok ' : 'MISS'} ${v.kind.padEnd(11)} ${(v.secondsDelta >= 0 ? '+' : '') + v.secondsDelta.toFixed(1)} s  ${v.expected} / ${v.chosen}`);
+    return;
+  }
   const sc = await loadScenario(arg('scenario', 'builtin:varied')!, seed);
   const problems = validateScenario(sc);
   if (problems.length) { console.error('invalid scenario:', problems.join('; ')); process.exit(2); }

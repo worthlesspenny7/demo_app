@@ -297,3 +297,47 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - src/ui/screens/reference.ts: "Long form" panel at the end: one collapsed entry per lesson (14), search by title, built on first open, `#/reference/long-<id>` opens one.
 - tests/mob-content.test.ts (27 tests, MOB-010/011/012). SPECS MOB-010..012 wording updated. Verified in Chromium at 390x844: 31 words before the first Try it, 40 cards, 14 check cards, reader swipe/keys, no page errors; the 94 e2e ran against a scratch build: 93 pass, PLAY-021 (book rows at 1366x768) fails and is not in a file this agent owns (probably the mobile shell's nav change).
 - Finding: LESSON-008/lost cite "How-To: Hacking [01:00]-[02:30] (captions)", but docs/research/10c says Hacking.txt is empty (captions are hallucinated over music); RULE-036 cites the 2024 and 2026 training sessions instead. The lessons' Hacking citation should be reviewed.
+
+## 2026-10-23 Phase VIII mobile shell (agent B: phone shell, tap-stopwatch, PWA)
+- src/ui/mobile/** (new): detect.ts (MOB-020 shell switch: < 700 px or `?mode=mobile`, remembered; `?mode=desk` back), home.ts (MOB-025 Daily set, Continue,
+  five meters, streak, Boss, Dad's card `#/school/dad`, Reference, Dad's voice toggle, Desk mode), run.ts (top strip skill / streak / card n of N, card area,
+  action zone = bottom 40 dvh with 1-4 buttons >= 56 px, verdict overlay with seconds + one-sentence rule + haptic, Continue saved after every answer),
+  tapwatch.ts (MOB-021 the digital lap/split watch on the real core Stopwatch: 1/100 s digits, START/STOP left, LAP right, TOD strip, interval/cumulative lap
+  table; the whole face is GO / LAUNCH / CALL in pause, restart and speed-call cards), cards.ts (MOB-002/026 every decision kind; the GRIID row at phone width
+  through the shared render/griid.ts Column C renderer, CAMEO left, remark below, no Column D sentence at rung 0; the chart cell highlighted, withheld at rung 0;
+  a dash-clock face for clock cards), recap.ts (stars, per-skill tallies, worst three, Again / Next run), progress.ts (MOB-030/031: DecisionProgressState in
+  `rally-trainer.decision.v1`, daily seeds per calendar day, streak, meters +15 % toward 1 / -15 % on a miss, legal rung at 80 %, Boss at 60 % on all five,
+  unfinished run; defers to core helpers when exported), pwa.ts (SW registration, A2HS hint once, haptics, speech), index.ts (`#/m...` routes, landscape class,
+  window.__rally.decision test helpers: state / oracle / elapsed / advance / verdicts / pwa).
+- Engine adapter (engine.ts), feature-detected in order: core Scheduler when it plans cards ('core'); else the core DecisionRunner over a chain of real legs
+  (runner-run.ts: varied / D03 / D04 / D05 / D08 / D08b / D10 / D16, kinds restricted to the run's skills, rule cards from content/rules.ts, CAMEO filled from the
+  scenario because BookRowView.cameoSvg is empty); else a labelled UI stub (stub-engine.ts, Ford chart numbers). Since the core Scheduler landed (03:45) the shell
+  plays 'core' (DecisionRun: oracle(), scenario() used to draw the CAMEO, total for "card n of N"; daily runs pass day/dailyIndex); 'runner' and 'stub' remain
+  as fallbacks. progress.ts uses the core's key and defers to applyRunResult / legalUnlocked / bossUnlocked / dailySeed once src/core/decision/index.ts exports them.
+- main.ts: `#/m...` routes, mobile Home at `#/` in the phone shell, `#/run?skill=` (School "Try it") -> `#/m/play/skill/<skill>`, Desk nav "Phone mode" link,
+  slim "‹ Home" bar over Desk screens in the phone shell, service worker registration. index.html: manifest, theme colour, apple meta, viewport-fit=cover.
+- PWA (MOB-023): public/manifest.webmanifest ("Rally Trainer", 192/512/maskable PNG + SVG icons, standalone, portrait, #121821), public/sw.js (hand-written:
+  precache on install, navigations network-first with the cached shell offline = update on reload, assets cache-first, old caches dropped), vite.config.ts
+  plugin "rally-sw" writes the built file list and a build hash into dist/sw.js.
+- styles.css: additive "Phase VIII: phone shell" section (safe-area insets, >= 16 px text, landscape mini cockpit MOB-022 by CSS on the same DOM).
+- Tests: tests/mob-ui.test.ts (16), e2e/mobile.spec.ts (9: geometry at 390x844 and 360x780, watch faces, landscape, Continue + daily + MOB-032, legal/Boss,
+  book row, wrong-answer verdict + haptic + Desk round trip), e2e/mobile-pwa.spec.ts (2: offline after one visit; MOB-040/042 validation run), e2e/mobile-helpers.ts.
+
+## 2026-10-23 Phase VIII core (agent A: decision mode engine, MOB-001..007, MOB-012, MOB-030..032 engine parts)
+- src/core/decision/ (new): types.ts (public API: Decision, Verdict, DecisionKind, RunPlan, RunResult, Skill, RuleCard, DecisionProgressState, ...),
+  navigator.ts (the OracleBot's procedure re-hosted in the core with per-line overrides; the agent OracleBot is unchanged), runner.ts (DecisionRunner:
+  fixed-tick fast-forward to the 13 decision kinds, real sim actions on answer, verdicts with the rule sentence + source from content/rules.ts, fallback map
+  by kind), scenarios.ts (micro scenarios: one decision point per short leg, legs 60-200 s of ghost time, timed segments 10-25 s; bossScenario on a
+  generated fullLeg), scheduler.ts (Scheduler / DecisionRun: 10-12 slots mixing skills, rule card before the first decision of an unpassed skill, max 3,
+  repeat of a missed skill up to 15 decisions, restore(), runResult stars, oracle / random answerers, playRun), progress.ts (Progress + pure helpers
+  applyRunResult / meterValue / legalUnlocked / bossUnlocked: meters with miss and idle decay, streak by calendar day, daily seeds per date, legal rung
+  at 80 %, boss at 60 %, own key rally-trainer.decision.v1 beside the Desk progress, drill stars recorded through the Desk store for a drillId run), rules.ts.
+- Oracle answers through the runner reproduce the OracleBot's Desk score within 2 s per leg on D03, D04, D05, D16, D18 seeds 1-3 (also D08b, D10, D11 mostly;
+  the long legal days D12/D13 drift a few seconds where the OracleBot recovers continuously and decision mode only recovers on a make-up card).
+- src/agent: protocol decision.next / decision.answer / decision.run, hello `modes: ['desk', 'decision']`; bots.ts DecisionBot (oracle / random),
+  runDecisionBot; CLI `--mode decision`. API.md "Decision mode". tests/mob-core.test.ts (31 tests). ENGINE_VERSION unchanged (no replayed result changed).
+- Verified (not committed): tsc clean; vitest 723/724 with the core and content tests (the one failure, SPEED-001's 48/55 calibration day, is a 30 s timeout
+  under the three agents' concurrent load and passes alone in 19 s); build clean (dist/sw.js gets the precache list); spec:check 383/383; e2e 104/104
+  (94 Desk + 10 phone). MOB-040 on the core engine: first decision 0.5 s after load, 10 cards, 13.9 decisions/min, run 43 s, 10/10 right (the bot taps
+  instantly, so the 0.3 s median gap measures the shell, not a human).
+- For the core: BookRowView.cameoSvg is empty (the shell draws it from DecisionRun.scenario()); one lost card read "You left the route 0 s ago".

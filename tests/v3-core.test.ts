@@ -458,7 +458,7 @@ describe('SPEED-001 speeds 10-55 in charts and the generator', () => {
       const sc = generateStage(seed, { ...PROFILES.fullStage, trafficWaitProbability: 0 }); const sim = new Simulator(sc); const r = runBot(sim, new OracleBot(sim, { useWatch: true }));
       expect(sim.phase).toBe('finished'); expect(r.offCourseCount).toBe(0); expect(r.score.raw).toBeLessThan(60);
     }
-  });
+  }, 90_000); // generated-day oracle run: ~20 s alone, slower under parallel test load
 });
 
 describe('CAL-006 calibration run: no live early/late feedback; the schedule correction', () => {

@@ -2,6 +2,11 @@
  *  Time only advances on `advance`. The book is sent once in `hello`. */
 import { Simulator, type Action, type Observation, type StageResult, type SimOptions, validateAction, sanitizeAction, ACTION_LIST } from '../core/sim.js';
 import type { Scenario } from '../core/course.js';
+import { Scheduler, DecisionRun, playRun, SKILLS, type DecisionResponse, type RunResult, type RunStep, type Skill, type Verdict, type RunPlan } from '../core/decision/index.js';
+import { DecisionBot, type DecisionBotName } from './bots.js';
+
+/** MOB-007: how a decision-mode run is chosen (practice on skills, a daily-set run, or the boss leg). */
+export interface DecisionRunSpec { mode?: RunPlan['mode']; seed?: number; skills?: Skill[]; rung?: 0 | 1 | 2 | 3; decisions?: number; day?: string; dailyIndex?: number }
 
 export type Request =
   | { type: 'hello' }
@@ -10,11 +15,18 @@ export type Request =
   | { type: 'observe' }
   | { type: 'result' }
   | { type: 'truth' }
-  | { type: 'cancel' };
+  | { type: 'cancel' }
+  /** MOB-007 decision mode: the step on screen (a rule card is acknowledged by being returned; a decision stays until answered). `start` begins a new run. */
+  | { type: 'decision.next'; start?: DecisionRunSpec }
+  | { type: 'decision.answer'; response: DecisionResponse | null }
+  /** Play a whole run with a bot (oracle or seeded random answers) and return its RunResult. */
+  | { type: 'decision.run'; bot?: DecisionBotName; botSeed?: number } & DecisionRunSpec;
 
 export interface HelloReply {
   type: 'hello'; scenario: { id: string; name: string; startTime: number; prereadSeconds: number; car: string; speedo: string; driver: string; rules: Scenario['rules']; aids: Scenario['aids'] };
   book: Scenario['book']; instructions: string; actions: string[];
+  /** MOB-007: 'desk' (this scenario, act/advance) and 'decision' (decision.next / decision.answer / decision.run). */
+  modes: ('desk' | 'decision')[];
 }
 export type Reply =
   | HelloReply
@@ -24,6 +36,9 @@ export type Reply =
   | { type: 'result'; result: StageResult }
   | { type: 'truth'; pace: number; carS: number; carMph: number }
   | { type: 'cancelled'; count: number }
+  | { type: 'decision'; step: RunStep | null; done: boolean; plan: { seed: number; mode: RunPlan['mode']; skills: Skill[]; decisionCount: number } }
+  | { type: 'verdict'; verdict: Verdict; done: boolean; result: RunResult | null }
+  | { type: 'run'; bot: string; result: RunResult }
   | { type: 'error'; message: string };
 
 const MAX_SCHEDULED = 100;
@@ -59,7 +74,27 @@ const ACTIONS = ACTION_LIST.map(t => t + (PARAMS[t] ?? ''));
 
 const INSTRUCTIONS = `You are the NAVIGATOR. The driver holds whatever indicated speed you call and obeys traffic controls, but will not turn unless you call it (at a T he stops and asks). Call turns before the intersection. At a STOP the driver waits for call.go: the printed Pause is what the ghost car spends; your car also loses time braking/accelerating, so wait less than the printed pause. Hidden timing checkpoints end each leg; 1 point per second early or late; the next leg's clock starts at your actual arrival. Use advance to move time (max 3600 s per request; untilEvent stops at the first notable event); observe to look; act to do (an act may carry "when": {elapsed|watchReads|event:featureVisible/carStopped/carStarted, label} to schedule it); truth returns hidden pace for debugging only; result ends a CLI session. Features ahead are listed with approximate distance in feet; sign text is readable only within half the sight distance. You cannot see hidden positions; you must track which instruction line you are on (line.set). Time Allowance: at a TA point (a yellow-box instruction after "End timed portion") you have 15 minutes to file ta.request {legIndex, seconds, fromLine, toLine} for each delayed leg, in multiples of 10 s up to 1770; the committee credits at most the measured delay (trains, accident scenes, hazard-forced stops, speed.emergency reduced speed; never navigation errors) minus what you could have made up, and never turns a late leg early. At the end-of-stage TA point send scorecard.ack. Transits: no assigned speed; an exact transit ("take exactly 20 minutes") must be left at IN + interval, a time-of-day restart at base + your ASP minutes. ta.declare is a deprecated alias. Starts and restarts: you leave at your own time (base + ASP minutes) minus the car's standing-start net loss (observe().launch.launchTime); give the driver "about 30 seconds" (call.warn) and count down so the last count lands on the launch second; pullUp is refused while the car ahead is still at the sign. The dash clock's minute hand is ambiguous within 5 s of the minute change (observe().clock): take the time of day from the stopwatch's TOD mode (watch.mode tod, clock.read {source:"stopwatch"}) and the seconds from the clock.`;
 
+const DECISION_INSTRUCTIONS = ` DECISION MODE (modes includes "decision"): decision.next returns the step on screen: a rule card (read it; the next decision.next moves on) or a decision {kind, prompt, context, options?, timing?, deadlineSeconds?}. Answer with decision.answer {response: {optionId} for option cards, {tapSeconds} (seconds after the card appeared) for tapAt / countdown timing, {taps: [start, call]} for startStop}; null is a timeout. The verdict gives secondsDelta (+ late), correct and the rule with its source; the last verdict carries the RunResult. decision.next {start: {mode: practice|daily|boss, seed, skills, rung}} begins a new run; decision.run {bot: oracle|random, ...} plays a whole run.`;
+function checkSpec(x: DecisionRunSpec): string | null {
+  if (!x || typeof x !== 'object') return 'start must be an object';
+  if (x.mode !== undefined && x.mode !== 'practice' && x.mode !== 'daily' && x.mode !== 'boss') return 'mode must be practice, daily or boss';
+  if (x.seed !== undefined && !(Number.isInteger(x.seed) && x.seed >= 0 && x.seed < 2 ** 31)) return 'seed must be an integer 0..2^31';
+  if (x.skills !== undefined && (!Array.isArray(x.skills) || !x.skills.every(s => (SKILLS as readonly string[]).includes(s)))) return `skills must be a list of ${SKILLS.join(', ')}`;
+  if (x.rung !== undefined && ![0, 1, 2, 3].includes(x.rung)) return 'rung must be 0..3';
+  if (x.decisions !== undefined && !(Number.isInteger(x.decisions) && x.decisions >= 10 && x.decisions <= 15)) return 'decisions must be 10..15';
+  if (x.day !== undefined && !(typeof x.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(x.day))) return 'day must be YYYY-MM-DD';
+  if (x.dailyIndex !== undefined && ![0, 1, 2].includes(x.dailyIndex)) return 'dailyIndex must be 0, 1 or 2';
+  return null;
+}
+function startRun(x: DecisionRunSpec, fallbackSeed: number): DecisionRun {
+  const seed = x.seed ?? fallbackSeed; const rung = x.rung ?? 2;
+  if (x.mode === 'boss') return Scheduler.boss(seed, null, x.rung ?? 1).start();
+  if (x.mode === 'daily') return Scheduler.daily(x.day ?? '2026-10-23', x.dailyIndex ?? 0, null, rung).start();
+  return new Scheduler(x.skills?.length ? x.skills : [...SKILLS], seed, null, { mode: 'practice', rung, ...(x.decisions !== undefined ? { decisions: x.decisions } : {}) }).start();
+}
+
 export class Session {
+  private run: DecisionRun | null = null;
   readonly sim: Simulator;
   private eventCount = 0;
   private scheduled: { action: Action; when: NonNullable<Extract<Request, { type: 'act' }>['when']>; armedTod: number }[] = [];
@@ -97,7 +132,30 @@ export class Session {
       switch (req.type) {
         case 'hello': {
           const sc = this.scenario;
-          return { type: 'hello', scenario: { id: sc.id, name: sc.name, startTime: sc.startTime, prereadSeconds: sc.prereadSeconds, car: sc.car.name, speedo: sc.speedo.kind, driver: `${sc.driver.name} (${sc.driver.skill})`, rules: sc.rules, aids: sc.aids }, book: sc.book, instructions: INSTRUCTIONS, actions: ACTIONS };
+          return { type: 'hello', scenario: { id: sc.id, name: sc.name, startTime: sc.startTime, prereadSeconds: sc.prereadSeconds, car: sc.car.name, speedo: sc.speedo.kind, driver: `${sc.driver.name} (${sc.driver.skill})`, rules: sc.rules, aids: sc.aids }, book: sc.book, instructions: INSTRUCTIONS + DECISION_INSTRUCTIONS, actions: ACTIONS, modes: ['desk', 'decision'] };
+        }
+        case 'decision.next': {
+          if (req.start !== undefined || !this.run) { const bad = checkSpec(req.start ?? {}); if (bad) return { type: 'error', message: bad }; this.run = startRun(req.start ?? {}, this.scenario.seed); }
+          const run = this.run;
+          let step = run.next();
+          if (step?.type === 'rule') { run.ack(); }
+          return { type: 'decision', step, done: step === null, plan: { seed: run.plan.seed, mode: run.plan.mode, skills: run.plan.skills, decisionCount: run.total } };
+        }
+        case 'decision.answer': {
+          const run = this.run; if (!run) return { type: 'error', message: 'no decision run: send decision.next first' };
+          let step = run.next(); while (step?.type === 'rule') { run.ack(); step = run.next(); }
+          if (!step) return { type: 'error', message: 'the run is finished: send decision.next {start} for a new one' };
+          const r = req.response;
+          if (r !== null && r !== undefined && (typeof r !== 'object' || Array.isArray(r))) return { type: 'error', message: 'response must be an object {optionId?, tapSeconds?, taps?} or null' };
+          const verdict = run.answer(r ?? null);
+          const done = run.done();
+          return { type: 'verdict', verdict, done, result: done ? run.result() : null };
+        }
+        case 'decision.run': {
+          const bad = checkSpec(req); if (bad) return { type: 'error', message: bad };
+          if (req.bot !== undefined && req.bot !== 'oracle' && req.bot !== 'random') return { type: 'error', message: 'decision.run bot must be oracle or random' };
+          const run = startRun(req, this.scenario.seed); const bot = new DecisionBot(req.bot ?? 'oracle', Number.isFinite(req.botSeed) ? req.botSeed! : run.plan.seed);
+          return { type: 'run', bot: bot.name, result: playRun(run, bot) };
         }
         case 'act':
           { const bad = validateAction(req.action); if (bad) return { type: 'error', message: bad }; }

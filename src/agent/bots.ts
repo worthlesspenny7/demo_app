@@ -5,6 +5,7 @@ import { nodeById, instructionS, timedFinalSpeed } from '../core/course.js';
 import { accelLoss, stopLoss, rampLead, chartLead } from '../core/perf-table.js';
 import { mphToFps } from '../core/units.js';
 import { rng, type Rng } from '../core/rng.js';
+import { oracleAnswerer, randomAnswerer, playRun, type DecisionAnswerer, type DecisionRun, type Decision, type DecisionResponse, type RunResult } from '../core/decision/index.js';
 
 export type BotName = 'oracle' | 'rookie' | 'noPause' | 'lateCall' | 'goCount' | 'wrongMinute' | 'random' | 'none';
 
@@ -351,3 +352,14 @@ export function runBot(sim: Simulator, bot: Bot | null, maxSeconds = 12 * 3600):
   if (bot && sim.phase === 'finished' && sim.sc.rules.taMode === 'paper') bot.onTick(sim);   // TAF-001 paper sheets are handed in at the red checkpoint stop, which is the finish
   return sim.result();
 }
+
+/** MOB-007: a decision-mode navigator: 'oracle' answers every card as the perfect navigator (truth), 'random' answers with seeded random taps and options. */
+export type DecisionBotName = 'oracle' | 'random';
+export class DecisionBot implements DecisionAnswerer {
+  readonly name: DecisionBotName;
+  private readonly a: DecisionAnswerer;
+  constructor(name: DecisionBotName = 'oracle', seed = 1) { this.name = name; this.a = name === 'random' ? randomAnswerer(seed) : oracleAnswerer(); }
+  respond(d: Decision, run: DecisionRun): DecisionResponse | null { return this.a.respond(d, run); }
+}
+/** Play a whole decision run with a bot. */
+export function runDecisionBot(run: DecisionRun, bot: DecisionBot): RunResult { return playRun(run, bot); }
