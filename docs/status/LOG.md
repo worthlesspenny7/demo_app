@@ -355,3 +355,5 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Items 9 and 10 done (MOB-060, MOB-061): e2e covers Continue-first Home + confirm, the sign bar / Mark!, TOD digits, < 40 words per decision screen and < 60 per rule card at 390x844 and 360x780, the School link; CAMEO faces checked by a unit test and a screenshot.
 - Five checks (not committed): tsc clean; vitest 752/752 (was 724); build clean; Playwright 107/107 with --workers=2 (was 104; Desk 94 unchanged); spec:check 395/395 (MOB-050..061 added). ENGINE_VERSION unchanged (sim.ts only gains the opt-in `Exit.rejoin`).
 - Fix sprint PT-13 landed: 752 unit, 107 e2e, 395/395. PT-14 phone replay launched (Opus).
+- PT-14 (7c981b9): 17/19 fixed, 0 regressed; rule-card follower right on 13/14 kinds; engagement 31/40 (was 25).
+  Fix sprint PT-14 launched (Opus).

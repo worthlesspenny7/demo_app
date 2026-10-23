@@ -14,9 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-23): PT-14 phone replay (Opus, read-only, 390x844) on the fix-sprint PT-13 commit (752 unit,
-  107 e2e, 395/395). When it lands: commit the report; fix sprint if warranted; five checks; commit; push. Queued: PT-12
-  top-10 (Desk mode), the known not-done list.
+- In flight (2026-10-23): fix sprint PT-14 (Opus) on 7c981b9. PT-14: 17/19 fixed, 0 regressed, engagement 31/40;
+  fixing C-1 (hazard causes on RULE-031 per REG V.H.1/V.H.5), C-2 (timed start graded from the car's arrival, card never
+  closes before its CALL time), rule card matches the slot's kind, asymmetric distractors, Boss hold compression, skill
+  runs two-thirds their skill, Stay-on-time pace >= 4/min, call tick label, lead/loss numbers in prompts, CAMEO labels,
+  phone layouts for Reference/School. When it lands: five checks, commit, push, PT-15 replay. Queued: PT-12 Desk top-10.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
