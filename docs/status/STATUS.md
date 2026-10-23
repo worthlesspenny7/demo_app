@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-23): PT-13 phone playtest (Opus, read-only, 390x844) on the Phase VIII commit (724 unit, 104 e2e,
-  383/383). Phase VIII built: decision mode (src/core/decision), phone shell (src/ui/mobile, #/ on a phone or ?mode=mobile),
-  PWA (public/manifest.webmanifest, public/sw.js), 40 rule cards (content/rules.ts), School = rule grid, lessons in
-  Reference long form. When PT-13 lands: commit report, fix sprint, five checks, commit, push. Queued after: PT-12
-  top-10 (Desk mode), the known not-done list below.
+- In flight (2026-10-23): fix sprint PT-13 (Opus) on 154746c. PT-13 phone playtest: pace targets met (first decision
+  5 s, median gap 6.5 s, runs under 4 min, offline OK), engagement 25/40; fixing: pause card printed number = graded
+  number, TA grader = rule cards, sign cue (Mark!) on timed cards, scheduler repeat cap + Instruments variety, verdict by
+  outcome, Boss at rung 2 with every kind, guessable cards removed, varied restart numbers, protect unfinished run,
+  40-word screens. When it lands: five checks, commit, push, PT-14 phone replay. Queued: PT-12 top-10 (Desk).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

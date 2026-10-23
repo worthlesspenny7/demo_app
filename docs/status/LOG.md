@@ -343,3 +343,5 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - For the core: BookRowView.cameoSvg is empty (the shell draws it from DecisionRun.scenario()); one lost card read "You left the route 0 s ago".
 - Phase VIII integrated and verified: 724 unit, 104 e2e (94 desk + 10 phone), 383/383 specs. Committed. PT-13 phone
   playtest launched (Opus).
+- PT-13 phone playtest (154746c): pace fixed (5 s to first decision, 6.5 s median gap, <4 min runs), engagement 25/40;
+  five High bugs around grading vs printed numbers and guessable cards. Fix sprint PT-13 launched (Opus).
