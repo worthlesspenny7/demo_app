@@ -15,7 +15,27 @@ skills of the event can be drilled at home: pause arithmetic, timed speed
 changes, calibration runs, early/late recovery, time allowances, course
 following with traps, and full stages.
 
-## Playing it (Josh's first evening)
+## Playing it on a phone (the few-minutes-a-day mode)
+
+```bash
+npm install && npm run build && npm run preview -- --host
+```
+
+Open the printed network URL on your phone (same Wi-Fi). On a laptop, add `?mode=mobile` to force the phone shell;
+`?mode=desk` switches back.
+
+- **Install it:** the browser offers "Add to Home Screen" once; after one load it runs offline.
+- **Daily set:** three runs of 10 to 15 cards, three to five minutes each. One decision per card; the verdict is
+  seconds gained or lost plus one cited sentence. A rule card (under 60 words) appears only before a skill you have
+  not passed. Tap "details" on a card for the chips, "source" on a rule card for the citation.
+- **The phone is the stopwatch:** big digits, left half START/STOP, right half LAP, time-of-day strip. On pause and
+  restart cards the whole face is the GO or LAUNCH button. Timed cards show a shrinking distance bar and Dad says
+  "Mark!" at the sign.
+- **Progress:** five skill meters (the Four S's plus Instruments), a streak, and Continue for an unfinished run.
+  The legal rung (no hints) opens per skill at 80 %; the Boss run (a whole generated leg) at 50 % on every meter.
+- **Desk mode** (the full cockpit) is one tap away for long sessions and shares the same engine and rules.
+
+## Playing it at a desk (Josh's first evening)
 
 ```bash
 npm install
