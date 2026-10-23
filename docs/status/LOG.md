@@ -386,3 +386,6 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Tests: tests/mob-pt15.test.ts (5), e2e/mobile-pt15.spec.ts (2); mob-pt14 test and e2e adjusted (the note is no longer in the prompt). SPECS.md MOB-072..076.
 - Five checks (not committed): tsc clean; vitest 790/790 (was 785); build clean; Playwright 115/115 with --workers=2 (was 113); spec:check 410/410 (was 405).
 - Not done (PT-15 top 10 items 6-10): BUG-P5 old pre-read pause "Which way", P6 clock mix, P7 pre-read speed, N9 thumb-zone details/Chart, N11 "Line 2", P8-P11 polish.
+- Phase VIII wrapped. Phone mode across the day: PT-13 25/40 -> PT-14 31/40 -> PT-15 34/40; first decision 4.5 s,
+  median gap 4.8 s, every run >= 4 decisions/min, rule-card follower 100 % (5,905 answers), offline PWA. Final head
+  verified: 790 unit, 115 e2e, 410/410 specs. Next session starts from the HANDOFF block.

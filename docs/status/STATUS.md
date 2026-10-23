@@ -14,7 +14,15 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight: nothing; wrap.
+- In flight: nothing. Phase VIII wrapped 2026-10-23. Head = verified build (790 unit, 115 e2e, 410/410 specs,
+  ENGINE 3.4.0). Phone mode: PT-15 engagement 34/40, pace targets met, rule-card follower never marked wrong
+  (5,905 answers). README has the phone play guide.
+- Next session, in order: (1) whatever Josh reports from his phone (card kind, run seed from the recap); (2) PT-15 lows
+  P5-P11 (pre-read pause slot asks 'Which way', clock card mix, 'What speed' reads Column C, details/Chart placement,
+  'Line 2' on micro cards, Reference polish, meters saturate in one evening); (3) PT-12 Desk top-10 (posted limits
+  enforced by the driver etc., design notes in LOG 'Fix sprint PT-12'); (4) Josh's Ford measurements into the car
+  preset (Q12/Q22) and 6 V / 12 V; (5) the older known not-done list (PT-06 LOW 14, 20, 21, 25-27; PT-09 LOW 10, 12-14;
+  realism v4 items 6, 8-10).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
