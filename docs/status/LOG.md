@@ -341,3 +341,5 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
   (94 Desk + 10 phone). MOB-040 on the core engine: first decision 0.5 s after load, 10 cards, 13.9 decisions/min, run 43 s, 10/10 right (the bot taps
   instantly, so the 0.3 s median gap measures the shell, not a human).
 - For the core: BookRowView.cameoSvg is empty (the shell draws it from DecisionRun.scenario()); one lost card read "You left the route 0 s ago".
+- Phase VIII integrated and verified: 724 unit, 104 e2e (94 desk + 10 phone), 383/383 specs. Committed. PT-13 phone
+  playtest launched (Opus).

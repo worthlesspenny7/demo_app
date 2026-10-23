@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-23): PHASE VIII mobile-first, decision-first redesign (Josh: too much reading, too few
-  decisions, plays a few minutes on his phone; browser only, no native app). Design: docs/spec/MOBILE.md. Spec: SPECS
-  'V5' (MOB-001..042). Build: core DecisionRunner + Scheduler + protocol (agent A), mobile shell + tap-stopwatch + PWA
-  (agent B), rule cards + Reference long-form (agent C); then a phone-viewport playtest against MOB-040..042. Desk mode
-  (the existing cockpit) stays. PT-12 top-10 remains queued after this phase.
+- In flight (2026-10-23): PT-13 phone playtest (Opus, read-only, 390x844) on the Phase VIII commit (724 unit, 104 e2e,
+  383/383). Phase VIII built: decision mode (src/core/decision), phone shell (src/ui/mobile, #/ on a phone or ?mode=mobile),
+  PWA (public/manifest.webmanifest, public/sw.js), 40 rule cards (content/rules.ts), School = rule grid, lessons in
+  Reference long form. When PT-13 lands: commit report, fix sprint, five checks, commit, push. Queued after: PT-12
+  top-10 (Desk mode), the known not-done list below.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
