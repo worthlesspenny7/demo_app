@@ -510,6 +510,12 @@ MOB-069 (PT-14 item 8) The speed-change call tick is labelled CALL on the sign b
 MOB-070 (PT-14 item 9) The watch prompt prints the lap and the lead, the pre-read pause prompt the loss (rung 2), so each card is answerable from its own text. [P1]
 MOB-071 (PT-14 item 10) Display finish: CAMEO labels never drawn through icons or arrows at phone width (sizes pinned against page CSS, labels outside icon boxes, sign text inside its box); verdict seconds never wrap; one clock format (12-hour with the zone label first, as Column C prints it) in prompts, chips and the TOD strip; varied distances in prompts; the Reference and the School on a phone are one column of collapsible sections with no text under 16 px (the School grid a list). [P2]
 
+MOB-072 (PT-15 P1) The rule card shown before an exact-transit OUT launch (RULE-014) states the graded rule: pull up early and say GO at the OUT time minus your start loss, as at every restart; a follower of the card is right on every transit-OUT launch. [P1]
+MOB-073 (PT-15 P2) A compressed hold jumps only after the START tap (2 s after it, never before the sign) and START is graded in wall seconds: a START 2.5 s late reads "START 2.5 s late" and the CALL stays reachable. [P1]
+MOB-074 (PT-15 P3) The driver's line on a checkpoint card matches the variant: "Red board ahead, we stop." (red STOP board), "Green sign up ahead.", "Car ahead pulling off, we keep going." [P2]
+MOB-075 (PT-15 P4, N13) The run is saved as the unfinished run when it starts, before the first answer; Home offers Continue (0 of N done). [P2]
+MOB-076 (PT-15 P5) A Boss long-hold card is under 40 words: a shorter prompt, the explanation of the jump behind "details". [P2]
+
 ## BACKLOG
 # [P3] future specs from the design reviews; not required for v1 and ignored by spec-check.
 GHOST-011 (superseded by GRIID-007; rules.turnSpeedDatum is not implemented) rules.turnSpeedDatum: 'afterTurn' applies a turn-line speed at s + intersectionWidth, 'leadingEdge' at s; a 35->25 turn over 80 ft differs by 0.62 s between the two (Q3). [P3]

@@ -125,7 +125,7 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-014', skill: 'startOnTime', title: 'Exact transit: IN plus interval', lesson: 'transits', kinds: ['transitOut', 'restart'],
-    text: "For an exact transit (take exactly 20 minutes), write the time of day at the IN sign and add the interval: IN 2:41:20 plus 20m00s is OUT 3:01:20. Arrive early, pull up to the sign, and leave exactly on the OUT second.",
+    text: "For an exact transit (take exactly 20 minutes), write the time of day at the IN sign and add the interval: IN 2:41:20 plus 20m00s is OUT 3:01:20. Pull up early, say GO at the OUT time minus your start loss, as at every restart.",
     source: "HB p.11-12; 2026 Example Rally #31",
   },
   {

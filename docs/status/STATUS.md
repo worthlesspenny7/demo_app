@@ -14,10 +14,7 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-23): PT-15 phone replay (Opus, read-only) on the fix-sprint PT-14 commit (785 unit, 113 e2e,
-  405/405). When it lands: commit the report; fix sprint only if a High remains; five checks; commit; push; then wrap
-  with a play guide for the phone. Queued: PT-12 Desk top-10; BUG-N9 (details/Chart mid-screen), N13 (run saved only
-  after first answer), micro cards all on 'Line 2'.
+- In flight: nothing; wrap.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

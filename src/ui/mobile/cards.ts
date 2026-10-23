@@ -74,7 +74,8 @@ export function factsHtml(d: Decision, rung: number): string {
 /** MOB-061: the chips and the chart cell behind one tap-to-reveal "details" (rung 1: the chart has its own "Chart" button). */
 export function detailsHtml(d: Decision, rung: number): string {
   const facts = factsHtml(d, rung); const chart = rung >= 2 ? chartCellHtml(d.context.chart, rung) : '';
-  return facts || chart ? `<details class="mdetails" data-testid="details"><summary class="mob-reveal">details</summary>${chart}${facts}</details>` : '';
+  const hold = d.timing?.skip?.detail ? `<p class="mskipd" data-testid="skip-detail">${esc(d.timing.skip.detail)}</p>` : '';   // PT-15 P5: the long explanation lives here, the prompt keeps a 4-word note
+  return facts || chart || hold ? `<details class="mdetails" data-testid="details"><summary class="mob-reveal">details</summary>${chart}${facts}${hold}</details>` : '';
 }
 
 /** MOB-052: where the sign is at `elapsed` seconds into a timed card: the bar's fraction (1 -> 0 at the sign), feet left, and the "Mark!" moment. */
@@ -143,7 +144,7 @@ export function driverLine(d: Decision): string {
     case 'speedChange': return `Dad: "Holding ${c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
     case 'watch': return 'Dad: "Lapped. When do I change?"';
     case 'turn': return 'Dad: "Which way here?"';
-    case 'checkpoint': return 'Dad: "Green sign up ahead."';
+    case 'checkpoint': return /red GREAT RACE STOP/.test(d.prompt) ? 'Dad: "Red board ahead, we stop."' : /pulls off/.test(d.prompt) ? 'Dad: "Car ahead pulling off, we keep going."' : 'Dad: "Green sign up ahead."';
     case 'hazard': return `Dad: "${c.hazard?.label ?? 'Something ahead'}."`;
     case 'lost': return 'Dad: "I think we missed it."';
     case 'makeup': return 'Dad: "Are we late?"';

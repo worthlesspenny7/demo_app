@@ -50,7 +50,7 @@ export function fitWall(t: TimingSpec): TimingSpec {
   if (!skip && last > HOLD_MAX_SECONDS) {
     const at = r1(t.kind === 'startStop' ? t.truthSeconds + 2 : 3);
     const to = r1(last - SKIP_LEAD_SECONDS);
-    if (to > at + 1) skip = { at, to, note: `Long hold: the watch skips ahead to ${SKIP_LEAD_SECONDS} s before the ${t.kind === 'startStop' ? 'CALL' : t.tapLabel}.` };
+    if (to > at + 1) skip = { at, to, note: 'Long hold: it jumps.', detail: `Long hold: ${t.kind === 'startStop' ? 'two seconds after your START' : 'a few seconds in'} the watch jumps ahead to ${SKIP_LEAD_SECONDS} s before the ${t.kind === 'startStop' ? 'CALL' : t.tapLabel}.` };
   }
   const jump = skip ? skip.to - skip.at : 0;
   const maxSeconds = r1(Math.max(Math.min(t.maxSeconds, WALL_MAX_SECONDS + jump), last + t.toleranceSeconds + 2));
@@ -244,7 +244,7 @@ export class DecisionRunner {
   private chartAvail(): boolean { return this.rung >= 1; }
   private make(kind: DecisionKind, key: string, prompt: string, context: DecisionContext, extra: { options?: DecisionOption[]; timing?: TimingSpec; deadlineSeconds?: number }, oracle: DecisionResponse, x: Record<string, unknown> = {}): Pending {
     this.seen.add(key);
-    if (extra.timing) { extra = { ...extra, timing: fitWall(extra.timing) }; if (extra.timing!.skip) prompt = `${prompt} ${extra.timing!.skip.note}`; }
+    if (extra.timing) { extra = { ...extra, timing: fitWall(extra.timing) }; if (extra.timing!.skip) prompt = prompt.replace(/^Line \d+: /, '').replace(/START on Dad's Mark!, then CALL \d+ half a ramp/, 'START on Mark!, CALL half a ramp').replace(/START on Dad's Mark!, then CALL/, 'START on Mark!, CALL'); }   // PT-15 P5: a compressed hold keeps a short prompt (the jump is explained behind "details", skip.detail)
     const d: Decision = { id: `${kind}:${key.split(':').slice(1).join(':') || '0'}:${++this.n}`, kind, skill: SKILL_OF_KIND[kind], prompt: clip(prompt), context, ...extra };
     return { d, key, tod0: this.sim.tod, pace0: this.safePace(), oracle, x };
   }

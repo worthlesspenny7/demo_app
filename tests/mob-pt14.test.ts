@@ -194,7 +194,7 @@ describe('MOB-067 N6: long holds are shown compressed; no card stays open over 3
             skipped++;
             expect(t.skip.to).toBeCloseTo(last - SKIP_LEAD_SECONDS, 1); expect(t.skip.at).toBeLessThan(t.skip.to);
             if (t.kind === 'startStop') expect(t.skip.at).toBeGreaterThan(t.truthSeconds + 1.5);   // after the START
-            expect(d.prompt).toMatch(/Long hold: the watch skips ahead to 5 s before the/); expect(t.skip.note).toMatch(/skips ahead/);
+            expect(d.prompt).not.toMatch(/Long hold/); expect(t.skip.detail).toMatch(/the watch jumps ahead to 5 s before the/);
           }
         }
         run.answer(run.oracle());

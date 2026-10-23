@@ -58,7 +58,7 @@ test('MOB-067 a Boss-leg hold over 25 s jumps the watch to 5 s before the CALL a
   await page.goto('/?mode=mobile#/m/continue');
   await expect.poll(async () => (await state(page)).kind, { timeout: 20_000 }).toBe('timedStart');
   const st = await state(page); const t = st.timing as { truthSeconds: number; secondTapSeconds: number; skip: { at: number; to: number; note: string } };
-  await expect(page.locator('.mprompt')).toContainText('Long hold: the watch skips ahead to 5 s before the CALL.');
+  await expect(page.locator('[data-testid=skip-detail]')).toContainText('the watch jumps ahead to 5 s before the CALL');   // behind "details" (PT-15 P5)
   await expect(page.locator('[data-testid=skip-note]')).toBeHidden();
   const wall0 = Date.now();
   const o = await page.evaluate(() => (window as unknown as W).__rally.decision.oracle());

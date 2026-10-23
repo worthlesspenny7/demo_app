@@ -50,7 +50,7 @@ export interface TimingSpec {
   todPrimary?: boolean;
   /** PT-14 N6: a long hold shown compressed. When the card's clock reaches `at` s it jumps to `to` s (the watch and the TOD digits jump,
    *  the card says so with `note`); taps are still reported in card seconds. Wall time after the jump = card time - (to - at). */
-  skip?: { at: number; to: number; note: string };
+  skip?: { at: number; to: number; note: string; /** PT-15 P5: the full explanation, shown behind "details" (the prompt carries only `note`). */ detail?: string };
   /** What the tap does in the car ("GO", "LAUNCH", "CALL 45", "START"). */
   tapLabel: string;
   secondTapLabel?: string;
