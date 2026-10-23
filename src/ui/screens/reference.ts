@@ -138,11 +138,11 @@ export function renderReference(root: HTMLElement, sub?: string): void {
   ];
   for (const [t, c] of cites) rl.append(el('li', {}, t, ' ', el('span', { class: 'cite' }, `[${c}]`)));
   rules.append(rl, el('p', { class: 'cite' }, 'Penalty and Time Allowance values come from the 2026 Event Regulations (docs/research/09-event-regulations-2026.md, REG V.E and V.H); the tables below quote them with their rule numbers. The regulations list no penalty for starting late: the leg score is the penalty.'));
-  g.append(spm, rec, pa, cam, gi, rules, ...regPanels(), lessonPanel());
+  g.append(spm, rec, pa, cam, gi, rules, ...regPanels(), lessonPanel(), longFormPanel());
   page.append(g);
   root.replaceChildren(page);
   // PLAY-048: a lesson's "On the Reference page" link opens #/reference/<id> at its section
-  if (sub) { const t = (page.querySelector(`#ref-lesson-${CSS.escape(sub)}`) ?? page.querySelector(`#ref-${CSS.escape(sub)}`)) as HTMLElement | null; if (t) { t.classList.add('ref-target'); try { t.scrollIntoView({ block: 'start' }); } catch { /* jsdom */ } } }
+  if (sub) { const t = (page.querySelector(`#ref-lesson-${CSS.escape(sub)}`) ?? page.querySelector(`#ref-${CSS.escape(sub)}`)) as HTMLElement | null; if (t) { t.classList.add('ref-target'); if (t instanceof HTMLDetailsElement) t.open = true; /* MOB-010: #/reference/long-<lesson id> opens that long form */ try { t.scrollIntoView({ block: 'start' }); } catch { /* jsdom */ } } }
 }
 
 /** PLAY-048: the tables, lists and worked examples the evening-one lessons link to (every rule kept, with its source). */
@@ -154,5 +154,36 @@ function lessonPanel(): HTMLElement {
     for (const b of r.blocks) sec.append(renderBlock(b));
     panel.append(sec);
   }
+  return panel;
+}
+
+/**
+ * MOB-010: "Long form": the full text of every lesson, one collapsed entry per lesson, searchable by title. The School shows short rule cards (content/rules.ts);
+ * the lesson ids still resolve at #/school/<id>, and #/reference/long-<id> opens the entry here. An entry's body is built the first time it is opened.
+ */
+function longFormPanel(): HTMLElement {
+  const panel = el('div', { class: 'panel', id: 'ref-long', style: 'grid-column:1/3' }, el('h3', {}, 'Long form'),
+    el('p', { class: 'muted' }, `The ${LESSONS.length} full readings the School used to open with. Each is closed until you open it; type to find one by title.`));
+  const search = el('input', { type: 'search', id: 'long-search', placeholder: 'Search the readings by title', 'aria-label': 'Search the long-form readings by title', style: 'width:100%;min-height:44px;margin:6px 0 10px;font-size:16px' }) as HTMLInputElement;
+  const none = el('p', { class: 'muted', id: 'long-none', style: 'display:none' }, 'No reading matches.');
+  const list = el('div', { class: 'long-list' });
+  const entries: { title: string; d: HTMLDetailsElement }[] = [];
+  for (const l of LESSONS) {
+    const d = el('details', { class: 'long-entry', id: `ref-long-${l.id}`, 'data-lesson': l.id }) as HTMLDetailsElement;
+    d.append(el('summary', { style: 'min-height:44px;display:flex;align-items:center;cursor:pointer;font-weight:600' }, `${l.title} (${l.minutes} min)`));
+    let built = false;
+    d.addEventListener('toggle', () => {
+      if (!d.open || built) return; built = true;
+      const body = el('div', { class: 'lesson long-body' }); for (const b of l.body) body.append(renderBlock(b));
+      d.append(body, el('p', { class: 'cite' }, `Source: ${l.source}`), el('p', { class: 'muted' }, 'The check question for this reading is on the ', el('a', { href: '#/school' }, 'School'), ' page; ', el('a', { href: `#/school/${l.id}` }, 'open it as a lesson'), '.'));
+    });
+    entries.push({ title: l.title, d }); list.append(d);
+  }
+  search.addEventListener('input', () => {
+    const q = search.value.trim().toLowerCase(); let shown = 0;
+    for (const e of entries) { const hit = q === '' || e.title.toLowerCase().includes(q); e.d.style.display = hit ? '' : 'none'; if (hit) shown++; }
+    none.style.display = shown === 0 ? '' : 'none';
+  });
+  panel.append(search, none, list);
   return panel;
 }

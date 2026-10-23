@@ -1,5 +1,12 @@
-/** School: short lessons with one check question each. Blocks (lists, call patterns, tables, the printable driver card) render from content/lessons.ts. */
-import { LESSONS, lessonIntro, type LessonBlock } from '../../../content/lessons.js';
+/**
+ * School (Phase VIII, MOB-010): a grid of rule cards grouped by the Four S's (content/rules.ts), each with a "Try it" button, and the lessons' check
+ * questions as one-tap cards. The long lessons moved to the Reference page under "Long form"; `#/school/<lesson id>` still opens one (saved progress and
+ * links keep working). `#/school/dad` is Dad's card with its "Dad reads this" mode (MOB-011). The page layout is the pure model in content/school-layout.ts.
+ * Blocks (lists, call patterns, tables, the printable driver card) render from content/lessons.ts.
+ */
+import { LESSONS, type LessonBlock } from '../../../content/lessons.js';
+import { CARD_PARTS, cardPartText, checkCards, dadCard, dadPages, dadStep, dadSwipe, schoolGroups, schoolIntro, SCHOOL_TITLE, tryHash, DAD_TITLE, type CheckCard } from '../../../content/school-layout.js';
+import { type RuleCard } from '../../../content/rules.js';
 import { app, el } from '../state.js';
 import { allDrills } from '../../core/drills/index.js';
 import { shuffleCheck } from '../viewmodels/lessoncheck.js';
@@ -37,21 +44,111 @@ export function mountPrintCard(card: HTMLElement): () => void {
   return undo;
 }
 
+/** Small scoped styles for the rule grid and the reader (the shared stylesheet is not touched). Buttons are 56 px tall for one-thumb use (MOBILE.md). */
+const SCHOOL_CSS = `
+.school-groups h2 { margin: 18px 0 2px; } .school-groups .group-note { margin: 0 0 8px; }
+.rule-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.rule-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; } .rule-card .rule-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rule-card h3 { margin: 0; font-size: 17px; } .rule-card button.try-it { white-space: nowrap; } .rule-card .rule-text { margin: 0; font-size: 16px; line-height: 1.4; } .rule-card .cite { margin: 0; font-size: 13px; }
+.rule-card button.try-it, .check-card button.opt, .dad-reader button { min-height: 56px; min-width: 56px; font-size: 17px; }
+.check-card { padding: 12px; } .check-card .opt { display: block; width: 100%; margin: 6px 0; text-align: left; }
+.dad-reader { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--text); padding: max(12px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom)); touch-action: pan-y; }
+.dad-reader .dad-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 18px; }
+.dad-reader .dad-text { flex: 1; display: flex; align-items: center; font-size: clamp(28px, 7.5vw, 52px); line-height: 1.22; font-weight: 700; overflow-y: auto; }
+.dad-reader .dad-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .dad-reader .dad-nav button { min-height: 72px; font-size: 22px; }
+`;
+
+/** One rule card, its parts in the order of CARD_PARTS (the "Try it" button sits in the header row, so little is read before the first tap). */
+function ruleCardEl(c: RuleCard): HTMLElement {
+  const card = el('div', { class: 'card rule-card', 'data-rule': c.id, 'data-skill': c.skill });
+  const head = el('div', { class: 'rule-head' }); card.append(head);
+  for (const part of CARD_PARTS) {
+    const text = cardPartText(c, part);
+    if (part === 'title') head.append(el('h3', { class: 'title' }, text));
+    else if (part === 'try') { const b = el('button', { class: 'primary try-it', 'data-skill': c.skill }, text); b.onclick = () => { location.hash = tryHash(c.skill); }; head.append(b); }
+    else if (part === 'text') card.append(el('p', { class: 'rule-text' }, text));
+    else if (part === 'source') card.append(el('p', { class: 'cite' }, text));
+    else if (part === 'long' && c.lesson) card.append(el('a', { href: `#/school/${c.lesson}`, class: 'rule-long', 'data-lesson-link': c.lesson }, text));
+  }
+  return card;
+}
+
+/** A lesson's check question as a one-tap card: one tap on an option answers; a right answer marks the lesson passed, as the lesson page does. */
+function checkCardEl(c: CheckCard): HTMLElement {
+  const done = app.progress.lessonDone(c.lessonId);
+  const box = el('div', { class: `card check-card ${done ? 'done' : ''}`, 'data-check': c.lessonId }, el('div', { class: 'meta' }, `${c.title}${done ? ' · passed' : ''}`), el('p', {}, c.question));
+  const fb = el('p', { class: 'muted' });
+  const sh = shuffleCheck({ options: c.options, answer: c.answer }, Math.floor(Math.random() * 1e9));
+  sh.options.forEach((o, i) => {
+    const b = el('button', { class: 'opt' }, o);
+    b.onclick = () => {
+      box.querySelectorAll('.opt').forEach(x => x.classList.remove('right', 'wrong'));
+      if (i === sh.answer) { b.classList.add('right'); fb.textContent = `Right. ${c.explain}`; fb.className = 'ok'; app.progress.markLesson(c.lessonId); }
+      else { b.classList.add('wrong'); fb.textContent = `Not quite. ${c.explain}`; fb.className = 'danger'; }
+    };
+    box.append(b);
+  });
+  box.append(fb);
+  return box;
+}
+
+function renderRuleIndex(page: HTMLElement): void {
+  page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, SCHOOL_TITLE), el('p', { class: 'muted', id: 'school-intro' }, schoolIntro()));
+  const groups = el('div', { class: 'school-groups' });
+  for (const g of schoolGroups()) {
+    groups.append(el('h2', { 'data-skill': g.skill }, g.title), el('p', { class: 'muted group-note' }, g.fourS));
+    const grid = el('div', { class: 'rule-grid' }); for (const c of g.cards) grid.append(ruleCardEl(c)); groups.append(grid);
+  }
+  page.append(groups);
+  const dad = el('p', {}, el('a', { href: '#/school/dad', id: 'dad-link' }, `${DAD_TITLE}: print it, or read it while you drive`));
+  const checks = el('div', { class: 'school-checks' }, el('h2', {}, 'Check yourself'), el('p', { class: 'muted' }, 'One tap per question. A right answer marks the reading passed.'));
+  const grid = el('div', { class: 'rule-grid' }); for (const c of checkCards()) grid.append(checkCardEl(c)); checks.append(grid);
+  page.append(dad, checks);
+}
+
+/** MOB-011: Dad's card page: the printable card (printing is unchanged) and "Dad reads this", one rule per screen in large type, swipe or arrow to the next. */
+function renderDad(page: HTMLElement): void {
+  const card = dadCard(); const pages = dadPages();
+  const read = el('button', { class: 'primary', id: 'dad-read', style: 'min-height:56px;font-size:18px' }, 'Dad reads this');
+  const back = el('button', { id: 'dad-back', style: 'min-height:48px' }, 'All rules'); back.onclick = () => { location.hash = '#/school'; };
+  page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, DAD_TITLE), el('p', { class: 'muted' }, `${pages.length} rules for the driver. Print the card for the car, or tap Dad reads this to see one rule per screen.`),
+    el('div', { class: 'actions', style: 'display:flex;gap:8px;margin:8px 0' }, read, back), el('div', { class: 'lesson' }, renderBlock({ card })));
+  read.onclick = () => openDadReader(page, pages.map(p => p.text));
+}
+
+function openDadReader(host: HTMLElement, lines: string[]): void {
+  document.getElementById('dad-reader')?.remove();
+  let i = 0;
+  const count = el('span', { id: 'dad-count' }); const text = el('div', { class: 'dad-text', id: 'dad-text', 'aria-live': 'polite' });
+  const close = el('button', { id: 'dad-close' }, 'Close'); const prev = el('button', { id: 'dad-prev' }, 'Back'); const next = el('button', { class: 'primary', id: 'dad-next' }, 'Next');
+  const reader = el('div', { class: 'dad-reader', id: 'dad-reader', role: 'dialog', 'aria-label': "Dad reads this", tabindex: -1 }, el('div', { class: 'dad-bar' }, count, close), text, el('div', { class: 'dad-nav' }, prev, next));
+  const show = (): void => { text.textContent = lines[i] ?? ''; count.textContent = `Rule ${i + 1} of ${lines.length}`; (prev as HTMLButtonElement).disabled = i === 0; (next as HTMLButtonElement).disabled = i === lines.length - 1; reader.dataset['page'] = String(i + 1); };
+  const go = (d: -1 | 1): void => { i = dadStep(i, d, lines.length); show(); };
+  const onKey = (e: KeyboardEvent): void => {
+    if (!reader.isConnected) { document.removeEventListener('keydown', onKey); return; }
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); go(1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); go(-1); }
+    else if (e.key === 'Escape') shut();
+  };
+  const shut = (): void => { reader.remove(); document.removeEventListener('keydown', onKey); window.removeEventListener('hashchange', shut); };
+  let sx = 0, sy = 0;
+  reader.addEventListener('touchstart', e => { const t = e.changedTouches[0]; if (t) { sx = t.clientX; sy = t.clientY; } }, { passive: true });
+  reader.addEventListener('touchend', e => { const t = e.changedTouches[0]; if (!t) return; const d = dadSwipe(t.clientX - sx, t.clientY - sy); if (d) go(d); }, { passive: true });
+  prev.onclick = () => go(-1); next.onclick = () => go(1); close.onclick = shut;
+  document.addEventListener('keydown', onKey); window.addEventListener('hashchange', shut, { once: true });
+  show(); host.append(reader); try { reader.focus(); } catch { /* jsdom */ }
+}
+
 export function renderSchool(root: HTMLElement, lessonId?: string): void {
   const page = el('div', { class: 'page' });
   const lesson = LESSONS.find(l => l.id === lessonId);
-  if (!lesson) {
-    page.append(el('h1', {}, 'School'), el('p', { class: 'muted' }, `${LESSONS.length} readings, ${Math.min(...LESSONS.map(l => l.minutes))} to ${Math.max(...LESSONS.map(l => l.minutes))} minutes each (${LESSONS.reduce((a, l) => a + l.minutes, 0)} minutes in all; every card shows its own), one check question at the end. Then go drive.`));
-    const cards = el('div', { class: 'cards' });
-    for (const l of LESSONS) {
-      const done = app.progress.lessonDone(l.id);
-      const b = el('button', { class: 'primary' }, done ? 'Read again' : 'Read'); b.onclick = () => { location.hash = `#/school/${l.id}`; };
-      cards.append(el('div', { class: `card ${done ? 'done' : ''}`, 'data-lesson': l.id }, el('div', { class: 'title' }, l.title), el('div', { class: 'meta' }, `${l.minutes} min${done ? ' · passed' : ''}`), el('div', { class: 'muted' }, lessonIntro(l).slice(0, 140) + '…'), el('div', { class: 'actions' }, b)));
-    }
-    page.append(cards);
+  if (lessonId === 'dad') {
+    renderDad(page);
+  } else if (!lesson) {
+    renderRuleIndex(page);
   } else {
     const idx = LESSONS.indexOf(lesson);
-    const box = el('div', { class: 'lesson panel' }, el('h3', {}, `Lesson ${idx + 1} of ${LESSONS.length}`), el('h1', {}, lesson.title));
+    const box = el('div', { class: 'lesson panel' }, el('h3', {}, `Lesson ${idx + 1} of ${LESSONS.length}`), el('h1', {}, lesson.title), el('p', { class: 'muted', id: 'lesson-longform' }, 'This reading is also on the Reference page, under ', el('a', { href: `#/reference/long-${lesson.id}` }, 'Long form'), '.'));
     // PT-10: a long lesson is read as two pages (page 2 holds the source, the check and the Next buttons)
     const split = lesson.splitAt !== undefined && lesson.splitAt > 0 && lesson.splitAt < lesson.body.length ? lesson.splitAt : null;
     const body = el('div', { class: 'body', id: 'lesson-page-1' }); for (const b of lesson.body.slice(0, split ?? lesson.body.length)) body.append(renderBlock(b)); box.append(body);
