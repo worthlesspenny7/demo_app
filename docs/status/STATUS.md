@@ -14,12 +14,10 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-23): fix sprint PT-14 LANDED, NOT committed (on 878079e): all ten top fixes done (C-1 RULE-031 causes per REG V.H.1/V.H.5 +
-  Time Delay Form, follower 160/160 hazards; C-2 timed start from the car's arrival, 32/32 Boss timed starts; rule card = the slot's rule;
-  rank-balanced distractors; holds > 25 s compressed, no card open > 30 s wall; single-skill runs >= 2/3; Stay on time 5.8/min with human
-  pauses; CALL tick labelled; lap/lead/loss in prompts; CAMEO label sizes pinned (BUG-15 root cause: ".mob *" CSS reached SVG text), one clock
-  format "CDT h:mm:ss", varied distances, phone Reference/School). Five checks green: tsc, 785 unit, build, 113 e2e (--workers=2), 405/405.
-  Next: review, commit, push, PT-15 replay. Queued: PT-12 Desk top-10; BUG-N9 / BUG-N13 (not in the top 10).
+- In flight (2026-10-23): PT-15 phone replay (Opus, read-only) on the fix-sprint PT-14 commit (785 unit, 113 e2e,
+  405/405). When it lands: commit the report; fix sprint only if a High remains; five checks; commit; push; then wrap
+  with a play guide for the phone. Queued: PT-12 Desk top-10; BUG-N9 (details/Chart mid-screen), N13 (run saved only
+  after first answer), micro cards all on 'Line 2'.
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 
