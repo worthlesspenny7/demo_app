@@ -285,3 +285,7 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Wrap-up (Josh: "leave a little capacity for after I play"). Fix sprint PT-12 stopped before any code change; its
   N-E1 design notes are above. Final head: verified 3.4.0 build. Scores this weekend: playability 34.5 -> 46 /55,
   realism 54 -> 59 /70, education tip accuracy 94 %. Next session starts from the HANDOFF block in STATUS.md.
+
+## 2026-10-23 Phase VIII: mobile-first, decision-first
+- Josh played a minute: bored by text, too few decisions, wants a few minutes on his phone, browser not app.
+- Wrote docs/spec/MOBILE.md and SPECS V5 (MOB-001..042). Launching core / mobile shell / content agents.

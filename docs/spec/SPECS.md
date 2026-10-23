@@ -449,6 +449,42 @@ GEN-015 Generated towns print 15 mph (sometimes 12) school-zone and congested-ar
 GEN-016 Pause rows where the real pages print them: a blinker row "0 MPH / 0m15s / NN MPH" (REG Example #15) and the two-row railroad crossing (the round RR sign row, then the tracks row "0 MPH / 0m15s / 15 MPH", 11b rows 102-103, with the TA-eligible train); the car stops at both (a full-stop node). [P2]
 GEN-017 Generated days carry a mid-stage "take exactly" transit (REG #31-33), delayed timed changes (#25) and chained timed changes (#14, which the ghost, the sim, the oracle and Column C follow); 50 day seeds validate and the oracle finishes every one on course with no DNF. [P2]
 
+## V5: MOBILE-FIRST, DECISION-FIRST (2026-10-23, docs/spec/MOBILE.md)
+Josh: too much reading, too few decisions; he plays a few minutes on his phone. Engine and rules unchanged; presentation redesigned.
+
+### Engine: decision mode
+MOB-001 `DecisionRunner(scenario, opts)` wraps a Simulator and fast-forwards (fixed tick, deterministic) to the next decision point; `next()` returns a `Decision` {kind, prompt (<= 40 words), context (book row, speeds, distance, times, chart cell), options?: {id, label}[], timing?: {kind: 'tapAt' | 'countdown' | 'startStop', truthSeconds}, deadlineSeconds?} or null at the end; `answer(decision, response)` applies the navigator's response as real sim actions, continues to the verdict moment and returns `Verdict` {secondsDelta, correct, rule (one sentence with the source), nextDecisionIn}. [P1]
+MOB-002 Decision kinds and how they are found: preread (a book row needs a call: which way / what speed / what to mark), turn (the decision point of a turn line is within the lead distance), speedChange (a sign or landmark with a speed change is in sight), timedStart (a timed or chained line at its sign), pause (the car has stopped at a pause row), restart (a time-of-day restart or exact-transit OUT hold), transitOut (the IN time was just taken), makeup (the car is >= 5 s late with recoverable distance), hazard (train, tractor, red light, slow truck, construction ahead), ta (a TA point reached with a measured delay), lost (a turn was missed), checkpoint (a timing sign in sight while slow), clock (a restart within 60 s and the dash clock inside its minute-ambiguity window). [P1]
+MOB-003 Between decisions the runner drives the car for the navigator: assigned speeds held with the scenario's driver noise, turns taken as called, no make-up unless the player chose one; the ghost and scoring are the real ones, so a run's leg errors equal what Desk mode would score for the same calls (test: oracle answers through the runner reproduce the oracle's Desk score within 2 s per leg). [P1]
+MOB-004 Timing decisions use real time: pause (tap GO; truth = chart pause for the in/out pair, graded like D03), restart (tap the launch second; graded like D16), timedStart (tap START at the sign then the speed at the stopwatch time; graded like D04), speedChange (tap "call" at the split point; graded like D05); all other decisions are instant. Timed segments in micro-runs are 10-25 s long. [P1]
+MOB-005 A `Scheduler` builds a run of 10-15 decisions from a skill plan: it mixes skills, repeats a skill that was missed within the same run, inserts a rule card (RULE-xxx id, <= 60 words, cited) before the first decision of a skill the player has not passed, and never repeats a rule card for a passed skill; runs are seeded and reproducible. [P1]
+MOB-006 Run result: per-decision verdicts, seconds total, per-skill tallies (safetyCourse, startOnTime, stayOnTime, recovery, instruments), stars (3 if >= 90 % correct and |seconds| <= 10, 2 at >= 75 %, 1 at >= 50 %), and the three worst cards with their rule for the recap screen. [P1]
+MOB-007 Agent protocol: `hello` reports `modes: ['desk', 'decision']`; `decision.next`, `decision.answer` and `decision.run` (play a whole run with a bot) are added so agents can playtest decision mode headlessly; the random bot never crashes it (50 seeds). [P2]
+
+### Content: micro-lessons
+MOB-010 Every rule the drills grade exists as a RULE card of at most 60 words with a source citation (REG rule, HB page or video timestamp); the full lesson text moves to the Reference page under "Long form"; the School lists rule cards grouped by the Four S's with a "try it" button that starts a run on that skill. [P1]
+MOB-011 Dad's card stays one tap from Home and prints as before; a "Dad reads this while you drive" mode shows one rule per screen with a swipe. [P2]
+MOB-012 Text budget tests: no decision prompt over 40 words, no rule card over 60, no run with more than three rule cards, and the first decision of a brand-new player appears within 2 cards of opening the app. [P1]
+
+### Mobile shell and PWA
+MOB-020 Mobile shell at 360-430 px portrait: top strip (skill, streak, card n of N), card area, action zone in the bottom 40 % with 1-4 buttons each >= 56 px tall and >= 44 px wide spacing, no horizontal scroll, no text under 16 px, safe-area insets respected; Playwright test on a 390x844 viewport asserts geometry. [P1]
+MOB-021 Tap-stopwatch face (the handbook's digital lap/split watch): large digits (1/100 s), left half START/STOP, right half LAP, a TOD strip; in a pause or restart card the whole face is the GO/LAUNCH button; a lap table of interval/cumulative pairs below. [P1]
+MOB-022 Landscape phone shows a mini cockpit (watch large, current book row, driver line, two buttons); rotating preserves the run. [P2]
+MOB-023 PWA: web manifest (name, icons 192/512, display standalone, portrait, theme colour), a service worker that caches the app shell and content for offline play, update-on-reload, an "Add to Home Screen" hint shown once; the build emits them and a test loads the app offline after one visit. [P1]
+MOB-024 Haptics on verdicts (navigator.vibrate: short for right, double for wrong) and optional speech for the driver's lines; both off when unsupported, with no errors. [P2]
+MOB-025 Home on a phone shows: Daily set (three runs), Continue (last unfinished run), the five skill meters, streak, Dad's card, Desk mode; the existing cockpit and School remain reachable as Desk mode and Reference. [P1]
+MOB-026 Decision cards render the real book row (the GRIID row renderer at phone width: CAMEO left, Column C right, remark below) and, where relevant, the simple chart cell highlighted; no sentence in Column D at the legal rung. [P2]
+
+### Sessions and progression
+MOB-030 Daily set: three runs re-randomised per calendar day, streak stored with progress, completion recorded; "Continue" resumes an unfinished run across reloads. [P1]
+MOB-031 Skill meters fill with correct decisions (decayed by misses); at 80 % a skill offers its legal-rung runs (no hints, no chart cell shown, clock minute withheld near the change); Boss run = a full generated leg in decision mode (about 25 cards) unlocked when all five meters are >= 60 %. [P1]
+MOB-032 Progress storage is shared with Desk mode (stars, aces, streak) through the existing Storage interface; a run's result also records the drill-equivalent stars where the run was a drill. [P2]
+
+### Validation targets (agent playtest on 390x844)
+MOB-040 First decision within 20 s of opening for a new player; median gap between decisions under 15 s and at least four decisions per minute over a run; a run completes in under 5 minutes of wall time at 1x; measured by an automated Playwright run and asserted. [P1]
+MOB-041 Every interactive control in a card is within the bottom 40 % of the viewport or is the card's single primary surface (the watch face); asserted at 390x844 and 360x780. [P1]
+MOB-042 Lighthouse-equivalent checks: manifest valid, service worker registered, offline reload works, no console errors, tap targets >= 48 px; asserted in e2e. [P2]
+
 ## BACKLOG
 # [P3] future specs from the design reviews; not required for v1 and ignored by spec-check.
 GHOST-011 (superseded by GRIID-007; rules.turnSpeedDatum is not implemented) rules.turnSpeedDatum: 'afterTurn' applies a turn-line speed at s + intersectionWidth, 'leadingEdge' at s; a 35->25 turn over 80 ft differs by 0.62 s between the two (Q3). [P3]
