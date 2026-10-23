@@ -1,6 +1,6 @@
 // Phase VIII phone shell (MOB-020..026, MOB-030/031, MOB-041) on phone viewports. Desk mode stays at 1366 x 800 in the other specs.
 import { test, expect } from '@playwright/test';
-import { PHONES, state, step, toDecision, geometry, expectPhoneGeometry, collectErrors, type W } from './mobile-helpers.js';
+import { PHONES, state, step, toDecision, geometry, expectPhoneGeometry, collectErrors, screenWords, type W } from './mobile-helpers.js';
 
 for (const vp of PHONES) {
   test.describe(`phone ${vp.width}x${vp.height}`, () => {
@@ -18,6 +18,7 @@ for (const vp of PHONES) {
       await expect(page.locator('[data-testid=streak]')).toHaveText(/Streak \d+/);
       await expect(page.locator('[data-testid=dads-card]')).toBeVisible();
       await expect(page.locator('[data-testid=desk-mode]')).toBeVisible();
+      await expect(page.locator('[data-testid=school]')).toHaveAttribute('href', '#/school');   // MOB-061: the School is one tap from the phone Home
       const home = await geometry(page);
       expect(home.hscroll).toBe(false); expect(home.small).toEqual([]); expect(home.tiny).toEqual([]);
       await page.locator('[data-testid=play-daily]').click();
@@ -27,11 +28,14 @@ for (const vp of PHONES) {
         const st = await state(page);
         if (st.screen === 'recap') break;
         if (st.phase === 'decision' || st.phase === 'rule' || st.phase === 'verdict') {
-          // top strip: skill, streak, card n of N
+          // top strip: skill, streak, card n of N (short forms on screen, the long ones as accessible names)
           await expect(page.locator('[data-testid=strip-skill]')).not.toBeEmpty();
-          await expect(page.locator('.mob-strip .mob-streak')).toHaveText(/Streak/);
-          await expect(page.locator('[data-testid=card-count]')).toHaveText(/^Card \d+ of \d+$/);
+          await expect(page.locator('.mob-strip .mob-streak')).toHaveAttribute('aria-label', /^Streak \d+$/);
+          await expect(page.locator('[data-testid=card-count]')).toHaveText(/^\d+\/\d+$/);
+          await expect(page.locator('[data-testid=card-count]')).toHaveAttribute('aria-label', /^Card \d+ of \d+$/);
           expectPhoneGeometry(await geometry(page), `${st.phase} ${st.kind ?? ''}`);
+          // MOB-061: under 40 words on a decision screen, under 60 on a rule card (closed "details" do not count)
+          if (st.phase === 'decision' || st.phase === 'rule') { const n = await screenWords(page); expect(n, `${st.phase} ${st.kind ?? ''}: ${n} words`).toBeLessThan(st.phase === 'rule' ? 60 : 40); }
           if (st.kind) kinds.add(st.kind);
         }
         await step(page);
@@ -138,12 +142,12 @@ test.describe('phone 390x844', () => {
     await expect(page.locator('[data-testid=play-daily]')).toHaveText(/run 2 of 3/);
   });
 
-  test('MOB-031 the legal-rung run appears at 80 % on a skill and the Boss run when every meter is at 60 %; the legal rung withholds the chart cell', async ({ page }) => {
+  test('MOB-031 MOB-059 the legal-rung run appears at 80 % on a skill and the Boss run when every meter is at 50 %; the legal rung withholds the chart cell; the first Boss shows the chart', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/?mode=mobile#/m');
     await page.evaluate(() => {
       const meters: Record<string, unknown> = {};
-      for (const s of ['safetyCourse', 'startOnTime', 'stayOnTime', 'recovery', 'instruments']) meters[s] = { value: s === 'stayOnTime' ? 0.85 : 0.5, correct: 10, total: 12, lastDay: null, passed: s === 'stayOnTime' };
+      for (const s of ['safetyCourse', 'startOnTime', 'stayOnTime', 'recovery', 'instruments']) meters[s] = { value: s === 'stayOnTime' ? 0.85 : 0.45, correct: 10, total: 12, lastDay: null, passed: s === 'stayOnTime' };
       localStorage.setItem('rally-trainer.decision.v1', JSON.stringify({ version: 1, meters, streak: { current: 0, best: 0, lastDay: null }, daily: { day: null, completed: [], best: {} }, rulesSeen: [], unfinished: null, runs: 3 }));
     });
     await page.reload();
@@ -154,12 +158,15 @@ test.describe('phone 390x844', () => {
     await toDecision(page);
     for (let i = 0; i < 3; i++) { await expect(page.locator('.mchart')).toHaveCount(0); if ((await step(page)) === 'recap') break; await toDecision(page).catch(() => undefined); }
     await page.goto('/?mode=mobile#/m');
-    await page.evaluate(() => { const p = JSON.parse(localStorage.getItem('rally-trainer.decision.v1')!); for (const k of Object.keys(p.meters)) p.meters[k].value = 0.7; p.unfinished = null; localStorage.setItem('rally-trainer.decision.v1', JSON.stringify(p)); });
+    await page.evaluate(() => { const p = JSON.parse(localStorage.getItem('rally-trainer.decision.v1')!); for (const k of Object.keys(p.meters)) p.meters[k].value = 0.55; p.unfinished = null; localStorage.setItem('rally-trainer.decision.v1', JSON.stringify(p)); });
     await page.reload();
     await expect(page.locator('[data-testid=boss]')).toBeVisible();
     await page.locator('[data-testid=boss]').click();
     await toDecision(page);
-    expect((await state(page)).of).toBeGreaterThanOrEqual(15);
+    expect((await state(page)).of).toBe(22);
+    await expect(page.locator('[data-testid=chart-button]')).toHaveCount(0);   // rung 2: no Chart button, the chart is on the card
+    await step(page);
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('rally-trainer.decision.v1')!).unfinished.plan.rung)).toBe(2);
   });
 
   test('MOB-026 a pre-read card shows the real book row at phone width: CAMEO left, Column C right, remark below', async ({ page }) => {
@@ -190,7 +197,7 @@ test.describe('phone 390x844', () => {
     await expect(page.locator('[data-testid=verdict]')).toHaveAttribute('data-correct', 'false');
     await expect(page.locator('.mv-sec')).toHaveText(/s$/);
     await expect(page.locator('.mv-rule')).not.toBeEmpty();
-    expect(await page.evaluate(() => (window as unknown as { __vib: number[][] }).__vib)).toEqual([[60, 80, 60]]);
+    expect((await page.evaluate(() => (window as unknown as { __vib: number[][] }).__vib)).slice(-1)).toEqual([[60, 80, 60]]);   // (a timed card may buzz once at Dad's Mark! first)
     const n0 = (await state(page)).answered;
     await page.locator('.mob-actions [data-action=next]').click();
     await toDecision(page);
@@ -203,5 +210,72 @@ test.describe('phone 390x844', () => {
     await page.locator('#nav-phone').click();
     await expect(page.locator('[data-screen=home]')).toBeVisible();
     expect(errors).toEqual([]);
+  });
+
+  test('MOB-052 a speed-change or timed-start card shows the sign arriving: the bar shrinks to zero and Dad says Mark! at the sign', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/?mode=mobile#/m/play/skill/stayOnTime');
+    let seen = false;
+    for (let i = 0; i < 40 && !seen; i++) {
+      const st = await state(page);
+      if (st.screen === 'recap') { await page.goto('/?mode=mobile#/m/play/skill/stayOnTime'); continue; }
+      const t = st.timing as { signSeconds?: number } | null;
+      if (st.phase === 'decision' && t?.signSeconds) {
+        const bar = page.locator('[data-testid=sign-bar]'); await expect(bar).toBeVisible();
+        await expect(page.locator('[data-testid=mark]')).toHaveText('');
+        const w0 = await page.locator('.msign-fill').evaluate(e => (e as HTMLElement).getBoundingClientRect().width);
+        await page.waitForFunction(x => (window as unknown as W).__rally.decision.elapsed() >= x + 0.1, t.signSeconds, { polling: 'raf', timeout: 60_000 });
+        await expect(page.locator('[data-testid=mark]')).toHaveText('Mark!');
+        expect(await page.locator('.msign-fill').evaluate(e => (e as HTMLElement).getBoundingClientRect().width)).toBeLessThan(Math.max(2, w0 * 0.05));
+        await expect(page.locator('.msign-ft')).toHaveText('0 ft');
+        seen = true;
+      }
+      await step(page);
+    }
+    expect(seen).toBe(true);
+  });
+
+  test('MOB-058 a restart card shows the time of day as the big digits', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/?mode=mobile#/m/play/skill/startOnTime');
+    let seen = false;
+    for (let i = 0; i < 30 && !seen; i++) {
+      const st = await state(page);
+      if (st.screen === 'recap') break;
+      if (st.phase === 'decision' && st.kind === 'restart') {
+        const big = page.locator('.mw-tod.mw-big'); await expect(big).toHaveText(/^TOD \d{1,2}:\d\d:\d\d$/);
+        const fs = async (sel: string): Promise<number> => page.locator(sel).evaluate(e => parseFloat(getComputedStyle(e).fontSize));
+        expect(await fs('.mw-tod.mw-big')).toBeGreaterThan(await fs('[data-testid=watch-digits]'));
+        seen = true;
+      }
+      await step(page);
+    }
+    expect(seen).toBe(true);
+  });
+
+  test('MOB-060 with an unfinished run Continue is the primary button, and starting another run asks first', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.goto('/?mode=mobile#/m/play/practice');
+    let answered = 0; while (answered < 1) { if ((await step(page)) === 'decision') answered++; }
+    await page.locator('.mob-actions [data-action=next]').click();
+    await toDecision(page);
+    const at = await state(page);
+    await page.locator('.mob-quit').click();
+    await expect(page.locator('[data-testid=continue]')).toHaveClass(/primary/);
+    await expect(page.locator('[data-testid=play-daily]')).not.toHaveClass(/primary/);
+    const c = (await page.locator('[data-testid=continue]').boundingBox())!, d = (await page.locator('[data-testid=play-daily]').boundingBox())!;
+    expect(c.y).toBeLessThan(d.y);
+    await page.locator('[data-testid=play-daily]').click();
+    await expect(page.locator('[data-screen=confirm]')).toBeVisible();
+    await page.locator('[data-testid=keep-run]').click();
+    await toDecision(page);
+    expect((await state(page)).id).toBe(at.id);
+    await page.locator('.mob-quit').click();
+    await page.locator('[data-testid=play-daily]').click();
+    await page.locator('[data-testid=start-over]').click();
+    await toDecision(page);
+    expect((await state(page)).answered).toBe(0);
+    const u = await page.evaluate(() => JSON.parse(localStorage.getItem('rally-trainer.decision.v1')!).unfinished);
+    expect(u === null || u.plan.mode === 'daily').toBe(true);
   });
 });

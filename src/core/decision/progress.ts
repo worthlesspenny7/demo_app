@@ -1,7 +1,7 @@
 /**
  * Decision-mode progress (MOB-030 / MOB-031 / MOB-032): five skill meters that fill with correct decisions and drain with misses and idle
  * days, a streak by calendar day, the daily set (three runs per date, seeds from the date), the legal-rung unlock per skill at 80 % and
- * the boss run when every meter is at 60 %. Persisted as JSON through the same Storage-like interface as the Desk progress
+ * the boss run when every meter is at 50 %. Persisted as JSON through the same Storage-like interface as the Desk progress
  * (src/ui/viewmodels/progress.ts; the caller passes it in, the core never touches localStorage), under its own key so the Desk data (drill stars, aces, runs) is never rewritten; a run that stands in
  * for a Desk drill records its stars there through `desk.recordRun`.
  */
@@ -21,7 +21,8 @@ export const METER_LOSS = 0.2;
 export const IDLE_GRACE_DAYS = 3;
 export const IDLE_DECAY = 0.02;
 export const LEGAL_UNLOCK = 0.8;
-export const BOSS_UNLOCK = 0.6;
+/** MOB-059: the Boss opens at 50 % on every meter (a rookie reaches it in the first week). */
+export const BOSS_UNLOCK = 0.5;
 /** A passed skill whose meter falls below this is failing again: its rule cards come back. */
 export const FAILING_BELOW = 0.5;
 export const DAILY_RUNS = 3;
@@ -58,6 +59,7 @@ function sanitize(x: unknown): DecisionProgressState {
   base.rulesSeen = Array.isArray(o.rulesSeen) ? o.rulesSeen.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(-200) : [];
   if (o.unfinished && typeof o.unfinished === 'object' && o.unfinished.plan && Array.isArray(o.unfinished.plan.items) && Array.isArray(o.unfinished.responses)) base.unfinished = { plan: o.unfinished.plan, responses: o.unfinished.responses.slice(0, 60) as (DecisionResponse | null)[] };
   base.runs = Math.round(num(o.runs, 0, 1e9, 0));
+  if (typeof o.bossRuns === 'number') base.bossRuns = Math.round(num(o.bossRuns, 0, 1e9, 0));
   return base;
 }
 
@@ -69,7 +71,7 @@ export function meterValue(p: DecisionProgressState, skill: Skill, day?: string)
 }
 /** MOB-031: the legal rung is offered per skill at 80 %. */
 export function legalUnlocked(p: DecisionProgressState, skill: Skill, day?: string): boolean { return meterValue(p, skill, day) >= LEGAL_UNLOCK; }
-/** MOB-031: the boss run unlocks when every meter is at 60 % or more. */
+/** MOB-031: the boss run unlocks when every meter is at 50 % or more (MOB-059). */
 export function bossUnlocked(p: DecisionProgressState, day?: string): boolean { return SKILLS.every(s => meterValue(p, s, day) >= BOSS_UNLOCK); }
 /**
  * Fold a finished run into the state (pure; returns a new state): idle decay made real, each verdict moves its meter (a correct one
@@ -89,6 +91,7 @@ export function applyRunResult(p0: DecisionProgressState, result: RunResult, day
   if (st.lastDay !== day) { st.current = st.lastDay && daysBetween(st.lastDay, day) === 1 ? st.current + 1 : 1; st.lastDay = day; st.best = Math.max(st.best, st.current); }
   d.rulesSeen = [...new Set([...d.rulesSeen, ...result.ruleCardsShown])].slice(-200);
   d.unfinished = null; d.runs++;
+  if (result.mode === 'boss') d.bossRuns = (d.bossRuns ?? 0) + 1;
   return d;
 }
 
@@ -110,7 +113,7 @@ export class Progress {
   meters(day?: string): Record<Skill, number> { return Object.fromEntries(SKILLS.map(s => [s, this.meter(s, day)])) as Record<Skill, number>; }
   /** MOB-031: the legal rung (no hints, no chart cell, clock minute withheld) is offered per skill at 80 %. */
   legalUnlocked(skill: Skill, day?: string): boolean { return legalUnlocked(this.data, skill, day); }
-  /** MOB-031: the boss run unlocks when every meter is at 60 % or more. */
+  /** MOB-031: the boss run unlocks when every meter is at 50 % or more (MOB-059). */
   bossUnlocked(day?: string): boolean { return bossUnlocked(this.data, day); }
   /** A skill whose rule cards the Scheduler still shows (not passed, or passed and failing again). */
   needsRules(skill: Skill, day?: string): boolean { return !this.data.meters[skill].passed || this.meter(skill, day) < FAILING_BELOW; }

@@ -3,7 +3,8 @@
  *   #/m                         Home (MOB-025)
  *   #/m/play/daily/<i>          daily-set run i (MOB-030)
  *   #/m/play/skill/<s>[/legal]  practice one skill; /legal = the no-hints rung (MOB-031)
- *   #/m/play/boss               the Boss run (about 25 cards)
+ *   #/m/play/boss               the Boss run (22 cards, every kind)
+ *   (any #/m/play/... over an unfinished run first asks: Continue my run / Start over, MOB-060)
  *   #/m/play/practice           a mixed practice run on a fresh seed
  *   #/m/play/again              the last run again (same seed)
  *   #/m/continue                resume the unfinished run (MOB-030)
@@ -16,6 +17,7 @@ import { renderRecap } from './recap.js';
 import { startRun, resumeRun, type RunRequest } from './engine.js';
 import { loadProgress, dailyState, dailySkills, saveProgress, clearUnfinished } from './progress.js';
 import { session, wallSeconds } from './session.js';
+import { el } from '../state.js';
 import { pwaStatus } from './pwa.js';
 
 export { currentMode, rememberMode, MOBILE_MAX_WIDTH } from './detect.js';
@@ -27,6 +29,19 @@ function begin(req: RunRequest, dailyIndex: number | null): void {
   session.handle = startRun(req, p);
   saveProgress(clearUnfinished(p));
   location.replace('#/m/run');
+}
+
+/** MOB-060: starting a run over an unfinished one asks first. */
+function confirmStart(root: HTMLElement, parts: string[]): void {
+  const p = loadProgress(); const u = p.unfinished!;
+  const keep = el('a', { class: 'mob-btn primary big', href: '#/m/continue', 'data-testid': 'keep-run' }, 'Continue my run');
+  const fresh = el('button', { class: 'mob-btn big', type: 'button', 'data-testid': 'start-over' }, 'Start over');
+  fresh.onclick = () => play(parts);
+  root.replaceChildren(el('div', { class: 'mob mob-confirm', 'data-screen': 'confirm' },
+    el('header', { class: 'mob-head' }, el('h1', {}, 'Run in progress')),
+    el('p', { class: 'mob-note' }, `You have a run in progress (${u.responses.length} of ${u.plan.decisionCount} done). Starting another one ends it.`),
+    el('section', { class: 'mob-actions' }, keep, fresh),
+    el('a', { class: 'mob-btn', href: '#/m' }, 'Home')));
 }
 
 function play(parts: string[]): void {
@@ -41,7 +56,8 @@ function play(parts: string[]): void {
     const legal = parts[2] === 'legal';
     return begin({ skills: [parts[1] as Skill], seed: fresh, mode: 'practice', rung: legal ? 0 : 2 }, null);
   }
-  if (what === 'boss') return begin({ skills: [...SKILLS], seed: fresh, mode: 'boss', rung: 1, decisions: 25 }, null);
+  // MOB-059: the first Boss at rung 2 (the chart on the card), later ones at rung 1 (the chart behind a button)
+  if (what === 'boss') return begin({ skills: [...SKILLS], seed: fresh, mode: 'boss', rung: (p.bossRuns ?? 0) > 0 ? 1 : 2 }, null);
   if (what === 'again' && session.last) return begin(session.last.req, session.last.dailyIndex);
   return begin({ skills: [...SKILLS], seed: fresh, mode: 'practice', rung: 2 }, null);
 }
@@ -61,7 +77,10 @@ export function renderMobile(root: HTMLElement, parts: string[]): (() => void) |
   installHelpers();
   const screen = parts[0] ?? '';
   switch (screen) {
-    case 'play': play(parts.slice(1)); return null;
+    case 'play': {
+      if (loadProgress().unfinished) { confirmStart(root, parts.slice(1)); return null; }
+      play(parts.slice(1)); return null;
+    }
     case 'continue': resume(); return null;
     case 'run': {
       if (!session.handle) { const p = loadProgress(); if (p.unfinished) { resume(); return null; } location.replace('#/m'); return null; }

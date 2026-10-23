@@ -77,7 +77,7 @@ test('MOB-040 MOB-042 a new player on a 390x844 phone: first decision within 20 
     return { ok: res.ok, m, icons };
   });
   expect(manifest.ok).toBe(true);
-  expect(manifest.m.name).toBe('Rally Trainer'); expect(manifest.m.display).toBe('standalone'); expect(manifest.m.orientation).toBe('portrait'); expect(manifest.m.theme_color).toMatch(/^#[0-9a-f]{6}$/i); expect(manifest.m.start_url).toBeTruthy();
+  expect(manifest.m.name).toBe('Rally Trainer'); expect(manifest.m.display).toBe('standalone'); expect(manifest.m.orientation).toBe('any'); expect(manifest.m.theme_color).toMatch(/^#[0-9a-f]{6}$/i); expect(manifest.m.start_url).toBeTruthy();
   for (const size of ['192x192', '512x512']) { const i = manifest.icons.find(x => x.sizes === size); expect(i?.ok, size).toBe(true); expect(i?.type).toContain('image/png'); }
   const reg = await page.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); return { has: !!r, active: !!(r?.active ?? r?.installing ?? r?.waiting), helper: (window as unknown as W).__rally.decision.pwa().registered }; });
   expect(reg).toEqual({ has: true, active: true, helper: true });

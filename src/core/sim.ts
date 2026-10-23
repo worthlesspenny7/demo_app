@@ -225,7 +225,7 @@ export interface StageResult {
 /** 3.2.0 (fix sprint PT-08 / PT-09): measuring runs leave on the second, launchInfo covers exact-transit OUT and promoted stops, a turn called in time is made, the off-course rejoin is booked once, the call.over event. */
 export const ENGINE_VERSION = '3.4.0';   // fix sprint PT-11 / realism v4: full-stop nodes, chained timed changes, the restart start bucket and the new generated days change replayed results
 
-interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string }
+interface OffCourse { nodeId: string; nodeS: number; branchDist: number; phase: 'out' | 'turning' | 'back'; turnTimer: number; exitKind: string; rejoin?: { afterFt: number; atFt: number } }
 
 const TICK = 0.1;
 const TURN_DIRS = new Set(['L', 'R', 'S', 'BL', 'BR', 'AL', 'AR', 'JL', 'JR']);
@@ -1715,7 +1715,7 @@ export class Simulator {
 
   private goOffCourse(n: Node, exit: Exit): void {
     this.offCourseCount++;
-    this.off = { nodeId: n.id, nodeS: n.s, branchDist: 0, phase: 'out', turnTimer: 0, exitKind: exit.kind };
+    this.off = { nodeId: n.id, nodeS: n.s, branchDist: 0, phase: 'out', turnTimer: 0, exitKind: exit.kind, ...(exit.rejoin ? { rejoin: { ...exit.rejoin } } : {}) };
     this.releasedNodeId = null;
     this.log('offCourse', { nodeId: n.id, angle: exit.angle, kind: exit.kind });
   }
@@ -1723,7 +1723,7 @@ export class Simulator {
   private offCourseDrive(dt: number, targetTrue: number): void {
     const off = this.off!;
     if (off.phase === 'turning') { this.car.step(dt, 0, this.car.s); this.car.v = 0; return; }
-    const roadEnd = off.phase === 'out' && off.branchDist >= this.sc.excursionFt! - 1;
+    const roadEnd = off.phase === 'out' && !off.rejoin && off.branchDist >= this.sc.excursionFt! - 1;
     if (roadEnd) {
       if (!this.waitingForGo) { this.waitingForGo = true; this.waitReason = 'roadEnd'; this.waitStartTod = this.tod; this.say('Road ends here. Dead end!', 'question'); }
       this.car.step(dt, 0, this.car.s); return;
@@ -1733,7 +1733,17 @@ export class Simulator {
 
   private offCourseStep(dt: number, sBefore: number): void {
     const off = this.off!; const ds = this.car.s - sBefore;
-    if (off.phase === 'out') off.branchDist += ds;
+    if (off.phase === 'out') {
+      off.branchDist += ds;
+      if (off.rejoin && off.branchDist >= off.rejoin.afterFt) {
+        // MOB-056: this road meets the route again further on (a block): back on course past the missed junction
+        this.car.s = off.nodeS + off.rejoin.atFt;
+        this.off = null; this.waitingForGo = false; this.waitReason = null;
+        this.log('rejoin', { nodeId: off.nodeId, loop: true });
+        this.say('Back on the route', 'info');
+        return;
+      }
+    }
     else if (off.phase === 'back') {
       off.branchDist -= ds;
       if (off.branchDist <= 0) {

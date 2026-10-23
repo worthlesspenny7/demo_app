@@ -6,7 +6,7 @@
   "start_url": "./?mode=mobile",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#121821",
   "theme_color": "#121821",
   "categories": ["education", "games", "sports"],

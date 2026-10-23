@@ -11,7 +11,7 @@ import { createProgressStore, type StorageLike } from '../src/ui/viewmodels/prog
 import { RULES } from '../content/rules.js';
 import {
   DecisionRunner, Scheduler, DecisionRun, runResult, playRun, oracleAnswerer, randomAnswerer, microScenario, bossScenario, Progress, applyRunResult, emptyProgress,
-  legalUnlocked, bossUnlocked, dailySeed, DECISION_KINDS, SKILLS, SKILL_OF_KIND, TIMED_KINDS, KINDS_OF_SKILL, PROMPT_MAX_WORDS, MAX_RULE_CARDS, RUN_MAX_DECISIONS,
+  legalUnlocked, bossUnlocked, dailySeed, microRunner, DECISION_KINDS, SKILLS, SKILL_OF_KIND, TIMED_KINDS, KINDS_OF_SKILL, PROMPT_MAX_WORDS, MAX_RULE_CARDS, RUN_MAX_DECISIONS,
   words, DECISION_PROGRESS_KEY, type Decision, type DecisionKind, type Verdict, type Skill, type DecisionResponse,
 } from '../src/core/decision/index.js';
 
@@ -25,7 +25,7 @@ function playRunner(run: DecisionRunner, fn?: (d: Decision) => DecisionResponse 
 }
 function micro(kind: DecisionKind, seed: number, variant = 0) {
   const m = microScenario(kind, seed, variant);
-  return { m, run: new DecisionRunner(m.scenario, { kinds: m.kinds, maxDecisions: m.maxDecisions, prereadRows: m.prereadRows, missTurns: m.missTurns }) };
+  return { m, run: microRunner(m) };
 }
 
 describe('MOB-001 DecisionRunner API', () => {
@@ -175,14 +175,14 @@ describe('MOB-005 Scheduler', () => {
     const again = new Scheduler(['stayOnTime', 'recovery'], 9, seen).plan(); const c = again.items[0]!;
     if (c.type === 'rule' && first.type === 'rule') expect(c.card.id).not.toBe(first.card.id);
   });
-  it('MOB-005 a missed skill comes back later in the same run (up to 15 decisions)', () => {
+  it('MOB-005 a missed skill comes back later in the same run, in the place of a planned card (the count stays)', () => {
     const run = new Scheduler([...SKILLS], 3).start();
     let s = run.next(); while (s?.type === 'rule') { run.ack(); s = run.next(); }
     const total0 = run.total; const sk = s!.type === 'decision' ? s!.decision.skill : null;
     const d = s!.type === 'decision' ? s!.decision : null!;
     const wrong: DecisionResponse = d.options ? { optionId: d.options.find(o => o.id !== run.oracle()!.optionId)!.id } : { tapSeconds: (d.timing!.truthSeconds + 9), taps: [0, (d.timing!.secondTapSeconds ?? 0) + 9] };
     const v = run.answer(wrong); expect(v.correct).toBe(false);
-    expect(run.total).toBe(total0 + 1);
+    expect(run.total).toBe(total0);
     const rest = playRun(run, oracleAnswerer());
     expect(rest.verdicts.slice(1).some(x => x.skill === sk)).toBe(true);
     expect(rest.total).toBeLessThanOrEqual(RUN_MAX_DECISIONS);
@@ -260,10 +260,10 @@ describe('MOB-012 text budget (engine part)', () => {
   it('MOB-012 no generated prompt exceeds 40 words (every kind, seeds, variants, rungs, the boss leg)', () => {
     let n = 0;
     for (const kind of DECISION_KINDS) for (const seed of [1, 2, 3, 4]) for (const variant of [0, 1, 2, 3]) for (const rung of [0, 2] as const) {
-      const m = microScenario(kind, seed, variant, rung); const run = new DecisionRunner(m.scenario, { kinds: m.kinds, maxDecisions: m.maxDecisions, prereadRows: m.prereadRows, missTurns: m.missTurns });
+      const m = microScenario(kind, seed, variant, rung); const run = microRunner(m);
       for (const d of playRunner(run).decisions) { n++; expect(words(d.prompt), d.prompt).toBeLessThanOrEqual(40); for (const o of d.options ?? []) expect(words(o.label)).toBeLessThanOrEqual(12); }
     }
-    const boss = bossScenario(5); const br = new DecisionRunner(boss.scenario, { kinds: boss.kinds, maxDecisions: boss.maxDecisions, prereadRows: boss.prereadRows });
+    const boss = bossScenario(5); const br = microRunner(boss);
     for (const d of playRunner(br).decisions) { n++; expect(words(d.prompt), d.prompt).toBeLessThanOrEqual(40); }
     expect(n).toBeGreaterThan(400);
   }, 60_000);
@@ -298,7 +298,7 @@ describe('MOB-030..032 progress', () => {
     expect(back.verdicts.map(v => v.decisionId)).toEqual(run.verdicts.map(v => v.decisionId));
     expect(JSON.stringify(back.next())).toBe(JSON.stringify(run.next()));
   });
-  it('MOB-031 meters fill with correct decisions, drain with misses and idle days; legal rung at 80 %, boss at 60 % in all five', () => {
+  it('MOB-031 meters fill with correct decisions, drain with misses and idle days; legal rung at 80 %, boss at 50 % in all five', () => {
     let s = emptyProgress();
     s = applyRunResult(s, res('stayOnTime', 6, 0), '2026-10-01'); const up = s.meters.stayOnTime.value; expect(up).toBeGreaterThan(0.4);
     s = applyRunResult(s, res('stayOnTime', 0, 2), '2026-10-01'); expect(s.meters.stayOnTime.value).toBeLessThan(up);

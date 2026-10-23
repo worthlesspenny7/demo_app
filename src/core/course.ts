@@ -27,6 +27,9 @@ export interface Exit {
   /** Traffic control facing traffic on that exit road (e.g. a STOP for the side road). */
   controlOnExit?: Control;
   isRoute: boolean;
+  /** MOB-056: an off-route road that meets the route again (a block on a country grid): after `afterFt` on it the car is back on the
+   *  route `atFt` past this node. Absent = the road dead-ends after the scenario's excursion length. No route node may lie in between. */
+  rejoin?: { afterFt: number; atFt: number };
 }
 
 /** `plaque`: the advisory speed on the small rectangle under a warning diamond (large number over small "MPH"). */

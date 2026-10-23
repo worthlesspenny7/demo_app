@@ -643,3 +643,35 @@ body.mob-landscape .mob-run .mprompt { font-size: 18px; }
 body.mob-landscape .mob-run .mob-opts { grid-template-columns: 1fr 1fr; }
 body.mob-landscape .mob-run .mw-digits { font-size: clamp(48px, 9vw, 80px); }
 body.mob-landscape .mob-run .mrow-a svg { max-height: 90px; }
+
+/* ===================== Fix sprint PT-13: phone cards (MOB-050..061), additive ===================== */
+/* MOB-061: chips and the chart behind one tap ("details"); rung 1 keeps the chart behind its own "Chart" button (MOB-059) */
+.mdetails, .mchart-btn { align-self: flex-start; max-width: 100%; }
+.mob-reveal { display: inline-flex; align-items: center; min-height: 44px; padding: 0 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); color: var(--muted); cursor: pointer; list-style: none; user-select: none; }
+.mob-reveal::-webkit-details-marker { display: none; }
+.mdetails[open] > .mob-reveal, .mchart-btn[open] > .mob-reveal { color: var(--accent); border-color: var(--accent); }
+.mdetails > :not(summary), .mchart-btn > :not(summary) { margin-top: 6px; }
+.mchart-btn .mob-reveal { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+/* MOB-052: the sign arriving: the bar shrinks to zero at the sign, where Dad says "Mark!" */
+.msign { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "track ft" "mark mark"; align-items: center; gap: 4px 10px; }
+.msign-track { grid-area: track; position: relative; height: 18px; border-radius: 9px; background: var(--bg-2); border: 1px solid var(--line); overflow: hidden; }
+.msign-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent2); }
+.msign-call { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1px; background: var(--accent); }
+.msign-post { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--danger); }
+.msign-ft { grid-area: ft; font-family: var(--mono); white-space: nowrap; }
+.msign-mark { grid-area: mark; min-height: 1.4em; font-size: 26px; font-weight: 900; color: var(--accent); letter-spacing: 0.05em; }
+.msign.marked .msign-track { border-color: var(--accent); }
+/* MOB-053: the stopwatch on a watch card */
+.mwatchcard { display: flex; align-items: baseline; gap: 14px; align-self: center; background: #0b0d10; color: #e8f4ea; border: 2px solid #2b323d; border-radius: 12px; padding: 4px 14px; }
+.mwc-digits { font-family: var(--mono); font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.mwc-lap { font-family: var(--mono); color: #9fb3a6; }
+/* MOB-058: restart / launch cards: the big digits are the time of day, the elapsed count is small */
+.mw-tod.mw-big { font-size: clamp(40px, 12vw, 58px); font-weight: 700; color: #e8f4ea; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.mw-digits.mw-small { font-size: 18px; font-weight: 500; color: #9fb3a6; }
+/* MOB-061: rule card title; strip is short */
+.mrule-title { font-size: 22px; margin: 0; color: var(--text); text-transform: none; letter-spacing: 0; }
+.mrule-long { color: var(--muted); }
+/* MOB-060: starting another run over an unfinished one asks first */
+.mob-confirm { display: flex; flex-direction: column; gap: 14px; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); min-height: 100dvh; }
+.mob-confirm .mob-actions { height: auto; flex: none; border-top: 0; padding-left: 0; padding-right: 0; }
+.mob-note { font-size: 18px; }

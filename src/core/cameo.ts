@@ -206,8 +206,9 @@ export function signFace(shape: SignShape | string, text: string, plaque?: numbe
   }
   if (shape === 'tollbooth' || shape === 'landmark') return null;   // drawn as pictures with a caption (landmarkPicture)
   // text signs: green freeway, brown, street name, route shield: a square-cornered outlined rectangle with bold mixed-case text (monochrome)
-  const lines = wrapWords(t, shape === 'shield' ? 6 : 11).slice(0, 3);
-  const w = Math.min(54, Math.max(24, Math.max(...lines.map(l => l.length)) * 5.1 + 8)), h = lines.length * 9.6 + 6;
+  // MOB-061: wrap so the box always holds its text (a capped box let "End Road Work" spill out of it)
+  const lines = wrapWords(t, shape === 'shield' ? 6 : 9).slice(0, 3);
+  const w = Math.max(24, Math.max(...lines.map(l => l.length)) * 5.1 + 8), h = lines.length * 9.6 + 6;
   const body = shape === 'shield'
     ? `<path d="M${f1(-w / 2)} ${f1(-h / 2)}H${f1(w / 2)}V${f1(h / 2 - 5)}L0 ${f1(h / 2 + 3)}L${f1(-w / 2)} ${f1(h / 2 - 5)}Z" fill="#fff" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>`
     : `<rect x="${f1(-w / 2)}" y="${f1(-h / 2)}" width="${f1(w)}" height="${f1(h)}" fill="#fff" stroke="currentColor" stroke-width="1.6"/>`;
@@ -402,8 +403,11 @@ export function cameoSvg(exits: CameoExit[] | undefined | null, control?: string
   if (sign) {
     if (face) {
       const cy = (jy + 8 + H - 5) / 2 - (face.dy ?? 0);
-      const cxs = sign.side === 'O' ? stemX : sign.side === 'L' ? Math.max(4 + face.w / 2, stemX - 12 - face.w / 2) : Math.min(CAMEO_W - 4 - face.w / 2, stemX + 12 + face.w / 2);
-      parts.push(`<g class="cameo-signface side-${sign.side}" transform="translate(${f1(cxs)} ${f1(cy)})">${face.svg}</g>`);
+      // MOB-061: a face that does not fit beside the stem on its side is drawn smaller, never across the bold arrow
+      const room = sign.side === 'L' ? stemX - 8 - 4 : sign.side === 'R' ? CAMEO_W - 4 - (stemX + 8) : face.w;
+      const k = sign.side === 'O' ? 1 : Math.max(0.55, Math.min(1, room / face.w)); const fw = face.w * k;
+      const cxs = sign.side === 'O' ? stemX : sign.side === 'L' ? Math.max(4 + fw / 2, stemX - 12 - fw / 2) : Math.min(CAMEO_W - 4 - fw / 2, stemX + 12 + fw / 2);
+      parts.push(`<g class="cameo-signface side-${sign.side}" transform="translate(${f1(cxs)} ${f1(cy)})${k < 1 ? ` scale(${k.toFixed(2)})` : ''}">${face.svg}</g>`);
     }
   }
   // ----- landmark picture and caption (lower left, or right when the stem sits on the left) -----
@@ -412,7 +416,7 @@ export function cameoSvg(exits: CameoExit[] | undefined | null, control?: string
     const kind = /toll/i.test(lmCaption) ? 'toll' : /bridge|overpass/i.test(lmCaption) ? 'bridge' : /tower/i.test(lmCaption) ? 'tower' : 'building';
     const lines = wrapWords(mixedCase(lmCaption), 11).slice(0, 2);
     const baseY = H - 4 - (lines.length - 1) * 9;   // the caption's first line; the picture sits above it
-    parts.push(`<g class="cameo-landmark-wrap" transform="translate(${lmx} ${baseY - 20}) scale(1.05)">${landmarkPicture(kind)}</g>`);
+    parts.push(`<g class="cameo-landmark-wrap" transform="translate(${lmx} ${baseY - 23}) scale(1.05)">${landmarkPicture(kind)}</g>`);   // clear of the caption (MOB-061)
     lines.forEach((l, i) => parts.push(textEl(lmx, baseY + i * 9, l, 8, { cls: 'cameo-caption' })));
   }
   parts.push('</svg>');

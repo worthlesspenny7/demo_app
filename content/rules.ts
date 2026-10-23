@@ -14,7 +14,7 @@ export const RULE_SKILLS = ['safetyCourse', 'startOnTime', 'stayOnTime', 'recove
 export type RuleSkill = (typeof RULE_SKILLS)[number];
 
 /** The decision kinds of MOB-002, in the order the spec lists them. A rule card names the kinds it precedes (the Scheduler shows it before the first such decision). */
-export const DECISION_KINDS = ['preread', 'turn', 'speedChange', 'timedStart', 'pause', 'restart', 'transitOut', 'makeup', 'hazard', 'ta', 'lost', 'checkpoint', 'clock'] as const;
+export const DECISION_KINDS = ['preread', 'turn', 'speedChange', 'timedStart', 'pause', 'restart', 'transitOut', 'makeup', 'hazard', 'ta', 'lost', 'checkpoint', 'clock', 'watch'] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 
 export interface RuleCard {
@@ -145,7 +145,7 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-018', skill: 'stayOnTime', title: 'Count from the rock-back; say GO', lesson: 'protocol', kinds: ['pause'],
-    text: "Start the stopwatch when the car rocks back to a stop. Count to the chart pause and always end the count with the word GO: the driver may forget when to move, so GO is the only signal to move. A count that stops at 1 has not finished.",
+    text: "Start the stopwatch when the car rocks back to a stop. Count to the chart pause and always end the count with the word GO: the driver may forget when to move, so GO is the only signal to move.",
     source: "HB Appendix B step 2; Rally School Part 2 [19:57]",
   },
   {
@@ -159,7 +159,7 @@ export const RULES: RuleCard[] = [
     source: "HB p.12; timed hold: 2026 Training Session [120:16] (video)",
   },
   {
-    id: 'RULE-021', skill: 'stayOnTime', title: 'Timed changes count from departure', lesson: 'timed-leads', kinds: ['timedStart'], sim: true,
+    id: 'RULE-021', skill: 'stayOnTime', title: 'Timed changes count from departure', lesson: 'timed-leads', kinds: ['timedStart', 'watch'], sim: true,
     text: "A timed segment such as 30 for 0m36s counts from where the ghost leaves the landmark: your arrival plus any pause, not your own go. Lap the watch as the car leaves, then call the next speed half a ramp early.",
     source: "REG VII.E.2.d",
   },
@@ -175,7 +175,7 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-024', skill: 'stayOnTime', title: 'Turn: take the chart loss', lesson: 'pause-arithmetic', kinds: ['turn'],
-    text: "Slow to the apex speed, turn, accelerate to the assigned speed, then make up the chart loss with the 10 % rule as soon as it is safe. On the handbook's Packard chart, approach 40 and exit 35 loses 4.0 s. Repeat the same technique every time.",
+    text: "Slow to the apex speed, turn, accelerate to the assigned speed, then make up the chart loss with the 10 % rule as soon as it is safe. On the handbook's Packard chart, approach 40 and exit 35 loses 4.0 s.",
     source: "HB p.9, p.11-12",
   },
 
@@ -212,7 +212,7 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-031', skill: 'recovery', title: 'TA only for outside delays', lesson: 'recovery', kinds: ['hazard', 'ta', 'lost'],
-    text: "Ask for a Time Allowance only for a delay beyond your control, such as a train blocking the route or stopping to help at an accident. Never for a wrong turn, a flat tire or a breakdown. A traffic light is not named: make that time up.",
+    text: "Ask for a Time Allowance only for a delay beyond your control, such as a train or helping at an accident. Never for a wrong turn, a flat tire or a breakdown. A traffic light is not named: make that time up.",
     source: "REG V.H.1; HB p.13",
   },
   {
@@ -222,12 +222,12 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-033', skill: 'recovery', title: 'Measured delay = stopped + loss', lesson: 'recovery', kinds: ['ta'], videoOnly: true,
-    text: "Measure the delay as the time you stood still, wheels stopped to go, plus the stop-and-go loss for your speeds from your chart. Then make up the odd seconds yourself: delayed 3m47s, make up 7 s, claim 3m40s.",
-    source: "Time Delay Form [01:38], [02:10], [04:44]",
+    text: "The delay is the time stood still, wheels stopped to go, plus your chart's stop-and-go loss. Take off what you can make up, claim the rest rounded down to 10 s steps, make up the odd seconds: delayed 3m47s, make up 7 s, claim 3m40s.",
+    source: "Time Delay Form [01:38], [02:10], [04:44]; REG V.H.5, V.H.6",
   },
   {
     id: 'RULE-034', skill: 'recovery', title: 'Lost: turn around, time, double', lesson: 'lost', kinds: ['lost'], videoOnly: true,
-    text: "When you know you missed a turn, turn around where it is safe and start the stopwatch. The trip back to the junction is half the time you lost, so double it: 47 seconds back means about 94 seconds lost.",
+    text: "When you know you missed a turn, turn around where it is safe and start the stopwatch, unless a shorter way back is in sight. The trip back to the junction is half the time you lost: 47 seconds back means about 94 lost.",
     source: "2026 Training Session [94:27]; 2024 Training Session [120:16]",
   },
   {
@@ -237,7 +237,7 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-036', skill: 'recovery', title: 'The car behind is your clock', lesson: 'lost', kinds: ['lost'], videoOnly: true,
-    text: "Pull over where it is safe: the car a minute behind you in the order of start either shows up or you are off course. Compare with the order of start: if the car due ten minutes behind you is already ahead, you are more than ten minutes late.",
+    text: "Pull over where it is safe: the car a minute behind you in the order of start either shows up or you are off course. If the car due ten minutes behind you is already ahead, you are over ten minutes late.",
     source: "2024 Training Session [119:15], [121:49]; 2026 Training Session [125:28]",
   },
 
@@ -253,7 +253,7 @@ export const RULES: RuleCard[] = [
     source: "REG II.H.1.d(3); Clock and Stopwatch [01:08]; 2026 Training Session [101:15] (video)",
   },
   {
-    id: 'RULE-039', skill: 'instruments', title: 'Stopwatch for intervals, clock for time', lesson: 'which-timer', kinds: ['clock', 'pause', 'timedStart', 'transitOut'],
+    id: 'RULE-039', skill: 'instruments', title: 'Stopwatch for intervals, clock for time', lesson: 'which-timer', kinds: ['clock', 'watch', 'pause', 'timedStart', 'transitOut'],
     text: "The stopwatch measures how long something takes: pauses, timed changes, calibration laps, make-up counts. The clock or watch gives the time of day: restarts, exact transits, the TA deadline. Never time an interval off the clock's second hand.",
     source: "HB p.5; Clock and Stopwatch [01:39] (video)",
   },
@@ -261,6 +261,22 @@ export const RULES: RuleCard[] = [
     id: 'RULE-040', skill: 'instruments', title: 'Sync clock and watch at pickup', lesson: 'which-timer', kinds: ['clock', 'restart'],
     text: "At instruction pickup, 30 minutes before your start, check your clock and stopwatch against the officials' digital clock, which is set to WWV: trust but verify. Use the time zone of the stage start all day.",
     source: "REG V.C.1.b, V.C.1.c, VII.B.2.a; HB p.13; Rally School Part 2 [02:05]",
+  },
+  // ---------------------------------------------------------------- added by the PT-13 fix sprint (MOB-054, MOB-056)
+  {
+    id: 'RULE-041', skill: 'safetyCourse', title: 'Follow the bold CAMEO arrow', lesson: 'markup', kinds: ['preread', 'turn'],
+    text: "The CAMEO in Column A is the junction seen from above: the dot at the bottom is you, the bold arrow is the route and thin lines are the other roads. Call the turn the bold arrow takes.",
+    source: "HB Appendix D (Column A)",
+  },
+  {
+    id: 'RULE-042', skill: 'safetyCourse', title: 'Column C prints the speed', lesson: 'markup', kinds: ['preread'],
+    text: "Column C prints the speed to drive from that line on, one item per line: 40 MPH. A pause row reads 0 MPH, the pause, then the speed to leave at: 0 MPH, 0m15s, 45 MPH.",
+    source: "HB Appendix D (Column C)",
+  },
+  {
+    id: 'RULE-043', skill: 'recovery', title: 'Rejoin ahead when it is closer', lesson: 'lost', kinds: ['lost'], sim: true,
+    text: "Turning around costs twice the time since you left the route plus about 20 s to turn. If your road meets the route again and that detour costs less, keep going and rejoin it. A wrong turn is never a Time Allowance.",
+    source: "2026 Training Session [94:27] (the way back is half the loss); REG V.H.1",
   },
 ];
 

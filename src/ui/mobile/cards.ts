@@ -7,12 +7,12 @@
 import type { BookRowView, Decision, DecisionKind, RuleCard, Verdict } from '../../core/decision/index.js';
 import { SKILL_TITLE } from '../../core/decision/index.js';
 import { columnCHtml, columnBHtml, esc } from '../render/griid.js';
-import { formatClockFace, type ColumnBSymbol } from '../../core/griid.js';
+import { formatClockFace, formatInterval, type ColumnBSymbol } from '../../core/griid.js';
 
 /** Short title of each kind for the card header. */
 export const KIND_TITLE: Record<DecisionKind, string> = {
   preread: 'Pre-read', turn: 'Turn', speedChange: 'Speed change', timedStart: 'Timed start', pause: 'Pause', restart: 'Restart', transitOut: 'Transit out',
-  makeup: 'Make-up', hazard: 'Hazard', ta: 'Time Allowance', lost: 'Lost', checkpoint: 'Checkpoint', clock: 'Clock',
+  makeup: 'Make-up', hazard: 'Hazard', ta: 'Time Allowance', lost: 'Lost', checkpoint: 'Checkpoint', clock: 'Clock', watch: 'Stopwatch',
 };
 
 /** A Column D text is a "sentence" (the GRIID-004 written form) rather than a remark ("Comes quick", "$1.50") when it has five or more words, or three or more with a full stop. */
@@ -38,26 +38,63 @@ export function bookRowHtml(row: BookRowView, rung: number): string {
 }
 
 const CHART_NAME: Record<string, string> = { stopGo: 'Stop & go', accel: 'Acc / dec', lead: 'Lead', turn: 'Turn', speedChange: 'Speed change' };
-/** The simple chart cell the card uses, highlighted: the IN row, the OUT column and the value. Null at the legal rung. */
+/** MOB-050: a chip says what its number means: "sit" (the time to wait at a pause), "loss" (the loss to subtract), "lead" (call this early). */
+const MEANING: Record<string, string> = { sit: 'sit', loss: 'loss', lead: 'lead' };
+/** The simple chart cell the card uses, highlighted: the IN / OUT pair and the value labelled by its meaning. Withheld at the legal rung;
+ *  at rung 1 (a later Boss) it sits behind a "Chart" button on the card (MOB-059). */
 export function chartCellHtml(chart: Decision['context']['chart'], rung: number): string {
   if (!chart || rung <= 0) return '';
-  return `<div class="mchart" aria-label="chart cell"><span class="mchart-k">${esc(CHART_NAME[chart.kind] ?? chart.kind)}</span>`
-    + `<span class="mchart-io">${chart.vIn} → ${chart.vOut}</span><span class="mchart-v hi" data-chart-seconds="${chart.seconds}">${chart.seconds.toFixed(1)} s</span></div>`;
+  const word = chart.meaning ? `${MEANING[chart.meaning] ?? chart.meaning} ` : '';
+  const inner = `<span class="mchart-k">${esc(CHART_NAME[chart.kind] ?? chart.kind)}</span>`
+    + `<span class="mchart-io">${chart.vIn} → ${chart.vOut}</span><span class="mchart-v hi" data-chart-seconds="${chart.seconds}" data-meaning="${chart.meaning ?? ''}">${word}${chart.seconds.toFixed(1)} s</span>`;
+  if (rung === 1) return `<details class="mchart-btn" data-testid="chart-button"><summary class="mob-reveal">Chart</summary><div class="mchart" aria-label="chart cell">${inner}</div></details>`;
+  return `<div class="mchart" aria-label="chart cell">${inner}</div>`;
 }
 
 const fmtTod = (t: number | undefined): string => (t === undefined ? '' : formatClockFace(t));
-/** The facts line of a card (speeds, distance, times, lateness, hazard, TA ledger, clock), at most a few short items. */
+/** The facts of a card (speeds, distance, times, lateness, hazard, TA ledger, clock): short chips. MOB-061: shown behind "details". */
 export function factsHtml(d: Decision, rung: number): string {
   const c = d.context; const f: string[] = [];
-  if (c.speeds) f.push(c.speeds.in !== undefined && c.speeds.out !== undefined ? `in ${c.speeds.in} · out ${c.speeds.out}` : `at ${c.speeds.current}${c.speeds.target ? ` → ${c.speeds.target}` : ''}`);
-  if (c.distanceFt !== undefined) f.push(`${Math.round(c.distanceFt)} ft`);
+  if (c.speeds) f.push(c.speeds.in !== undefined && c.speeds.out !== undefined ? `in ${c.speeds.in} · out ${c.speeds.out}` : `holding ${c.speeds.current}`);
+  if (c.distanceFt !== undefined) f.push(`${d.kind === 'checkpoint' || d.kind === 'hazard' ? 'ahead' : 'to the line'} ${Math.round(c.distanceFt)} ft`);
+  if (c.room) f.push(`${c.room.what === 'timed' ? 'to the timed line' : 'to the checkpoint'} ${c.room.ft} ft`);
+  if (c.limit !== undefined) f.push(`limit ${c.limit}`);
   if (c.times?.base !== undefined) f.push(`base ${fmtTod(c.times.base)}`);
+  if (c.times?.position !== undefined) f.push(`position ${c.times.position}`);
+  if (c.times?.own !== undefined && d.kind === 'restart') f.push(`your time ${fmtTod(c.times.own)}`);
   if (c.times?.in !== undefined) f.push(`IN ${fmtTod(c.times.in)}`);
   if (c.lateSeconds !== undefined) f.push(c.lateSeconds >= 0 ? `${c.lateSeconds.toFixed(0)} s late` : `${(-c.lateSeconds).toFixed(0)} s early`);
   if (c.hazard) f.push(c.hazard.label);
-  if (c.ta) f.push(`watch ${c.ta.measured} s`);
+  if (c.ta) f.push(`delay ${c.ta.measured} s`, ...(c.ta.madeUp !== undefined ? [`made up ${c.ta.madeUp} s`] : []));
+  if (c.lost) f.push(`off route ${c.lost.agoSeconds} s`, ...(c.lost.detourSeconds !== null ? [`detour +${c.lost.detourSeconds} s`] : []));
   if (c.clock) f.push(c.clock.minuteAmbiguous && (rung <= 0 || c.clock.minute === null) ? 'minute hand at the change' : `minute ${c.clock.minute ?? '?'}`);
   return f.length ? `<div class="mfacts">${f.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : '';
+}
+/** MOB-061: the chips and the chart cell behind one tap-to-reveal "details" (rung 1: the chart has its own "Chart" button). */
+export function detailsHtml(d: Decision, rung: number): string {
+  const facts = factsHtml(d, rung); const chart = rung >= 2 ? chartCellHtml(d.context.chart, rung) : '';
+  return facts || chart ? `<details class="mdetails" data-testid="details"><summary class="mob-reveal">details</summary>${chart}${facts}</details>` : '';
+}
+
+/** MOB-052: where the sign is at `elapsed` seconds into a timed card: the bar's fraction (1 -> 0 at the sign), feet left, and the "Mark!" moment. */
+export function signState(t: Pick<NonNullable<Decision['timing']>, 'signSeconds' | 'signFt'>, elapsed: number): { frac: number; ft: number; mark: boolean } {
+  const T = t.signSeconds ?? 0; if (!(T > 0)) return { frac: 0, ft: 0, mark: false };
+  const frac = Math.max(0, Math.min(1, 1 - elapsed / T));
+  return { frac, ft: Math.round((t.signFt ?? 0) * frac / 10) * 10, mark: elapsed >= T && elapsed < T + 1.5 };
+}
+/** MOB-052: the distance-to-sign bar of a timed card (the run screen animates it; it reaches zero at the sign, where Dad says "Mark!").
+ *  A speed-change card at rung 2 marks the call point (the chart lead before the sign). */
+export function signBarHtml(d: Decision, rung: number): string {
+  const t = d.timing; if (!t?.signSeconds) return '';
+  const lead = d.kind === 'speedChange' && rung >= 2 && d.context.chart?.meaning === 'lead' ? Math.min(1, d.context.chart.seconds / t.signSeconds) : null;
+  return `<div class="msign" data-testid="sign-bar" data-sign-seconds="${t.signSeconds}" data-sign-ft="${t.signFt ?? 0}">`
+    + `<div class="msign-track"><span class="msign-fill" style="width:100%"></span>${lead !== null ? `<span class="msign-call" style="left:${(lead * 100).toFixed(1)}%" aria-hidden="true"></span>` : ''}<span class="msign-post" aria-hidden="true"></span></div>`
+    + `<b class="msign-ft">${t.signFt ?? 0} ft</b><b class="msign-mark" data-testid="mark" aria-live="assertive"></b></div>`;
+}
+/** MOB-053: the stopwatch on a watch card: the main digits and the lap at the sign. */
+export function watchCardHtml(w: NonNullable<Decision['context']['watch']>): string {
+  const lap = w.laps[w.laps.length - 1];
+  return `<div class="mwatchcard" data-testid="watch-card"><span class="mwc-digits">${esc(formatInterval(w.reading, true))}</span>${lap ? `<span class="mwc-lap">lap ${esc(formatInterval(lap.cumulative, true))}</span>` : ''}</div>`;
 }
 
 /** A small dash-clock face for clock cards (hands only, no digital readout, REG II.H.1.d(1)). */
@@ -67,26 +104,28 @@ export function clockFaceSvg(c: NonNullable<Decision['context']['clock']>): stri
   return `<svg class="mclock" viewBox="0 0 100 100" role="img" aria-label="dash clock"><circle cx="50" cy="50" r="48" fill="#f7f5ee" stroke="#333" stroke-width="2"/>${ticks}${hand(c.hourAngle, 24, 4, '#111')}${hand(c.minuteAngle, 38, 3, '#111')}${hand(c.secondAngle, 44, 1.2, '#c0392b')}<circle cx="50" cy="50" r="2.5" fill="#111"/></svg>`;
 }
 
-/** The card body: kind title, prompt, the book row, chart cell, facts, note. */
+/** The card body: kind title, prompt, the book row, the clock / watch / sign the card is about, the chart button (rung 1), the details. */
 export function decisionCardHtml(d: Decision, rung: number): string {
   const c = d.context;
   const row = c.row ? bookRowHtml(c.row, rung) : '';
   return `<article class="mcard" data-kind="${d.kind}" data-decision="${esc(d.id)}">`
     + `<div class="mcard-kind">${esc(KIND_TITLE[d.kind])}</div>`
     + `<p class="mprompt">${esc(d.prompt)}</p>`
-    + row + (c.clock ? clockFaceSvg(c.clock) : '') + chartCellHtml(c.chart, rung) + factsHtml(d, rung)
-    + (c.note ? `<p class="mnote">${esc(c.note)}</p>` : '')
+    + row + (c.clock ? clockFaceSvg(c.clock) : '') + (c.watch ? watchCardHtml(c.watch) : '') + signBarHtml(d, rung)
+    + (rung === 1 ? chartCellHtml(c.chart, 1) : '') + detailsHtml(d, rung)
     + `</article>`;
 }
 
+/** MOB-061: the rule card as the phone shows it: the title and the rule (under 60 words with the strip); the source one tap away. */
 export function ruleCardHtml(r: RuleCard): string {
-  return `<article class="mcard mrule" data-rule="${esc(r.id)}"><div class="mcard-kind">Rule · ${esc(SKILL_TITLE[r.skill])}</div><p class="mrule-text">${esc(r.text)}</p><p class="msource">${esc(r.source)}</p></article>`;
+  return `<article class="mcard mrule" data-rule="${esc(r.id)}">${r.title ? `<h2 class="mrule-title">${esc(r.title)}</h2>` : ''}<p class="mrule-text">${esc(r.short ?? r.text)}</p>`
+    + `<details class="mdetails"><summary class="mob-reveal">source</summary><p class="msource">${esc(r.source)}</p>${r.short ? `<p class="mrule-long">${esc(r.text)}</p>` : ''}</details></article>`;
 }
 
-/** The verdict overlay text: seconds and the one-sentence rule. */
+/** The verdict overlay text: the headline (with the missed part, MOB-054), signed seconds and the one-sentence rule. */
 export function verdictParts(v: Verdict): { head: string; seconds: string; rule: string; detail: string } {
   const s = Math.abs(v.secondsDelta) < 0.05 ? '0.0 s' : `${v.secondsDelta > 0 ? '+' : '−'}${Math.abs(v.secondsDelta).toFixed(1)} s`;
-  return { head: v.correct ? 'Right' : 'Not quite', seconds: s, rule: v.rule, detail: v.correct ? v.chosen : `You: ${v.chosen}. Right: ${v.expected}.` };
+  return { head: v.correct ? 'Right' : v.missed ? `Not quite: ${v.missed}` : 'Not quite', seconds: s, rule: v.rule, detail: v.correct ? v.chosen : `You: ${v.chosen}. Right: ${v.expected}.` };
 }
 
 /** The driver's line for the landscape mini cockpit and speech (MOB-022, MOB-024). */
@@ -95,8 +134,9 @@ export function driverLine(d: Decision): string {
   switch (d.kind) {
     case 'pause': return 'Dad: "Stopped. Give me the go."';
     case 'restart': return 'Dad: "At the line. Count me down."';
-    case 'timedStart': return 'Dad: "Holding the speed. Tell me when."';
-    case 'speedChange': return `Dad: "Holding ${c.speeds?.current ?? 'speed'}. Call the change."`;
+    case 'timedStart': return `Dad: "Holding ${c.speeds?.assigned ?? c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
+    case 'speedChange': return `Dad: "Holding ${c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
+    case 'watch': return 'Dad: "Lapped. When do I change?"';
     case 'turn': return 'Dad: "Which way here?"';
     case 'checkpoint': return 'Dad: "Green sign up ahead."';
     case 'hazard': return `Dad: "${c.hazard?.label ?? 'Something ahead'}."`;

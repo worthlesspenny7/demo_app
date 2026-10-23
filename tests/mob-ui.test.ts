@@ -66,7 +66,7 @@ describe('MOB-002 / MOB-026 decision cards', () => {
   });
   it('MOB-026 the simple chart cell is highlighted where relevant and withheld at the legal rung (MOB-031)', () => {
     const c = { kind: 'stopGo' as const, vIn: 35, vOut: 45, seconds: 5.7 };
-    expect(chartCellHtml(c, 2)).toMatch(/class="mchart-v hi" data-chart-seconds="5.7">5.7 s/);
+    expect(chartCellHtml(c, 2)).toMatch(/class="mchart-v hi" data-chart-seconds="5.7" data-meaning="">5.7 s/);
     expect(chartCellHtml(c, 0)).toBe('');
     expect(decisionCardHtml(stubDecision('pause', 1), 2)).toContain('mchart');
     expect(decisionCardHtml(stubDecision('pause', 1), 0)).not.toContain('mchart');
@@ -124,7 +124,7 @@ describe('MOB-030 / MOB-031 progress', () => {
     if (now?.type === 'decision' && at?.type === 'decision') expect(now.decision.id).toBe(at.decision.id);
     expect(recordRun(back, result([])).unfinished).toBeNull();
   });
-  it('MOB-031 meters fill with correct cards and decay with misses; legal rung at 80 %, Boss at 60 % on all five', () => {
+  it('MOB-031 meters fill with correct cards and decay with misses; legal rung at 80 %, Boss at 50 % on all five', () => {
     let m = emptyProgress().meters.recovery;
     for (let i = 0; i < 11; i++) m = updateMeter(m, true, '2026-10-23');
     expect(m.value).toBeGreaterThanOrEqual(0.8);
@@ -132,7 +132,7 @@ describe('MOB-030 / MOB-031 progress', () => {
     const p = emptyProgress(); p.meters.recovery = { ...m, lastDay: null };   // no idle decay: the test does not depend on today's date
     expect(legalUnlocked(p, 'recovery')).toBe(true); expect(legalUnlocked(p, 'instruments')).toBe(false);
     expect(bossUnlocked(p)).toBe(false);
-    for (const s of SKILLS) p.meters[s] = { ...p.meters[s], value: 0.6, lastDay: null };
+    for (const s of SKILLS) p.meters[s] = { ...p.meters[s], value: 0.5, lastDay: null };
     expect(bossUnlocked(p)).toBe(true);
     expect(normalize({ meters: { recovery: { value: 7 } } }).meters.recovery.value).toBe(1);
     expect(dayKey(new Date(2026, 9, 3))).toBe('2026-10-03');
@@ -194,9 +194,9 @@ describe('MOB-001 / MOB-005 the real DecisionRunner behind the shell (until the 
 });
 
 describe('MOB-023 / MOB-024 PWA and haptics', () => {
-  it('MOB-023 manifest: name, icons 192 and 512, standalone, portrait, theme colour; the worker caches the shell and updates on reload', () => {
+  it('MOB-023 MOB-061 manifest: name, icons 192 and 512, standalone, any orientation (the landscape cockpit works installed), theme colour; the worker caches the shell and updates on reload', () => {
     const m = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8')) as Record<string, unknown> & { icons: { sizes: string; src: string }[] };
-    expect(m.name).toBe('Rally Trainer'); expect(m.display).toBe('standalone'); expect(m.orientation).toBe('portrait'); expect(m.theme_color).toMatch(/^#/);
+    expect(m.name).toBe('Rally Trainer'); expect(m.display).toBe('standalone'); expect(m.orientation).toBe('any'); expect(m.theme_color).toMatch(/^#/);
     expect(m.icons.some(i => i.sizes === '192x192')).toBe(true); expect(m.icons.some(i => i.sizes === '512x512')).toBe(true);
     for (const i of m.icons) expect(() => readFileSync(`public/${i.src}`)).not.toThrow();
     const png = readFileSync('public/icons/icon-512.png'); expect(png.readUInt32BE(16)).toBe(512); expect(png.readUInt32BE(20)).toBe(512);

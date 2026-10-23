@@ -44,6 +44,15 @@ export function chartDwell(sc: Scenario, p: NavPlan): number {
   const pause = p.ins.pause ?? 0;
   return Math.max(0, pause - stopLoss(p.vIn || p.vOut, p.vOut, sc.car, capFor(sc, p.ins.turn)));
 }
+/**
+ * MOB-051: the Time Allowance claim the rule cards teach (RULE-032, RULE-033; REG V.H.5 "Delayed 0m45s ... Made up 0m25s. Request 0m20s",
+ * V.H.6 multiples of 0m10s; Time Delay Form video "delayed 3m47s, make up 7 s, claim 3m40s"): take off what can be made up, claim the
+ * multiple of 10 s at or below the rest and make up the odd seconds. Under 10 s there is nothing to claim. Whole seconds, as the card prints them.
+ */
+export function ruleClaim(measuredSeconds: number, madeUpSeconds: number): number {
+  const rest = Math.max(0, Math.round(measuredSeconds) - Math.max(0, Math.round(madeUpSeconds)));
+  return Math.floor(rest / 10) * 10;
+}
 export const isStopPlan = (sc: Scenario, p: NavPlan): boolean => { const node = nodeById(sc.course, p.ins.nodeId); return node.control === 'STOP' || !!node.fullStop || isHoldIns(p.ins) || p.ins.section === 'finish'; };
 
 export type Wait = 'wait';
@@ -267,8 +276,8 @@ export class Navigator {
   }
 
   private taDone = new Set<number>();
-  /** The oracle's claim for a leg: the measured delay rounded down to 10 s, never more than the committee can credit. */
-  oracleClaim(leg: number): number { const adv = this.sim.taAdvice(leg); return Math.max(0, Math.min(Math.floor(adv.measuredDelay / 10) * 10, Math.ceil(adv.possible / 10) * 10)); }
+  /** The claim for a leg by the rule cards (RULE-032 / RULE-033, REG V.H.5 / V.H.6): see ruleClaim; the numbers are the ones the TA card prints. */
+  oracleClaim(leg: number): number { const adv = this.sim.taAdvice(leg); return ruleClaim(Math.round(adv.measured), Math.round(adv.recoverable)); }
   /** Legs whose TA is still to be filed while the window is open (for the runner's ta decision). */
   pendingTaLegs(): number[] {
     const st = this.sim.taState(); if (!st.hasTaPoints || !st.windowOpen) return [];

@@ -6,16 +6,17 @@
  * the same scenario and the same responses give the same decisions and verdicts.
  */
 import type { Scenario, Instruction, TurnDir, Hazard, Node } from '../course.js';
-import { nodeById } from '../course.js';
+import { nodeById, type Exit } from '../course.js';
 import { Simulator, turnWord, type StageResult } from '../sim.js';
 import { ghostTimeAt } from '../ghost.js';
-import { accelLoss, stopLoss, rampLead, chartLead, buildPerfTable, matrixAt } from '../perf-table.js';
+import { accelLoss, stopLoss, rampLead, chartLead } from '../perf-table.js';
 import { columnBSymbols, columnCLines, columnD, odometerBox, formatInterval, formatClockFace } from '../griid.js';
 import { signalIsRed, trainActive } from '../hazards.js';
 import { mphToFps } from '../units.js';
 import { rng } from '../rng.js';
 import { TA_CAUSES } from '../sim.js';
-import { Navigator, emptyOverrides, isHoldIns, chartDwell, capFor, bandOf, type NavPlan, type NavOverrides } from './navigator.js';
+import { Navigator, emptyOverrides, isHoldIns, chartDwell, capFor, ruleClaim, type NavPlan, type NavOverrides } from './navigator.js';
+import type { MicroHint } from './scenarios.js';
 import { verdictRule, words } from './rules.js';
 import { SKILL_OF_KIND, type BookRowView, type Decision, type DecisionContext, type DecisionKind, type DecisionOption, type DecisionResponse, type DecisionRunnerOptions, type TimingSpec, type Verdict, DECISION_KINDS } from './types.js';
 
@@ -24,6 +25,9 @@ const r1 = (x: number): number => Math.round(x * 10) / 10;
 const clockStr = (tod: number): string => formatClockFace(Math.round(tod));
 /** MOB-012: prompts are at most 40 words; a longer one is cut at a word boundary (tests assert none is). */
 export const PROMPT_MAX_WORDS = 40;
+/** MOB-061: the words a decision card asks the player to read: the prompt plus every option label (the phone adds the strip and the kind, <= 6 words). */
+export const CARD_MAX_WORDS = 32;
+export function cardWords(d: Pick<Decision, 'prompt' | 'options'>): number { return words(d.prompt) + (d.options ?? []).reduce((a, o) => a + words(o.label), 0); }
 function clip(s: string): string { const w = s.trim().split(/\s+/); return w.length <= PROMPT_MAX_WORDS ? s.trim() : `${w.slice(0, PROMPT_MAX_WORDS).join(' ')}`; }
 
 /** Correct-answer tolerances for the timed kinds (seconds), after the drill rubrics: D03 (1 s legs), D16 (late > 2 s finding), D04 / D05 call errors. */
@@ -38,7 +42,24 @@ interface Pending {
 
 function dirLabel(d: TurnDir): string { return turnWord(d); }
 function dirForAngle(a: number): TurnDir { if (a <= -120) return 'AL'; if (a < -60) return 'L'; if (a < -20) return 'BL'; if (a <= 20) return 'S'; if (a <= 60) return 'BR'; if (a < 120) return 'R'; return 'AR'; }
-const HAZ_LABEL: Record<string, string> = { slow: 'Slow truck', construction: 'Construction zone', accident: 'Accident scene', tractor: 'Tractor', combine: 'Combine', schoolBus: 'School bus stopped', train: 'Train at the crossing', signal: 'Red light' };
+/** MOB-055: what the navigator sees, never the category ("TA cause") itself; `long` / `short` says how long it will hold the car. */
+function hazardScene(h: Hazard, d: number, size: 'short' | 'long'): { scene: string; label: string } {
+  const ft = `${Math.max(0, Math.round(d / 50) * 50)} ft`;
+  switch (h.kind) {
+    case 'slow': return { scene: `A truck pulls out ${ft} ahead at ${h.speedMph} mph, no room to pass.`, label: 'Slow truck' };
+    case 'tractor': return size === 'long' ? { scene: `A tractor at ${h.speedMph} mph ${ft} ahead; no room to pass for miles.`, label: 'Tractor' } : { scene: `A tractor ${ft} ahead, blinker on for a field gate just ahead.`, label: 'Tractor' };
+    case 'combine': return { scene: `A combine ${ft} ahead fills the road.`, label: 'Combine' };
+    case 'train': return size === 'long' ? { scene: `Gates down ${ft} ahead: a long freight is just starting across.`, label: 'Crossing gates' } : { scene: `Gates down ${ft} ahead: the last cars are passing.`, label: 'Crossing gates' };
+    case 'signal': return { scene: `The signal ${ft} ahead has just turned red.`, label: 'Signal' };
+    case 'schoolBus': return { scene: `A school bus ${ft} ahead stops, red lights flashing.`, label: 'School bus' };
+    case 'construction': return { scene: `Road work ${ft} ahead: one lane, a flagger.`, label: 'Road work' };
+    case 'accident': return { scene: `An accident ${ft} ahead; people need help.`, label: 'Accident' };
+  }
+}
+const CLOCK_OPTS = [{ id: 'tod', label: 'Watch, TOD mode' }, { id: 'chrono', label: 'Watch, chrono' }, { id: 'min', label: 'Clock minute hand' }, { id: 'sec', label: 'Clock second hand' }];
+const CLOCK_LABEL: Record<string, string> = Object.fromEntries(CLOCK_OPTS.map(o => [o.id, o.label]));
+const ordinal = (n: number): string => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+const signed = (x: number): string => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)} s`;
 
 export class DecisionRunner {
   readonly sim: Simulator;
@@ -59,14 +80,22 @@ export class DecisionRunner {
   private scheduled: { when: () => boolean; run: () => void }[] = [];
   private readonly ov: NavOverrides;
   private n = 0;
+  private readonly hint: MicroHint;
+  private readonly maxPerKind: number;
+  /** MOB-056: the car left the route; the lost card comes `delay` s later (the driver has to notice first). */
+  private lostPending: { count: number; offTod: number; delay: number; exit: Exit | null; nodeS: number; v: number } | null = null;
+  /** MOB-053: a timed line whose lap at the sign the navigator takes; the watch card comes just after it. */
+  private watchArm: { n: number; crossTod: number; plan: NavPlan; key: string } | null = null;
 
-  constructor(scenario: Scenario, opts: DecisionRunnerOptions & { prereadRows?: number; recovery?: 'off' | 'oracle'; missTurns?: number[] } = {}) {
+  constructor(scenario: Scenario, opts: DecisionRunnerOptions & { prereadRows?: number; recovery?: 'off' | 'oracle'; missTurns?: number[]; hint?: MicroHint; maxPerKind?: number } = {}) {
     this.scenario = scenario;
     this.sim = new Simulator(scenario, { watch: 'digital' });
     this.kinds = new Set(opts.kinds ?? DECISION_KINDS);
     this.rung = opts.rung ?? scenario.aids.rung;
     this.max = opts.maxDecisions ?? Infinity;
     this.prereadRows = opts.prereadRows ?? 1;
+    this.hint = opts.hint ?? {};
+    this.maxPerKind = opts.maxPerKind ?? Infinity;
     this.ov = emptyOverrides();
     this.ov.recovery = { mode: opts.recovery ?? 'off' };
     for (const n of opts.missTurns ?? []) this.ov.turn.set(n, { dir: null });
@@ -115,6 +144,7 @@ export class DecisionRunner {
 
   // ------------------------------------------------------------------ loop
   private tickOnce(): void {
+    this.fallbacks();
     if (this.scheduled.length) { const due = this.scheduled.filter(s => s.when()); this.scheduled = this.scheduled.filter(s => !due.includes(s)); for (const s of due) s.run(); }
     this.nav.onTick();
     this.sim.step(TICK);
@@ -131,6 +161,18 @@ export class DecisionRunner {
     return until();
   }
   private paperDone = false;
+  /** A moment the runner took from the navigator but never showed (budget spent, another card first): give it back to the navigator. */
+  private fallbacks(): void {
+    const sim = this.sim;
+    const w = this.watchArm;
+    if (w && sim.tod > w.crossTod + 6) {
+      this.watchArm = null; this.seen.add(w.key);
+      const seg = w.plan.ins.timed!; const tmov = this.ov.timed.get(w.n);
+      if (tmov && tmov !== 'wait' && tmov.callAt === Infinity) this.ov.timed.set(w.n, { lapAt: tmov.lapAt, callAt: (tmov.lapAt ?? w.crossTod) + seg.seconds - rampLead(seg.holdSpeed, seg.thenSpeed, this.scenario.car) });
+    }
+    const l = this.lostPending;
+    if (l && sim.tod > l.offTod + l.delay + 8) { this.lostPending = null; this.ov.uturn = 'auto'; }
+  }
   private makeupCooldown = -Infinity;
   private scan(): Pending | null {
     const sim = this.sim; const limit = sim.sc.startTime + 14 * 3600;
@@ -156,7 +198,10 @@ export class DecisionRunner {
     return { line: ins.n, odometer: odometerBox(ins) ?? '', miles: Math.round((node?.s ?? 0) / 5280 * 100) / 100, columnB: [...columnBSymbols(ins)], columnC: columnCLines(ins, sc.timeZone), columnD: this.rung <= 0 ? (ins.remark ?? '') : columnD(ins, sc.bookStyle) };
   }
   private nextIns(ins: Instruction): Instruction | undefined { return this.scenario.book.find(i => i.n === ins.n + 1); }
+  /** The chart number printed in the prompt (rung 2+). */
   private showChart(): boolean { return this.rung >= 2; }
+  /** The chart cell in the context: shown at rung 2+, behind a Chart button at rung 1 (MOB-059), withheld at the legal rung 0. */
+  private chartAvail(): boolean { return this.rung >= 1; }
   private make(kind: DecisionKind, key: string, prompt: string, context: DecisionContext, extra: { options?: DecisionOption[]; timing?: TimingSpec; deadlineSeconds?: number }, oracle: DecisionResponse, x: Record<string, unknown> = {}): Pending {
     this.seen.add(key);
     const d: Decision = { id: `${kind}:${key.split(':').slice(1).join(':') || '0'}:${++this.n}`, kind, skill: SKILL_OF_KIND[kind], prompt: clip(prompt), context, ...extra };
@@ -175,8 +220,10 @@ export class DecisionRunner {
   }
 
   // ------------------------------------------------------------------ detection (order = priority)
+  /** The kinds still presented (MOB-059: a boss leg gives at most `maxPerKind` cards of one kind; the navigator does the rest). */
+  private owns(kind: DecisionKind): boolean { return this.kinds.has(kind) && (this.maxPerKind === Infinity || this.decisions.filter(d => d.kind === kind).length < this.maxPerKind); }
   private detect(): Pending | null {
-    const sim = this.sim; const k = this.kinds;
+    const sim = this.sim; const k = { has: (x: DecisionKind) => this.owns(x) };
     if (sim.phase === 'preread') {
       return (k.has('preread') ? this.detectPreread() : null) ?? (k.has('clock') ? this.detectClock() : null) ?? (k.has('restart') ? this.detectStart() : null);
     }
@@ -187,6 +234,7 @@ export class DecisionRunner {
       ?? (k.has('pause') ? this.detectPause() : null)
       ?? (k.has('clock') ? this.detectClock() : null)
       ?? (k.has('restart') ? this.detectHold() : null)
+      ?? (k.has('watch') ? this.detectWatch() : null)
       ?? (k.has('transitOut') ? this.detectTransitOut() : null)
       ?? (k.has('ta') ? this.detectTa() : null)
       ?? (k.has('checkpoint') ? this.detectCheckpoint() : null)
@@ -214,12 +262,13 @@ export class DecisionRunner {
       }
       if (pause !== null) {
         const dwell = r1(chartDwell(sc, p)); ctx.speeds = { current: p.vIn, assigned: p.vIn, in: p.vIn, out: p.vOut }; ctx.times = { pauseSeconds: pause };
-        if (this.showChart()) ctx.chart = { kind: 'stopGo', vIn: p.vIn, vOut: p.vOut, seconds: r1(pause - dwell) };
+        // MOB-050: the pre-read chip is the LOSS to subtract (the pause card's chip is the time to SIT)
+        if (this.chartAvail()) ctx.chart = { kind: 'stopGo', vIn: p.vIn, vOut: p.vOut, seconds: r1(stopLoss(p.vIn || p.vOut, p.vOut, sc.car, capFor(sc, ins.turn))), meaning: 'loss' };
         const cands = [...new Set([dwell, pause, 0].map(r1))];
         const opts = this.shuffle(key, cands).map(v => ({ id: `w${v}`, label: v === 0 ? 'Go at once' : `Wait ${v} s` }));
-        return this.make('preread', key, `Pre-read, line ${ins.n}: STOP, pause ${pause} s, in ${p.vIn}, out ${p.vOut}. How long do you sit before GO?`, ctx, { options: opts }, { optionId: `w${dwell}` }, { what: 'pause', truth: dwell, ins, plan: p });
+        return this.make('preread', key, `Pre-read, line ${ins.n}: STOP, pause ${pause} s, in ${p.vIn}, out ${p.vOut}. How long do you sit?`, ctx, { options: opts }, { optionId: `w${dwell}` }, { what: 'pause', truth: dwell, ins, plan: p });
       }
-      const v = speedCh!; ctx.speeds = { current: p.vIn, assigned: p.vIn, in: p.vIn, out: v };
+      const v = speedCh!; ctx.speeds = { current: p.vIn, assigned: p.vIn };   // MOB-055: never the answer in a chip; Column C is the book
       const cands = [...new Set([v, p.vIn, v + 5 <= 55 ? v + 5 : v - 10, v - 5 >= 10 ? v - 5 : v + 10])].filter(x => x > 0).slice(0, 4);
       const opts = this.shuffle(key, cands).map(x => ({ id: `v${x}`, label: `${x} mph` }));
       return this.make('preread', key, `Pre-read, line ${ins.n}. What speed do you call at this sign?`, ctx, { options: opts }, { optionId: `v${v}` }, { what: 'speed', truth: v, ins, plan: p });
@@ -264,17 +313,22 @@ export class DecisionRunner {
   }
   private launchCard(key: string, ins: Instruction, own: number, launch: number, netLoss: number, base: number | undefined, what: 'start' | 'restart' | 'transitOut' | 'lunch'): Pending {
     const sim = this.sim; const truth = Math.max(0, r1(launch - sim.tod));
-    const ctx = this.ctx({ line: ins.n, row: this.row(ins), times: { own, launch, ...(base !== undefined ? { base } : {}) }, speeds: { current: 0, assigned: 0, out: this.nav.plans.find(p => p.ins === ins)?.vOut ?? 0 } });
+    // MOB-058: a restart may print the base time and the starting position instead of your own time (RULE-010)
+    const asp = this.scenario.asp ?? 0;
+    const byBase = what === 'restart' && !!this.hint.base && base !== undefined && asp > 0;
+    const vOut = this.nav.plans.find(p => p.ins === ins)?.vOut ?? 0;
+    const ctx = this.ctx({ line: ins.n, row: this.row(ins), times: byBase ? { base, position: asp } : { own }, speeds: { current: 0, assigned: 0, out: vOut } });
     ctx.clock = this.clockView();
-    if (this.showChart() && what !== 'lunch') ctx.chart = { kind: 'accel', vIn: 0, vOut: ctx.speeds!.out ?? 0, seconds: netLoss };
+    if (this.chartAvail() && what !== 'lunch') ctx.chart = { kind: 'accel', vIn: 0, vOut, seconds: netLoss, meaning: 'loss' };
     const name = what === 'start' ? 'Start' : what === 'lunch' ? 'Lunch departure' : what === 'transitOut' ? 'Transit OUT' : 'Restart';
+    const yours = byBase ? `base ${clockStr(base!)}, you start ${ordinal(asp)}` : `your time ${clockStr(own)}`;
     const prompt = what === 'lunch'
       ? `${name}, line ${ins.n}: leave at ${clockStr(own)}. Tap LEAVE on that second.`
       : this.showChart()
-        ? `${name}, line ${ins.n}: your time ${clockStr(own)}, standing-start loss ${netLoss.toFixed(1)} s. Tap LAUNCH on the launch second.`
-        : `${name}, line ${ins.n}: your time ${clockStr(own)}. Lead the car by its standing-start loss and tap LAUNCH on the launch second.`;
-    const timing: TimingSpec = { kind: 'tapAt', truthSeconds: truth, toleranceSeconds: TIMING_TOLERANCE.restart, maxSeconds: truth + 20, tapLabel: what === 'lunch' ? 'LEAVE' : 'LAUNCH' };
-    return this.make('restart', key, prompt, ctx, { timing }, { tapSeconds: truth }, { ins, own, launch, what, variant: what === 'lunch' ? 'lunch' : 'default' });
+        ? `${name}, line ${ins.n}: ${yours}; standing-start loss ${netLoss.toFixed(1)} s. Tap LAUNCH on the launch second.`
+        : `${name}, line ${ins.n}: ${yours}. Lead by the standing-start loss; tap LAUNCH on the launch second.`;
+    const timing: TimingSpec = { kind: 'tapAt', truthSeconds: truth, toleranceSeconds: TIMING_TOLERANCE.restart, maxSeconds: truth + 20, tapLabel: what === 'lunch' ? 'LEAVE' : 'LAUNCH', todPrimary: true };
+    return this.make('restart', key, prompt, ctx, { timing }, { tapSeconds: truth }, { ins, own, launch, what, netLoss, byBase, variant: what === 'lunch' ? 'lunch' : byBase ? 'base' : 'default' });
   }
   private clockView(): DecisionContext['clock'] {
     const h = this.sim.clock.hands(this.sim.tod);
@@ -288,7 +342,9 @@ export class DecisionRunner {
     const li = this.sim.launchInfo(p.ins);
     return { go, launch: li?.launchTime ?? go - Math.round(accelLoss(p.vOut, this.scenario.car)), netLoss: li?.netLoss ?? r1(accelLoss(p.vOut, this.scenario.car)) };
   }
-  // clock: a departure 25-45 s away whose launch second sits at a minute change (the loose minute hand can be a minute off)
+  // clock (MOB-057): a departure 25-45 s away. The card asks which instrument to use for one job: the minute (at a minute change the
+  // dash clock's loose minute hand can be a minute off, RULE-037; away from it the clock is fine too), the launch second (count it in off
+  // the clock's second hand, RULE-038) or the next interval (the stopwatch, RULE-039).
   private detectClock(): Pending | null {
     const sim = this.sim; let line: number | null = null; let launch: number | null = null;
     if (sim.phase === 'preread') { if (this.scenario.startProcedure === 'drill') return null; const li = sim.launchInfo(); if (li && li.kind === 'start') { line = 1; launch = li.launchTime; } }
@@ -301,15 +357,23 @@ export class DecisionRunner {
     }
     if (line === null || launch === null) return null;
     const key = `clock:${line}`; if (this.seen.has(key)) return null;
-    const slop = this.scenario.rules.clockMinuteSlop ?? 5; const sec = ((launch % 60) + 60) % 60;
-    if (!(sec >= 60 - slop - 3 || sec <= slop + 3)) { this.seen.add(key); return null; }
+    const slop = this.scenario.rules.clockMinuteSlop ?? 5; const sec = ((Math.round(launch) % 60) + 60) % 60;
+    const atChange = sec >= 60 - slop - 3 || sec <= slop + 3;
+    const q = this.hint.clock ?? (atChange ? 'minute' : 'second');
+    if (q === 'minute' && !this.hint.clock && !atChange) { this.seen.add(key); return null; }
     const to = launch - sim.tod; const lead = this.lead(key, 25, 45);
     if (to > lead) return null;
     if (to < 8) { this.seen.add(key); return null; }
     const h = sim.clock.hands(launch); const shown = Math.floor(h.minuteAngle / 6 + 1e-9) % 60; const misleading = shown !== h.minute;
     const ctx = this.ctx({ line, clock: this.clockView(), times: { launch } });
-    const opts = this.shuffle(key, [{ id: 'watch', label: 'Stopwatch in TOD mode' }, { id: 'clock', label: 'Dash clock minute hand' }]);
-    return this.make('clock', key, `Your launch second lands at the top of a minute. Where do you take the minute from?`, ctx, { options: opts }, { optionId: 'watch' }, { misleading, shown, minute: h.minute });
+    const at = clockStr(launch); const inS = Math.round(to / 5) * 5;
+    const prompt = q === 'minute' ? `You launch at ${at}, in about ${inS} s. Where do you read the minute from?`
+      : q === 'second' ? `You launch at ${at}, in about ${inS} s, and you know the minute. What do you count the second in from?`
+        : `After the launch the book times an interval. What do you time it with?`;
+    // the right instruments: the watch in TOD mode always gives the minute; the clock's minute hand only away from a minute change
+    const good = q === 'minute' ? (atChange ? ['tod'] : ['tod', 'min']) : q === 'second' ? ['sec', 'tod'] : ['chrono'];
+    const truth = q === 'second' ? 'sec' : q === 'interval' ? 'chrono' : 'tod';
+    return this.make('clock', key, prompt, ctx, { options: this.shuffle(key, CLOCK_OPTS) }, { optionId: truth }, { q, good, truth, misleading, shown, minute: h.minute, atChange });
   }
 
   // pause: stopped at a STOP row with a printed pause
@@ -319,13 +383,14 @@ export class DecisionRunner {
       const ins = p.ins; if (!((ins.pause ?? 0) > 0) || isHoldIns(ins) || p.stopHandled) continue;
       const key = `pause:${ins.n}`; if (this.seen.has(key)) continue;
       const node = nodeById(this.scenario.course, ins.nodeId); if (!(node.control === 'STOP' || node.fullStop) || !this.atStopLine(node)) continue;
-      const vIn = p.vIn || p.vOut; const dwell = r1(chartDwell(this.scenario, p)); const loss = r1(stopLoss(vIn, p.vOut, this.scenario.car, capFor(this.scenario, ins.turn)));
+      // MOB-050: the printed number IS the graded number: the chart dwell (pause minus the stop-and-go loss, turn-capped when the row turns)
+      const vIn = p.vIn || p.vOut; const dwell = r1(chartDwell(this.scenario, p));
       this.ov.go.set(ins.n, 'wait');
       const ctx = this.ctx({ line: ins.n, row: this.row(ins), nextRow: this.row(this.nextIns(ins)), speeds: { current: 0, assigned: p.vOut, in: vIn, out: p.vOut }, times: { pauseSeconds: ins.pause! } });
-      if (this.showChart()) ctx.chart = { kind: 'stopGo', vIn, vOut: p.vOut, seconds: (ins.pause === 15 ? matrixAt(buildPerfTable(this.scenario.car).stopGo, vIn, p.vOut) : r1(ins.pause! - loss)) };
+      if (this.chartAvail()) ctx.chart = { kind: 'stopGo', vIn, vOut: p.vOut, seconds: dwell, meaning: 'sit' };
       const prompt = this.showChart()
-        ? `Stopped at line ${ins.n}. Pause ${ins.pause} s, in ${vIn}, out ${p.vOut}: the chart says sit ${ctx.chart!.seconds} s. Tap GO when it is done.`
-        : `Stopped at line ${ins.n}. Pause ${ins.pause} s, in ${vIn}, out ${p.vOut}. Count the chart pause and tap GO.`;
+        ? `Stopped at line ${ins.n}. Pause ${ins.pause} s, in ${vIn}, out ${p.vOut}: sit ${dwell.toFixed(1)} s on the watch, then tap GO.`
+        : `Stopped at line ${ins.n}. Pause ${ins.pause} s, in ${vIn}, out ${p.vOut}. Sit the chart time, then tap GO.`;
       const timing: TimingSpec = { kind: 'countdown', truthSeconds: dwell, toleranceSeconds: TIMING_TOLERANCE.pause, maxSeconds: Math.max(dwell + 15, ins.pause! + 10), tapLabel: 'GO' };
       return this.make('pause', key, prompt, ctx, { timing }, { tapSeconds: dwell }, { ins, dwell });
     }
@@ -347,25 +412,27 @@ export class DecisionRunner {
     return null;
   }
 
-  // ta: the TA window is open for a delayed leg
+  // ta (MOB-051): the TA window is open for a delayed leg. The card prints the measured delay and what could be made up; the right claim is
+  // what RULE-032 / RULE-033 teach from exactly those numbers (ruleClaim).
   private detectTa(): Pending | null {
     for (const leg of this.nav.pendingTaLegs()) {
       const key = `ta:${leg}`; if (this.seen.has(key) || this.ov.ta.has(leg)) continue;
       const adv = this.sim.taAdvice(leg); if (!(adv.measuredDelay > 0)) continue;
-      const oracle = this.nav.oracleClaim(leg);
-      const cands = [...new Set([oracle, oracle + 10, Math.max(0, oracle - 10), Math.ceil(adv.measuredDelay / 10) * 10])].sort((a, b) => a - b).slice(0, 4);
+      const M = Math.round(adv.measured); const R = Math.min(M, Math.round(adv.recoverable)); const truth = ruleClaim(M, R);
+      const all = Math.floor(M / 10) * 10;
+      const cands = [...new Set([truth, truth + 10, Math.max(0, truth - 10), all, truth + 20, all + 10])].sort((a, b) => a - b).slice(0, 4);
       this.ov.ta.set(leg, 'wait');
       const opts = cands.map(c => ({ id: `c${c}`, label: c === 0 ? 'No claim' : `Claim ${formatInterval(c)}` }));
-      const ctx = this.ctx({ ta: { measured: adv.measured, claim: adv.claim, cause: adv.cause, legIndex: leg } });
-      const recov = Math.round(adv.recoverable);
-      return this.make('ta', key, `Time Allowance point. Leg ${leg} was delayed ${formatInterval(adv.measured)} by a ${adv.cause ?? 'qualifying delay'}${recov > 0 ? `; about ${recov} s of it could be made up` : ''}. What do you claim?`, ctx, { options: opts }, { optionId: `c${oracle}` }, { leg, oracle });
+      const ctx = this.ctx({ ta: { measured: M, claim: truth, cause: adv.cause, legIndex: leg, madeUp: R } });
+      const prompt = `TA point. Leg ${leg} was delayed ${formatInterval(M)} by a ${adv.cause ?? 'qualifying delay'}${R > 0 ? `; about ${R} s of it could be made up` : '; none of it could be made up'}. What do you claim?`;
+      return this.make('ta', key, prompt, ctx, { options: opts }, { optionId: `c${truth}` }, { leg, oracle: truth, M, R });
     }
     return null;
   }
 
   /** A hazard the player does not own (no hazard and no make-up cards): the navigator makes the time up for the rest of the leg, as the oracle does. */
   private autoHazard(): void {
-    if (this.kinds.has('hazard') || this.kinds.has('makeup')) return;
+    if (this.owns('hazard') || this.owns('makeup')) return;
     const s = this.sim.car.s;
     for (let i = 0; i < this.scenario.hazards.length; i++) {
       const h = this.scenario.hazards[i]!; const key = `hazardAuto:${i}`; if (this.seen.has(key)) continue;
@@ -373,7 +440,15 @@ export class DecisionRunner {
       if (s >= h.s - 400 && s <= end + 50) { this.seen.add(key); if (this.ov.recovery.mode === 'off') this.ov.recovery = { mode: 'on', untilLeg: this.sim.legIndex }; }
     }
   }
-  // hazard: a train, tractor, red light, slow truck or construction in sight
+  /** How long a hazard will hold the car: the micro scenario says; on a generated leg, from the hazard itself. */
+  private hazardSize(h: Hazard, arrive: number): 'short' | 'long' {
+    if (this.hint.size) return this.hint.size;
+    if (h.kind === 'train') return h.startTod + h.durationSeconds - arrive > 20 ? 'long' : 'short';
+    if (h.kind === 'tractor') return h.lengthFt > 600 ? 'long' : 'short';
+    return 'long';
+  }
+  // hazard (MOB-055): a train, tractor, red light, slow truck or road work in sight. The card describes what is seen and how long it looks;
+  // a qualifying delay that will be long: make up what you can and claim the rest (RULE-031..033); a short one or a light / truck: make it up.
   private detectHazard(): Pending | null {
     const sim = this.sim; const s = sim.car.s; const sc = this.scenario;
     for (let i = 0; i < sc.hazards.length; i++) {
@@ -387,34 +462,64 @@ export class DecisionRunner {
       else if (h.kind === 'schoolBus') show = d <= 600 && d > 0 && arrive >= h.startTod && arrive < h.startTod + h.durationSeconds;
       if (!show) { if (d < 0 && !('lengthFt' in h)) this.seen.add(key); continue; }
       const qualifying = (TA_CAUSES as readonly string[]).includes(h.kind) || (h.kind === 'signal' && !!sc.rules.taForSignals);
-      const opts = this.shuffle(key, [{ id: 'ta', label: 'Wait it out, claim a Time Allowance' }, { id: 'makeup', label: 'Wait it out, make the time up' }, { id: 'both', label: 'Claim the measured delay, make up the odd seconds' }]);
-      const truth = qualifying ? 'both' : 'makeup';
-      const leg = sim.legIndex;
-      const ctx = this.ctx({ hazard: { kind: h.kind, label: HAZ_LABEL[h.kind] ?? h.kind }, distanceFt: Math.max(0, Math.round(d / 50) * 50), speeds: { current: Math.round(sim.car.mph()), assigned: this.assigned() } });
-      return this.make('hazard', key, `${HAZ_LABEL[h.kind] ?? h.kind} ahead, ${Math.max(0, Math.round(d / 50) * 50)} ft. It will cost you time. What is your plan?`, ctx, { options: opts }, { optionId: truth }, { h, qualifying, leg, truth });
+      const size = this.hazardSize(h, arrive);
+      const opts = this.shuffle(key, [{ id: 'ta', label: 'Claim the whole delay' }, { id: 'both', label: 'Make up what you can, claim the rest' }, { id: 'makeup', label: 'Make it all up' }]);
+      const truth = qualifying && size === 'long' ? 'both' : 'makeup';
+      // a short qualifying delay leaves nothing to claim: "make up what you can, claim the rest" claims nothing and is not wrong (RULE-032)
+      const good = qualifying && size === 'short' ? ['makeup', 'both'] : [truth];
+      const leg = sim.legIndex; const view = hazardScene(h, d, size);
+      const ctx = this.ctx({ hazard: { kind: h.kind, label: view.label }, distanceFt: Math.max(0, Math.round(d / 50) * 50), speeds: { current: Math.round(sim.car.mph()), assigned: this.assigned() } });
+      return this.make('hazard', key, `${view.scene} Your plan?`, ctx, { options: opts }, { optionId: truth }, { h, qualifying, leg, truth, good, size });
     }
     return null;
   }
 
-  // lost: the car left the route (a missed or wrong turn)
+  // lost (MOB-056): the car left the route; the card comes when the driver notices, 6-28 s later (never "0 s ago"). Turning round costs the
+  // way out twice plus about 20 s to turn (RULE-034); when this road meets the route again, a detour that costs less is cheaper (RULE-043).
   private detectLost(): Pending | null {
-    const sim = this.sim; if (sim.offCourseCount <= this.lostSeen) return null;
-    this.lostSeen = sim.offCourseCount; const key = `lost:${sim.offCourseCount}`;
-    const ev = [...sim.events].reverse().find(e => e.type === 'offCourse'); const ago = ev ? r1(sim.tod - ev.tod) : 0;
-    this.ov.uturn = 'wait';
-    const opts = this.shuffle(key, [{ id: 'uturn', label: 'Turn around now, time the way back' }, { id: 'continue', label: 'Keep going, it may rejoin' }, { id: 'ta', label: 'Keep going, claim a Time Allowance' }]);
-    return this.make('lost', key, `Dad says this road does not match the book. You left the route ${Math.round(ago)} s ago. What now?`, this.ctx({ note: 'Off course' }), { options: opts }, { optionId: 'uturn' }, { offTod: ev?.tod ?? sim.tod, events0: sim.events.length });
+    const sim = this.sim;
+    if (sim.offCourseCount > this.lostSeen) {
+      this.lostSeen = sim.offCourseCount;
+      const ev = [...sim.events].reverse().find(e => e.type === 'offCourse');
+      const node = ev ? this.scenario.course.nodes.find(n => n.id === ev.detail?.nodeId) : undefined;
+      const exit = node?.exits?.find(e => e.angle === ev?.detail?.angle) ?? null;
+      const delay = this.hint.lostAgo ?? Math.round(this.lead(`lost:${sim.offCourseCount}`, 6, 22));
+      this.ov.uturn = 'wait';
+      this.lostPending = { count: sim.offCourseCount, offTod: ev?.tod ?? sim.tod, delay, exit, nodeS: node?.s ?? sim.car.s, v: mphToFps(this.assigned()) };
+    }
+    const l = this.lostPending; if (!l) return null;
+    const stuck = sim.waitingForGo && sim.waitReason === 'roadEnd';
+    if (sim.tod < l.offTod + l.delay && !stuck) return null;
+    this.lostPending = null;
+    const key = `lost:${l.count}`; const ago = Math.max(1, Math.round(sim.tod - l.offTod));
+    const rj = l.exit?.rejoin; const detour = rj ? Math.max(5, Math.round((rj.afterFt - rj.atFt) / l.v / 5) * 5) : null;
+    const back = 2 * ago + 20;
+    const truth = detour !== null && detour < back && !stuck ? 'continue' : 'uturn';
+    const opts = this.shuffle(key, [{ id: 'uturn', label: 'Turn around, time it' }, { id: 'continue', label: 'Keep going, rejoin ahead' }, { id: 'ta', label: 'Keep going, claim a TA' }]);
+    const prompt = detour !== null
+      ? `You left the route ${ago} s ago. This road rejoins it: a detour about ${detour} s longer. What now?`
+      : `You left the route ${ago} s ago; this road does not meet it again. What now?`;
+    const ctx = this.ctx({ lost: { agoSeconds: ago, detourSeconds: detour }, note: 'Off course' });
+    return this.make('lost', key, prompt, ctx, { options: opts }, { optionId: truth }, { offTod: l.offTod, events0: sim.events.length, truth, ago, detour, back });
   }
 
-  // checkpoint: a timing checkpoint sign in sight
+  // checkpoint (MOB-055): a green timing sign (do nothing, RULE-003), a red GREAT RACE STOP board (stop and talk to the worker, RULE-003),
+  // or a green sign with the rally car ahead slowing and pulling off before it (still do nothing: never 5 mph near a green sign, RULE-004)
   private detectCheckpoint(): Pending | null {
     const sim = this.sim; const s = sim.car.s;
-    const cp = this.scenario.checkpoints.find(c => c.s > s); if (!cp || cp.kind !== 'timing') return null;
+    const look = this.hint.checkpoint ?? 'green';
+    const cp = this.scenario.checkpoints.find(c => c.s > s); if (!cp) return null;
+    if (cp.kind !== (look === 'red' ? 'observation' : 'timing')) return null;
     const key = `checkpoint:${cp.id}`; if (this.seen.has(key)) return null;
     const d = cp.s - s; if (d > cp.sightDistance || d < 150 || sim.car.mode !== 'cruise' || sim.waitingForGo) return null;
-    const opts = this.shuffle(key, [{ id: 'nothing', label: 'Hold speed, drive through' }, { id: 'slow', label: 'Slow right down to read it' }, { id: 'stop', label: 'Stop at the sign and check in' }]);
-    const ctx = this.ctx({ distanceFt: Math.round(d / 50) * 50, speeds: { current: Math.round(sim.car.mph()), assigned: this.assigned() }, note: 'Green CHECKPOINT sign' });
-    return this.make('checkpoint', key, `A green CHECKPOINT sign is ${Math.round(d / 50) * 50} ft ahead. What do you do?`, ctx, { options: opts }, { optionId: 'nothing' }, { cp });
+    const opts = this.shuffle(key, [{ id: 'nothing', label: 'Hold speed' }, { id: 'slow', label: 'Slow right down' }, { id: 'stop', label: 'Stop and check in' }]);
+    const ft = Math.round(d / 50) * 50; const assigned = this.assigned();
+    const prompt = look === 'red' ? `A red GREAT RACE STOP board is ${ft} ft ahead. What do you do?`
+      : look === 'carAhead' ? `A green CHECKPOINT sign is ${ft} ft ahead. The rally car ahead slows and pulls off before it. What do you do?`
+        : `A green CHECKPOINT sign is ${ft} ft ahead; you are at ${assigned}, on time. What do you do?`;
+    const ctx = this.ctx({ distanceFt: ft, speeds: { current: Math.round(sim.car.mph()), assigned }, note: look === 'red' ? 'Red STOP board' : 'Green CHECKPOINT sign' });
+    const truth = look === 'red' ? 'stop' : 'nothing';
+    return this.make('checkpoint', key, prompt, ctx, { options: opts }, { optionId: truth }, { cp, look, truth });
   }
 
   // turn: the decision point of a turn line is within the lead distance
@@ -451,12 +556,14 @@ export class DecisionRunner {
       const change = ghostSign + seg.seconds; const ld = rampLead(seg.holdSpeed, seg.thenSpeed, sc.car);
       const t1 = r1(tSign); const t2 = r1(change - ld - sim.tod);
       this.ov.timed.set(ins.n, 'wait');
-      const ctx = this.ctx({ line: ins.n, row: this.row(ins), distanceFt: Math.round(d), speeds: { current: Math.round(car.mph()), assigned: seg.holdSpeed, in: p.vIn, out: seg.thenSpeed }, times: { intervalSeconds: seg.seconds } });
-      if (this.showChart()) ctx.chart = { kind: 'lead', vIn: seg.holdSpeed, vOut: seg.thenSpeed, seconds: chartLead(seg.holdSpeed, seg.thenSpeed, sc.car) };
+      const ctx = this.ctx({ line: ins.n, row: this.row(ins), distanceFt: Math.round(d), speeds: { current: Math.round(car.mph()), assigned: seg.holdSpeed }, times: { intervalSeconds: seg.seconds } });
+      const L = chartLead(seg.holdSpeed, seg.thenSpeed, sc.car);
+      if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: seg.holdSpeed, vOut: seg.thenSpeed, seconds: L, meaning: 'lead' };
+      // MOB-052: Dad says "Mark!" as the front of the car reaches the sign (RULE-022); the distance bar reaches zero then
       const prompt = this.showChart()
-        ? `Line ${ins.n}: ${seg.holdSpeed} for ${formatInterval(seg.seconds)}, then ${seg.thenSpeed}. Tap START at the sign, then CALL ${seg.thenSpeed} ${ctx.chart!.seconds.toFixed(1)} s before the count ends.`
-        : `Line ${ins.n}: ${seg.holdSpeed} for ${formatInterval(seg.seconds)}, then ${seg.thenSpeed}. Tap START at the sign, then CALL ${seg.thenSpeed} half a ramp early.`;
-      const timing: TimingSpec = { kind: 'startStop', truthSeconds: t1, secondTapSeconds: t2, toleranceSeconds: TIMING_TOLERANCE.timedStart, maxSeconds: t2 + 15, tapLabel: 'START', secondTapLabel: `CALL ${seg.thenSpeed}` };
+        ? `Line ${ins.n}: START on Dad's Mark!, then CALL ${seg.thenSpeed} ${L.toFixed(1)} s before the ${formatInterval(seg.seconds)} ends.`
+        : `Line ${ins.n}: START on Dad's Mark!, then CALL ${seg.thenSpeed} half a ramp before the ${formatInterval(seg.seconds)} ends.`;
+      const timing: TimingSpec = { kind: 'startStop', truthSeconds: t1, secondTapSeconds: t2, toleranceSeconds: TIMING_TOLERANCE.timedStart, maxSeconds: t2 + 15, tapLabel: 'START', secondTapLabel: `CALL ${seg.thenSpeed}`, signSeconds: t1, signFt: Math.round(d) };
       return this.make('timedStart', key, prompt, ctx, { timing }, { taps: [t1, t2] }, { ins, t1, t2 });
     }
     return null;
@@ -478,17 +585,63 @@ export class DecisionRunner {
       this.ov.speed.set(ins.n, 'wait');
       const t = r1(tCall);
       const ctx = this.ctx({ line: ins.n, row: this.row(ins), distanceFt: Math.round(d / 10) * 10, speeds: { current: Math.round(car.mph()), assigned: p.vIn, in: p.vIn, out: ins.speed } });
-      if (this.showChart()) ctx.chart = { kind: 'lead', vIn: p.vIn, vOut: ins.speed, seconds: chartLead(p.vIn, ins.speed, sc.car) };
+      const L = chartLead(p.vIn, ins.speed, sc.car);
+      if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: p.vIn, vOut: ins.speed, seconds: L, meaning: 'lead' };
+      // MOB-052: the sign arrives on screen (distance bar to zero, Dad's "Mark!" at the sign); the call leads it by the chart lead
       const prompt = this.showChart()
-        ? `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign, ${Math.round(d / 10) * 10} ft ahead. Lead ${ctx.chart!.seconds.toFixed(1)} s. Tap CALL so the change splits the sign.`
-        : `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign ahead. Tap CALL so the change splits the sign.`;
-      const timing: TimingSpec = { kind: 'tapAt', truthSeconds: t, toleranceSeconds: TIMING_TOLERANCE.speedChange, maxSeconds: t + 12, tapLabel: `CALL ${ins.speed}` };
+        ? `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign. Call ${ins.speed} ${L.toFixed(1)} s before Dad's Mark!`
+        : `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign. Call ${ins.speed} half a ramp before Dad's Mark!`;
+      const signSeconds = r1(d / Math.max(car.v, 1));
+      const timing: TimingSpec = { kind: 'tapAt', truthSeconds: t, toleranceSeconds: TIMING_TOLERANCE.speedChange, maxSeconds: Math.max(t + 12, signSeconds + 4), tapLabel: `CALL ${ins.speed}`, signSeconds, signFt: Math.round(d) };
       return this.make('speedChange', key, prompt, ctx, { timing }, { tapSeconds: t }, { ins, plan: p, t, lead: ld });
     }
     return null;
   }
 
-  // makeup: >= 5 s late (or early) in open cruise with room before the checkpoint
+  // watch (MOB-053): the navigator laps the watch as the car reaches a timed line's sign; just after, the card shows the watch (main digits
+  // and the lap table) and asks at which reading to call the next speed: the lap's cumulative plus the interval minus the lead (RULE-021).
+  private detectWatch(): Pending | null {
+    const sim = this.sim; const car = sim.car; const sc = this.scenario;
+    const w = this.watchArm;
+    if (w) {
+      if (sim.tod < w.crossTod + 1.5) return null;
+      this.watchArm = null;
+      const seg = w.plan.ins.timed!; const laps = sim.watch.lapTable(); const lap = laps[laps.length - 1];
+      if (!lap || !sim.watch.running) { this.fallbackWatch(w); return null; }
+      const reading = sim.watch.reading(sim.tod); const L = chartLead(seg.holdSpeed, seg.thenSpeed, sc.car);
+      const truth = r1(lap.cumulative + seg.seconds - L);
+      const cands = [truth, r1(lap.cumulative + seg.seconds), r1(lap.cumulative + seg.seconds + L + 1), r1(Math.max(reading + 1, lap.cumulative + seg.seconds - L - 3))];
+      const uniq = [...new Set(cands)];
+      const opts = this.shuffle(w.key, uniq).map(x => ({ id: `r${x}`, label: formatInterval(x, true) }));
+      const ctx = this.ctx({ line: w.n, row: this.row(w.plan.ins), speeds: { current: Math.round(car.mph()), assigned: seg.holdSpeed }, times: { intervalSeconds: seg.seconds }, watch: { reading: r1(reading), laps: laps.slice(-3).map(x => ({ interval: r1(x.interval), cumulative: r1(x.cumulative) })) } });
+      if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: seg.holdSpeed, vOut: seg.thenSpeed, seconds: L, meaning: 'lead' };
+      const prompt = `Line ${w.n}: ${seg.holdSpeed} for ${formatInterval(seg.seconds)}, then ${seg.thenSpeed}. You lapped at the sign. Call ${seg.thenSpeed} when the main digits read?`;
+      return this.make('watch', w.key, prompt, ctx, { options: opts }, { optionId: `r${truth}` }, { n: w.n, truth, L, reading, seg });
+    }
+    for (const p of this.nearPlans()) {
+      const ins = p.ins; const seg = ins.timed; if (!seg || p.speedCalled) continue;
+      const key = `watch:${ins.n}`; if (this.seen.has(key)) continue;
+      const node = nodeById(sc.course, ins.nodeId); if (node.control === 'STOP' || node.fullStop || isHoldIns(ins)) continue;
+      const d = p.s - car.s; if (d < 0) { this.seen.add(key); continue; }
+      const tSign = d / Math.max(car.v, 1);
+      if (tSign > 6) continue;
+      this.seen.add(key);
+      if (tSign < 1 || !this.steadyAt(p.vIn || seg.holdSpeed) || this.hazardBefore(p.s + mphToFps(seg.holdSpeed) * seg.seconds) || seg.seconds < 12 || !sim.watch.running) continue;
+      const crossTod = sim.tod + tSign;
+      this.ov.timed.set(ins.n, { lapAt: crossTod, callAt: Infinity });
+      this.watchArm = { n: ins.n, crossTod, plan: p, key };
+      return null;
+    }
+    return null;
+  }
+  private fallbackWatch(w: { n: number; crossTod: number; plan: NavPlan }): void {
+    const seg = w.plan.ins.timed!; const tmov = this.ov.timed.get(w.n);
+    this.ov.timed.set(w.n, { lapAt: tmov && tmov !== 'wait' ? tmov.lapAt : w.crossTod, callAt: w.crossTod + seg.seconds - rampLead(seg.holdSpeed, seg.thenSpeed, this.scenario.car) });
+  }
+
+  // makeup (MOB-055): >= 5 s off in open cruise. The card prints the lateness, the open road left (to the checkpoint or to a timed interval,
+  // inside which nothing may be made up, RULE-027) and any posted limit. By the cards: +10 % takes 10 x S seconds (RULE-025), +20 % takes
+  // 5 x S (RULE-026), never above the limit (RULE-005); either fits = either is right.
   private detectMakeup(): Pending | null {
     const sim = this.sim; if (this.ov.recovery.mode !== 'off') return null;
     const leg = sim.legIndex; if (this.seen.has(`makeup:${leg}`) || sim.tod < this.makeupCooldown) return null;
@@ -497,64 +650,79 @@ export class DecisionRunner {
     const pace = this.safePace(); if (Math.abs(pace) < 5) return null;
     const assigned = this.assigned(); if (!this.steadyAt(assigned)) return null;
     const cp = this.scenario.checkpoints.find(c => c.s > sim.car.s); if (!cp) return null;
-    const tCp = (cp.s - sim.car.s) / mphToFps(assigned);
-    const late = pace > 0; const a = Math.abs(pace);
-    const fits10 = 1.1 * 10 * a <= tCp; const fits20 = 1.2 * 5 * a <= tCp;
-    if (!fits20 && tCp < 20) return null;   // nowhere to recover: the checkpoint is too close
-    const good = new Set<string>(); if (fits10) good.add('p10'); if (fits20 || !fits10) good.add('p20');
+    const fps = mphToFps(assigned);
+    const timed = this.nav.plans.find(p => p.s > sim.car.s && p.s < cp.s && p.ins.timed);
+    const roomFt = (timed ? timed.s : cp.s) - sim.car.s;
+    const T = Math.floor(roomFt / fps / 5) * 5; const S = Math.round(Math.abs(pace)); const late = pace > 0;
+    const limit = this.hint.limit;
+    const ok10 = 10 * S <= T && (limit === undefined || !late || assigned * 1.1 <= limit + 1e-9);
+    const ok20 = 5 * S <= T && (limit === undefined || !late || assigned * 1.2 <= limit + 1e-9);
+    if (!ok10 && !ok20) return null;   // nowhere to recover safely before the checkpoint / interval
+    const good = new Set<string>(); if (ok10) good.add('p10'); if (ok20) good.add('p20');
     const nxPause = this.nav.plans.find(p => p.s > sim.car.s && p.s < cp.s && (p.ins.pause ?? 0) > 0 && !isHoldIns(p.ins));
     const nxDwell = nxPause ? chartDwell(this.scenario, nxPause) : 0;
-    if (late && nxPause && nxDwell >= a) good.add('stop');
-    const best = a > 25 || !fits10 ? 'p20' : 'p10';
-    const m10 = r1(assigned * (late ? 1.1 : 0.9)), m20 = r1(assigned * (late ? 1.2 : 0.8));
+    if (late && nxPause && nxDwell >= S) good.add('stop');
+    const best = ok10 ? 'p10' : 'p20';
+    const sg = late ? '+' : '−';
     const opts: DecisionOption[] = [
-      { id: 'p10', label: `${late ? '+' : '-'}10 %: ${m10} mph for ${Math.round(10 * a)} s` },
-      { id: 'p20', label: `${late ? '+' : '-'}20 %: ${m20} mph for ${Math.round(5 * a)} s` },
-      { id: 'leave', label: `Hold ${assigned}, leave it` },
+      { id: 'p10', label: `${sg}10 % for ${10 * S} s` },
+      { id: 'p20', label: `${sg}20 % for ${5 * S} s` },
+      { id: 'leave', label: `Hold ${assigned}` },
     ];
     if (late && nxPause) opts.push({ id: 'stop', label: `Cut the stop at line ${nxPause.ins.n}` });
-    const ctx = this.ctx({ lateSeconds: r1(pace), speeds: { current: Math.round(sim.car.mph()), assigned }, distanceFt: Math.round((this.nav.nextLine().d) / 50) * 50 });
-    return this.make('makeup', key, `You are ${Math.round(a)} s ${late ? 'late' : 'early'} at ${assigned} mph with open road ahead. How do you get back on time?`, ctx, { options: this.shuffle(key, opts) }, { optionId: best }, { good: [...good], late, a, nxPause, nxDwell, cp, variant: best === 'p20' ? 'big' : 'default' });
+    const room = timed ? `a timed interval starts in about ${T} s` : `about ${T} s of open road left`;
+    const ctx = this.ctx({ lateSeconds: r1(pace), speeds: { current: Math.round(sim.car.mph()), assigned }, room: { what: timed ? 'timed' : 'checkpoint', ft: Math.round(roomFt / 50) * 50 }, ...(limit !== undefined ? { limit } : {}) });
+    const prompt = `${S} s ${late ? 'late' : 'early'} at ${assigned} mph${limit !== undefined ? `, posted limit ${limit}` : ''}; ${room}. Your plan?`;
+    const m10 = r1(assigned * (late ? 1.1 : 0.9)), m20 = r1(assigned * (late ? 1.2 : 0.8));
+    return this.make('makeup', key, prompt, ctx, { options: this.shuffle(key, opts) }, { optionId: best }, { good: [...good], late, a: S, nxPause, nxDwell, cp, m10, m20, limit, timed: !!timed, T });
   }
 
   // ------------------------------------------------------------------ grading
   private grade(p: Pending, res: DecisionResponse | null): Omit<Verdict, 'nextDecisionIn'> {
     const k = p.d.kind;
-    const base = (correct: boolean, seconds: number, expected: string, chosen: string, variant?: Variant) => {
+    /** MOB-054: the rule sentence is picked by what decided the card (`variant`); `missed` names the missed part for the headline. */
+    const base = (correct: boolean, seconds: number, expected: string, chosen: string, variant?: Variant, missed?: string) => {
       const vr = verdictRule(k, variant);
-      return { decisionId: p.d.id, kind: k, skill: p.d.skill, secondsDelta: r1(seconds), correct, rule: vr.sentence, ruleId: vr.card.id, source: vr.card.source, expected, chosen };
+      return { decisionId: p.d.id, kind: k, skill: p.d.skill, secondsDelta: r1(seconds), correct, rule: vr.sentence, ruleId: vr.card.id, source: vr.card.source, expected, chosen, ...(!correct && missed ? { missed } : {}) };
     };
     const tap = (fallback: number): number => res?.tapSeconds !== undefined ? Math.max(0, res.tapSeconds) : fallback;
+    const early = (x: number): string => `${Math.abs(x).toFixed(1)} s ${x > 0 ? 'late' : 'early'}`;
     const sim = this.sim;
     switch (k) {
       case 'pause': {
         const dwell = p.x.dwell as number; const ins = p.x.ins as Instruction; const t = tap(p.d.timing!.maxSeconds);
         this.ov.go.set(ins.n, p.tod0 + t);
-        const delta = t - dwell;
-        return base(Math.abs(delta) <= TIMING_TOLERANCE.pause, delta, `GO at ${dwell.toFixed(1)} s`, res?.tapSeconds === undefined ? 'no GO' : `GO at ${t.toFixed(1)} s`);
+        const delta = t - dwell; const none = res?.tapSeconds === undefined;
+        return base(Math.abs(delta) <= TIMING_TOLERANCE.pause, delta, `GO at ${dwell.toFixed(1)} s`, none ? 'no GO' : `GO at ${t.toFixed(1)} s`, none ? 'nogo' : delta < 0 ? 'early' : 'default', none ? 'no GO' : `GO ${early(delta)}`);
       }
       case 'restart': {
         const ins = p.x.ins as Instruction; const t = tap(p.d.timing!.maxSeconds); const truth = p.d.timing!.truthSeconds;
         if (ins.n === 1 && sim.phase === 'preread') this.ov.depart = p.tod0 + t; else this.ov.go.set(ins.n, p.tod0 + t);
-        const delta = t - truth;
-        return base(Math.abs(delta) <= TIMING_TOLERANCE.restart, delta, `${p.x.what === 'lunch' ? 'Leave' : 'Launch'} at ${clockStr(p.x.launch as number)}`, res?.tapSeconds === undefined ? 'no tap' : `${clockStr(p.tod0 + t)}${Math.abs(delta) >= 0.05 ? ` (${delta > 0 ? '+' : ''}${delta.toFixed(1)} s)` : ''}`, p.x.variant as string);
+        const delta = t - truth; const none = res?.tapSeconds === undefined;
+        const minuteOff = Math.abs(delta) >= 45;
+        const onOwn = !minuteOff && Math.abs(delta - (p.x.netLoss as number)) < 1 && (p.x.netLoss as number) >= 1;
+        const variant = p.x.variant === 'lunch' ? 'lunch' : minuteOff ? (p.x.byBase ? 'base' : 'minute') : onOwn ? 'default' : (p.x.byBase ? 'base' : 'default');
+        return base(Math.abs(delta) <= TIMING_TOLERANCE.restart, delta, `${p.x.what === 'lunch' ? 'Leave' : 'Launch'} at ${clockStr(p.x.launch as number)}`, none ? 'no tap' : `${clockStr(p.tod0 + t)}${Math.abs(delta) >= 0.05 ? ` (${signed(delta)})` : ''}`, variant,
+          none ? 'no LAUNCH' : minuteOff ? `a minute ${delta > 0 ? 'late' : 'early'}` : onOwn ? 'launched on your own time, not early by the loss' : `LAUNCH ${early(delta)}`);
       }
       case 'timedStart': {
         const ins = p.x.ins as Instruction; const t1 = p.x.t1 as number; const t2 = p.x.t2 as number;
         const taps = res?.taps && res.taps.length >= 1 ? res.taps.map(x => Math.max(0, x)) : res?.tapSeconds !== undefined ? [Math.max(0, res.tapSeconds)] : [];
         const a = taps[0] ?? t1; const b = taps[1] ?? Math.max(a, t2 + 5);
         this.ov.timed.set(ins.n, { lapAt: p.tod0 + a, callAt: p.tod0 + Math.max(a, b) });
-        const delta = Math.max(a, b) - t2;
-        const ok = Math.abs(delta) <= TIMING_TOLERANCE.timedStart && Math.abs(a - t1) <= 1.5;
-        return base(ok, delta, `START at the sign, CALL at ${t2.toFixed(1)} s`, taps.length ? `START ${(a - t1 >= 0 ? '+' : '') + (a - t1).toFixed(1)} s, CALL at ${Math.max(a, b).toFixed(1)} s` : 'no taps');
+        const callDelta = Math.max(a, b) - t2; const startDelta = a - t1;
+        const startOk = Math.abs(startDelta) <= 1.5; const callOk = Math.abs(callDelta) <= TIMING_TOLERANCE.timedStart;
+        // MOB-054 / BUG-11: the headline seconds are the part that was missed (START first)
+        const delta = !taps.length ? callDelta : !startOk ? startDelta : callDelta;
+        return base(startOk && callOk && taps.length > 0, delta, `START on Mark!, CALL at ${t2.toFixed(1)} s`, taps.length ? `START ${signed(startDelta)}, CALL at ${Math.max(a, b).toFixed(1)} s` : 'no taps',
+          !taps.length || startOk ? 'default' : 'start', !taps.length ? 'no START' : !startOk ? `START ${early(startDelta)}` : `CALL ${early(callDelta)}`);
       }
       case 'speedChange': {
-        const ins = p.x.ins as Instruction; const t = tap(p.d.timing!.maxSeconds); const plan = p.x.plan as NavPlan;
+        const ins = p.x.ins as Instruction; const t = tap(p.d.timing!.maxSeconds);
         this.ov.speed.set(ins.n, { mph: ins.speed!, at: p.tod0 + t });
         // D05 grading: the call against the sign crossing minus the lead (the car holds its speed to the sign: no hazard or stop between)
-        void plan;
-        const delta = t - (p.x.t as number);
-        return base(Math.abs(delta) <= TIMING_TOLERANCE.speedChange, delta, `CALL ${(p.x.lead as number).toFixed(1)} s before the sign`, res?.tapSeconds === undefined ? 'no call' : `${delta > 0 ? `${delta.toFixed(1)} s late` : `${(-delta).toFixed(1)} s early`}`);
+        const delta = t - (p.x.t as number); const none = res?.tapSeconds === undefined;
+        return base(Math.abs(delta) <= TIMING_TOLERANCE.speedChange, delta, `CALL ${(p.x.lead as number).toFixed(1)} s before the sign`, none ? 'no call' : early(delta), delta < 0 && !none ? 'early' : 'late', none ? 'no CALL' : `CALL ${early(delta)}`);
       }
       case 'turn': {
         const ins = p.x.ins as Instruction; const truth = p.x.truth as TurnDir; const chosen = res?.optionId as TurnDir | undefined;
@@ -569,7 +737,7 @@ export class DecisionRunner {
         this.suppress--;
         const went = sim.offCourseCount > off0;
         const late = valid === truth && t > (p.x.deadline as number);
-        return base(!went && valid === truth && !late, went ? Math.max(0, this.safePace() - p.pace0) : 0, turnWord(truth), valid ? `${turnWord(valid)}${late ? ' (late)' : ''}` : 'no call');
+        return base(!went && valid === truth && !late, went ? Math.max(0, this.safePace() - p.pace0) : 0, turnWord(truth), valid ? `${turnWord(valid)}${late ? ' (late)' : ''}` : 'no call', late ? 'late' : 'default', !valid ? 'no call' : late ? 'the call came too late' : `called ${turnWord(valid)}`);
       }
       case 'preread': {
         const what = p.x.what as string; const ins = p.x.ins as Instruction; const opt = res?.optionId ?? '';
@@ -577,12 +745,12 @@ export class DecisionRunner {
           const truth = p.x.truth as TurnDir; const ok = opt === truth;
           if (!ok) this.ov.turn.set(ins.n, { dir: (opt || null) as TurnDir | null });
           const cost = ok ? 0 : 2 * (this.scenario.excursionFt ?? 2640) / mphToFps(30) + 20;
-          return base(ok, cost, turnWord(truth), opt ? turnWord(opt as TurnDir) : 'no answer', 'turn');
+          return base(ok, cost, turnWord(truth), opt ? turnWord(opt as TurnDir) : 'no answer', 'turn', 'the bold arrow');
         }
         if (what === 'pause') {
           const truth = p.x.truth as number; const v = Number(opt.slice(1)); const ok = opt === `w${truth}`;
           if (!ok) this.ov.dwell.set(ins.n, Number.isFinite(v) ? v : 0);
-          return base(ok, ok ? 0 : (Number.isFinite(v) ? v : 0) - truth, `Wait ${truth} s`, opt ? (v === 0 ? 'Go at once' : `Wait ${v} s`) : 'no answer', 'pause');
+          return base(ok, ok ? 0 : (Number.isFinite(v) ? v : 0) - truth, `Wait ${truth} s`, opt ? (v === 0 ? 'Go at once' : `Wait ${v} s`) : 'no answer', 'pause', 'the pause minus the loss');
         }
         const truth = p.x.truth as number; const v = Number(opt.slice(1)); const ok = v === truth;
         if (!ok && Number.isFinite(v) && v > 0) this.ov.speed.set(ins.n, { mph: v });
@@ -590,7 +758,7 @@ export class DecisionRunner {
         const plan = p.x.plan as NavPlan; const nx = this.nav.plans.find(q => q.s > plan.s && (q.ins.speed !== undefined || q.ins.timed));
         const dist = (nx ? nx.s : this.scenario.course.lengthFt) - plan.s;
         const cost = ok || !(v > 0) ? (ok ? 0 : 60) : dist / mphToFps(v) - dist / mphToFps(truth);
-        return base(ok, cost, `${truth} mph`, opt ? `${v} mph` : 'no answer', 'speed');
+        return base(ok, cost, `${truth} mph`, opt ? `${v} mph` : 'no answer', 'speed', 'the speed in Column C');
       }
       case 'transitOut': {
         const out = p.x.out as number; const endIns = p.x.endIns as Instruction | undefined; const chosen = Number((res?.optionId ?? '').slice(1));
@@ -601,23 +769,39 @@ export class DecisionRunner {
           this.ov.go.set(endIns.n, pick - Math.round(accelLoss(plan?.vOut ?? 30, this.scenario.car)));
           this.seen.add(`restart:${endIns.n}`); this.seen.add(`clock:${endIns.n}`);
         }
-        return base(ok, ok ? 0 : (Number.isFinite(chosen) && chosen > 0 ? chosen : out + 60) - out, `OUT ${clockStr(out)}`, Number.isFinite(chosen) && chosen > 0 ? `OUT ${clockStr(chosen)}` : 'no answer');
+        const d = (Number.isFinite(chosen) && chosen > 0 ? chosen : out + 60) - out;
+        return base(ok, ok ? 0 : d, `OUT ${clockStr(out)}`, Number.isFinite(chosen) && chosen > 0 ? `OUT ${clockStr(chosen)}` : 'no answer', 'default', `OUT a minute ${d > 0 ? 'late' : 'early'}`);
       }
       case 'clock': {
-        const opt = res?.optionId === 'clock' ? 'clock' : res?.optionId === 'watch' ? 'watch' : null;
-        sim.act({ type: 'clock.read', source: opt === 'clock' ? 'clock' : 'stopwatch' });
-        const ok = opt === 'watch';
-        return base(ok, ok ? 0 : (p.x.misleading ? 60 : 0), 'Stopwatch TOD', opt === 'clock' ? `Dash clock${p.x.misleading ? ` (it showed minute ${p.x.shown})` : ''}` : opt === 'watch' ? 'Stopwatch TOD' : 'no answer');
+        const q = p.x.q as string; const good = p.x.good as string[]; const opt = res?.optionId && CLOCK_LABEL[res.optionId] ? res.optionId : null;
+        if (q === 'minute') sim.act({ type: 'clock.read', source: opt === 'min' || opt === 'sec' ? 'clock' : 'stopwatch' });
+        const ok = !!opt && good.includes(opt);
+        // what the wrong instrument risks: the loose minute hand a minute, the chrono no time of day at all, the clock's second hand for an interval a second or two
+        const cost = ok ? 0 : q === 'interval' ? 2 : opt === 'chrono' ? 60 : q === 'minute' ? 60 : 5;
+        const truth = p.x.truth as string;
+        return base(ok, cost, CLOCK_LABEL[truth]!, opt ? CLOCK_LABEL[opt]! : 'no answer', q === 'second' ? 'second' : q === 'interval' ? 'interval' : p.x.atChange ? 'default' : 'mid',
+          q === 'minute' ? 'the minute' : q === 'second' ? 'the launch second' : 'the interval');
+      }
+      case 'watch': {
+        const truth = p.x.truth as number; const n = p.x.n as number; const seg = p.x.seg as { holdSpeed: number; seconds: number; thenSpeed: number };
+        const x = Number((res?.optionId ?? '').slice(1)); const chosen = Number.isFinite(x) && x > 0 ? x : truth + 5;
+        const reading = p.x.reading as number; const tmov = this.ov.timed.get(n);
+        this.ov.timed.set(n, { lapAt: tmov && tmov !== 'wait' ? tmov.lapAt : p.tod0, callAt: p.tod0 + (chosen - reading) });
+        void seg;
+        const ok = Math.abs(chosen - truth) < 0.05;
+        return base(ok, chosen - truth, `CALL at ${formatInterval(truth, true)}`, res?.optionId ? `CALL at ${formatInterval(chosen, true)}` : 'no answer', 'default', `CALL ${early(chosen - truth)}`);
       }
       case 'ta': {
         const leg = p.x.leg as number; const oracle = p.x.oracle as number; const c = Number((res?.optionId ?? '').slice(1));
         const claim = Number.isFinite(c) && c >= 0 ? c : 0;
         this.ov.ta.set(leg, claim); this.nav.fileTa(leg, claim);
-        // seconds this claim left on the table (+) or claimed beyond what the committee credits (-)
-        return base(claim === oracle, oracle - claim, `Claim ${formatInterval(oracle)}`, claim ? `Claim ${formatInterval(claim)}` : 'No claim');
+        // seconds this claim left on the table (+) or claimed beyond what the rule allows (-)
+        const over = claim > oracle;
+        return base(claim === oracle, oracle - claim, oracle ? `Claim ${formatInterval(oracle)}` : 'No claim', claim ? `Claim ${formatInterval(claim)}` : 'No claim', over ? 'over' : 'default',
+          over ? `claimed ${claim - oracle} s more than you could not make up` : `claimed ${oracle - claim} s less than the rule`);
       }
       case 'hazard': {
-        const h = p.x.h as Hazard; const qualifying = p.x.qualifying as boolean; const truth = p.x.truth as string; const leg = p.x.leg as number;
+        const h = p.x.h as Hazard; const qualifying = p.x.qualifying as boolean; const truth = p.x.truth as string; const leg = p.x.leg as number; const good = p.x.good as string[];
         const opt = res?.optionId === 'ta' || res?.optionId === 'makeup' || res?.optionId === 'both' ? res.optionId : 'ta';
         if (opt === 'makeup' || opt === 'both') this.ov.recovery = { mode: 'on', untilLeg: leg };
         // a leg is claimed when any of its hazards was answered with a claim; 'makeup' alone files nothing for it
@@ -632,14 +816,20 @@ export class DecisionRunner {
         const adv = sim.taAdvice(leg);
         const cp = this.scenario.checkpoints.find(c => c.s > sim.car.s);
         const R = qualifying ? Math.min(D, adv.recoverable) : Math.min(D, cp ? (cp.s - sim.car.s) / mphToFps(this.assigned()) * (1 - 1 / 1.1) : 0);
-        const cost = opt === truth ? 0 : qualifying ? (opt === 'makeup' ? Math.max(0, D - R) : Math.min(D, R)) : (opt === 'ta' ? D : 0);
-        const label: Record<string, string> = { ta: 'Claim a TA', makeup: 'Make it up', both: 'Claim the delay, make up the odd seconds' };
-        return base(opt === truth, cost, label[truth]!, res?.optionId ? label[opt]! : 'no answer');
+        const ok = good.includes(opt);
+        const cost = ok ? 0 : qualifying ? (opt === 'makeup' ? Math.max(0, D - R) : Math.min(D, R)) : (opt === 'makeup' ? 0 : D);
+        const label: Record<string, string> = { ta: 'Claim the whole delay', makeup: 'Make it all up', both: 'Make up what you can, claim the rest' };
+        // MOB-054: the sentence that decides it: a light is not named (make it up); a delay you cannot fully make up is claimed; never claim what you can make up
+        const variant = h.kind === 'signal' ? 'light' : !qualifying ? 'noTa' : opt === 'makeup' ? 'claim' : 'small';
+        const missed = !qualifying ? (h.kind === 'signal' ? 'a traffic light is not a Time Allowance' : 'not a Time Allowance cause') : opt === 'ta' ? 'claimed time you can make up' : 'the delay you could not make up was not claimed';
+        return base(ok, cost, label[truth]!, res?.optionId ? label[opt]! : 'no answer', variant, missed);
       }
       case 'makeup': {
         const opt = res?.optionId ?? 'leave'; const good = p.x.good as string[]; const a = p.x.a as number; const late = p.x.late as boolean;
-        const cp = p.x.cp as { s: number; id: string };
+        const cp = p.x.cp as { s: number; id: string }; const limit = p.x.limit as number | undefined; const timed = p.x.timed as boolean;
         this.makeupCooldown = sim.tod + 45;
+        const want = good.includes('p10') ? `${late ? '+' : '−'}10 %` : `${late ? '+' : '−'}20 %`;
+        const variantFor = (o: string): string => o === 'p20' && !good.includes('p20') ? (limit !== undefined ? 'limit' : 'big') : o === 'p10' && !good.includes('p10') ? (timed ? 'room' : 'big') : o === 'p20' ? 'big' : 'default';
         if (opt === 'p10' || opt === 'p20') {
           const pct = opt === 'p10' ? 10 : 20;
           this.ov.recovery = { mode: 'on', pct, sinceLeg: sim.legIndex };
@@ -650,44 +840,61 @@ export class DecisionRunner {
           const tLeft = (cp.s - sim.car.s) / mphToFps(this.assigned());
           const gain = Math.max(0, tLeft) * pct / (100 + pct);
           const resid = crossed ? (sim.result().score.legs.find(l => l.cpId === cp.id)?.rawError ?? this.safePace()) : done ? this.safePace() : Math.sign(this.safePace()) * Math.max(0, Math.abs(this.safePace()) - gain);
-          return base(good.includes(opt), resid, good.includes('p10') ? '+10 %' : '+20 %', opt === 'p10' ? `${late ? '+' : '-'}10 %` : `${late ? '+' : '-'}20 %`, opt === 'p20' ? 'big' : 'default');
+          const ok = good.includes(opt);
+          return base(ok, resid, want, opt === 'p10' ? `${late ? '+' : '−'}10 %` : `${late ? '+' : '−'}20 %`, variantFor(opt),
+            opt === 'p20' && limit !== undefined ? `+20 % is above the posted ${limit}` : opt === 'p10' ? `10 x ${a} s does not fit before the ${timed ? 'timed interval' : 'checkpoint'}` : 'the wrong rate');
         }
         if (opt === 'stop' && p.x.nxPause) {
           const np = p.x.nxPause as NavPlan; const dwell = p.x.nxDwell as number;
           this.ov.dwell.set(np.ins.n, Math.max(0, dwell - a)); this.seen.add(`pause:${np.ins.n}`);
-          return base(good.includes('stop'), Math.max(0, a - dwell) * (late ? 1 : -1), good.includes('p10') ? '+10 %' : '+20 %', `Cut the stop at line ${np.ins.n}`, 'stop');
+          return base(good.includes('stop'), Math.max(0, a - dwell) * (late ? 1 : -1), want, `Cut the stop at line ${np.ins.n}`, 'stop', 'the stop is shorter than the time owed');
         }
         this.seen.add(`makeup:${sim.legIndex}`);   // left: no second card in this leg
-        return base(false, late ? a : -a, good.includes('p10') ? '+10 %' : '+20 %', 'Leave it');
+        return base(false, late ? a : -a, want, 'Leave it', 'default', `${a} s left on the table`);
       }
       case 'lost': {
-        const opt = res?.optionId ?? 'continue';
+        const opt = res?.optionId ?? 'continue'; const truth = p.x.truth as string;
         if (opt === 'uturn') { sim.act({ type: 'call.uturn' }); sim.act({ type: 'watch.lap' }); this.nav.markOffHandled(); this.ov.uturn = 'auto'; }
         else this.ov.uturn = 'deadEnd';
         const ev0 = p.x.events0 as number;
         this.suppress++; this.run(() => sim.events.slice(ev0).some(e => e.type === 'rejoin') && (sim.car.mode === 'cruise' || sim.waitingForGo), 1800); this.suppress--;
         this.ov.uturn = 'auto';
-        // the cost against turning round at once: back the way the car came out, plus about 20 s to turn
+        const ok = opt === truth;
+        const detour = p.x.detour as number | null; const back = p.x.back as number;
+        // the cost against the better choice: with a road that meets the route again, the difference of the two by the card's numbers;
+        // on a dead end, what the trip out and back cost beyond turning round at once
         const ago = Math.max(0, p.tod0 - (p.x.offTod as number));
-        const cost = opt === 'uturn' ? 0 : Math.max(0, this.safePace() - p.pace0 - (ago + 20));
-        const label: Record<string, string> = { uturn: 'Turn around now', continue: 'Keep going', ta: 'Claim a TA' };
-        return base(opt === 'uturn', cost, label.uturn!, res?.optionId ? (label[opt] ?? opt) : 'no answer');
+        const cost = ok ? 0 : detour !== null ? Math.abs(back - detour) : Math.max(0, this.safePace() - p.pace0 - (ago + 20));
+        const label: Record<string, string> = { uturn: 'Turn around now', continue: 'Keep going, rejoin', ta: 'Claim a TA' };
+        const variant = opt === 'ta' ? 'ta' : truth === 'continue' ? 'loop' : 'default';
+        return base(ok, cost, label[truth]!, res?.optionId ? (label[opt] ?? opt) : 'no answer', variant,
+          opt === 'ta' ? 'a wrong turn is never a Time Allowance' : truth === 'continue' ? `the ${detour} s detour beats ${back} s back` : detour !== null ? `${back} s back beats the ${detour} s detour` : 'this road does not meet the route again');
       }
       case 'checkpoint': {
-        const opt = res?.optionId ?? 'nothing'; const cp = p.x.cp as { s: number; id: string };
+        const opt = res?.optionId ?? 'nothing'; const cp = p.x.cp as { s: number; id: string; kind: string }; const truth = p.x.truth as string; const look = p.x.look as string;
         const assigned = this.assigned();
         if (opt === 'slow') { sim.act({ type: 'call.speed', mph: 5 }); this.scheduled.push({ when: () => sim.car.s > cp.s + 30, run: () => sim.act({ type: 'call.speed', mph: this.nav.ind(assigned) }) }); }
         else if (opt === 'stop') {
-          sim.act({ type: 'call.pullover' }); let since: number | null = null;
-          this.scheduled.push({ when: () => { if (sim.car.v === 0 && since === null) since = sim.tod; return since !== null && sim.tod >= since + 5; }, run: () => sim.act({ type: 'call.speed', mph: this.nav.ind(assigned) }) });
+          // at the red board the stop is made just past it, where the worker stands; at a green sign wherever the driver pulls over
+          const pull = (): void => { sim.act({ type: 'call.pullover' }); let since: number | null = null; this.scheduled.push({ when: () => { if (sim.car.v === 0 && since === null) since = sim.tod; return since !== null && sim.tod >= since + 5; }, run: () => sim.act({ type: 'call.speed', mph: this.nav.ind(assigned) }) }); };
+          if (cp.kind === 'observation') this.scheduled.push({ when: () => sim.car.s > cp.s + 10, run: pull }); else pull();
         }
         const recs = sim.records.length; const sz0 = sim.events.filter(e => e.type === 'sightZoneViolation').length;
-        this.suppress++; this.run(() => sim.records.length > recs && this.scheduled.length === 0, 600); this.suppress--;
-        const lg = sim.result().score.legs.find(l => l.cpId === cp.id);
-        const pen = (sim.events.filter(e => e.type === 'sightZoneViolation').length - sz0) * (this.scenario.rules.sightZonePenalty ?? 30);
-        const cost = (lg?.rawError ?? this.safePace()) - p.pace0 + pen;
-        const label: Record<string, string> = { nothing: 'Drive through', slow: 'Slow down', stop: 'Stop' };
-        return base(opt === 'nothing', opt === 'nothing' ? cost : Math.max(cost, pen), label.nothing!, label[opt] ?? opt, opt === 'nothing' ? 'default' : 'slow');
+        this.suppress++; this.run(() => sim.records.length > recs && this.scheduled.length === 0 && sim.car.mode === 'cruise', 600); this.suppress--;
+        const ok = opt === truth;
+        let cost: number;
+        if (cp.kind === 'observation') {
+          const rec = sim.records.find(r => r.cpId === cp.id);
+          cost = ok ? 0 : rec?.stopped ? 0 : this.scenario.rules.observationMissPenalty;
+        } else {
+          const lg = sim.result().score.legs.find(l => l.cpId === cp.id);
+          const pen = (sim.events.filter(e => e.type === 'sightZoneViolation').length - sz0) * (this.scenario.rules.sightZonePenalty ?? 30);
+          const c = (lg?.rawError ?? this.safePace()) - p.pace0 + pen;
+          cost = ok ? c : Math.max(c, pen);
+        }
+        const label: Record<string, string> = { nothing: 'Hold speed', slow: 'Slow down', stop: 'Stop and check in' };
+        const variant = look === 'red' ? 'red' : ok ? 'default' : 'slow';
+        return base(ok, cost, label[truth]!, label[opt] ?? opt, variant, look === 'red' ? 'a red board means stop' : 'never stop or crawl near a green sign');
       }
     }
   }

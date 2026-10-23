@@ -7,15 +7,23 @@
 import type { Scenario } from '../course.js';
 import { rng } from '../rng.js';
 import { DecisionRunner } from './runner.js';
-import { buildMicro, bossScenario, KINDS_OF_SKILL, type MicroScenario } from './scenarios.js';
+import { buildMicro, bossScenario, KINDS_OF_SKILL, BOSS_LEG_DECISIONS, type MicroScenario } from './scenarios.js';
 import { allRuleCards, introCardFor, verdictRule } from './rules.js';
-import { SKILLS, SKILL_OF_KIND, type Decision, type DecisionKind, type DecisionProgressState, type DecisionResponse, type MicroSpec, type RuleCard, type RunItem, type RunPlan, type RunResult, type RunStep, type Skill, type SkillTally, type Verdict } from './types.js';
+import { SKILLS, SKILL_OF_KIND, DECISION_KINDS, type Decision, type DecisionKind, type DecisionProgressState, type DecisionResponse, type MicroSpec, type RuleCard, type RunItem, type RunPlan, type RunResult, type RunStep, type Skill, type SkillTally, type Verdict } from './types.js';
 
 export const RUN_MIN_DECISIONS = 10;
 export const RUN_MAX_DECISIONS = 15;
 export const MAX_RULE_CARDS = 3;
 export const MAX_REPEATS_PER_SKILL = 2;
-export const BOSS_DECISIONS = 25;
+/** MOB-053: at most this many cards of one kind in a run, repeats included. */
+export const MAX_PER_KIND = 2;
+/** MOB-059: the Boss run's fixed card count: the generated leg (one card per kind) then micro cards for every kind it did not give. */
+export const BOSS_DECISIONS = 22;
+
+/** A DecisionRunner for a micro scenario (or the boss leg) with everything the scenario asks of it. */
+export function microRunner(m: MicroScenario, rung?: 0 | 1 | 2 | 3, maxDecisions?: number): DecisionRunner {
+  return new DecisionRunner(m.scenario, { kinds: m.kinds, maxDecisions: maxDecisions ?? m.maxDecisions, prereadRows: m.prereadRows, missTurns: m.missTurns, ...(rung !== undefined ? { rung } : {}), ...(m.hint ? { hint: m.hint } : {}), ...(m.maxPerKind !== undefined ? { maxPerKind: m.maxPerKind } : {}) });
+}
 
 export interface SchedulerOptions { mode?: RunPlan['mode']; rung?: 0 | 1 | 2 | 3; decisions?: number; day?: string; dailyIndex?: number; drillId?: string }
 
@@ -30,28 +38,40 @@ export class Scheduler {
   static daily(day: string, index: number, progress: DecisionProgressState | null = null, rung: 0 | 1 | 2 | 3 = 2): Scheduler {
     return new Scheduler([...SKILLS], dailySeed(day, index), progress, { mode: 'daily', day, dailyIndex: index, rung });
   }
-  /** The boss run: a full generated leg in decision mode (MOB-031). */
-  static boss(seed: number, progress: DecisionProgressState | null = null, rung: 0 | 1 | 2 | 3 = 1): Scheduler {
-    return new Scheduler([...SKILLS], seed, progress, { mode: 'boss', rung });
+  /** The boss run: a full generated leg in decision mode, then every kind it missed (MOB-031, MOB-059). The first Boss plays at rung 2
+   *  (the chart on the card); later ones at rung 1, where the card keeps the chart behind a button. */
+  static boss(seed: number, progress: DecisionProgressState | null = null, rung?: 0 | 1 | 2 | 3): Scheduler {
+    return new Scheduler([...SKILLS], seed, progress, { mode: 'boss', rung: rung ?? ((progress?.bossRuns ?? 0) > 0 ? 1 : 2) });
   }
 
   plan(): RunPlan {
     const mode = this.opts.mode ?? 'practice'; const rung = this.opts.rung ?? 2;
     const skills = [...new Set(this.skillPlan.filter(s => (SKILLS as readonly string[]).includes(s)))];
     const plan: RunPlan = { seed: this.seed, mode, skills: skills.length ? skills : [...SKILLS], rung, items: [], decisionCount: 0, ...(this.opts.day ? { day: this.opts.day } : {}), ...(this.opts.dailyIndex !== undefined ? { dailyIndex: this.opts.dailyIndex } : {}), ...(this.opts.drillId ? { drillId: this.opts.drillId } : {}) };
-    if (mode === 'boss') { plan.items = [{ type: 'decision', micro: { kind: 'turn', skill: 'safetyCourse', seed: this.seed, variant: 0, bossLeg: BOSS_DECISIONS } }]; plan.decisionCount = BOSS_DECISIONS; return plan; }
+    if (mode === 'boss') { plan.items = [{ type: 'decision', micro: { kind: 'turn', skill: 'safetyCourse', seed: this.seed, variant: 0, bossLeg: BOSS_LEG_DECISIONS } }]; plan.decisionCount = BOSS_DECISIONS; return plan; }
     const r = rng(`plan:${this.seed}:${plan.skills.join(',')}`);
     const n = Math.max(RUN_MIN_DECISIONS, Math.min(RUN_MAX_DECISIONS, Math.round(this.opts.decisions ?? r.int(10, 12))));
-    // mix the skills: rounds of the skill list in a fresh order each round, each skill cycling through its kinds
-    const kindIdx: Record<string, number> = {}; const slots: MicroSpec[] = [];
-    let round = 0;
-    while (slots.length < n) {
-      const order = shuffled(plan.skills, rng(`plan:${this.seed}:round:${round++}`));
-      for (const sk of order) {
-        if (slots.length >= n) break;
-        const kinds = KINDS_OF_SKILL[sk]; const i = kindIdx[sk] ?? r.int(0, kinds.length - 1); kindIdx[sk] = i + 1;
+    // mix the skills: rounds of the skill list in a fresh order each round, each skill cycling through its kinds, at most MAX_PER_KIND
+    // cards of one kind (MOB-053); when the planned skills run out of kinds the other skills fill the run
+    const kindIdx: Record<string, number> = {}; const perKind: Partial<Record<DecisionKind, number>> = {}; const slots: MicroSpec[] = [];
+    const take = (sk: Skill): boolean => {
+      const kinds = KINDS_OF_SKILL[sk]; let i = kindIdx[sk] ?? r.int(0, kinds.length - 1);
+      for (let j = 0; j < kinds.length; j++, i++) {
         const kind = kinds[i % kinds.length]!;
+        if ((perKind[kind] ?? 0) >= MAX_PER_KIND) continue;
+        kindIdx[sk] = i + 1; perKind[kind] = (perKind[kind] ?? 0) + 1;
         slots.push({ kind, skill: sk, seed: seedOf(`slot:${this.seed}:${slots.length}`), variant: r.int(0, 3) });
+        return true;
+      }
+      return false;
+    };
+    const others = shuffled(SKILLS.filter(s => !plan.skills.includes(s)), rng(`plan:${this.seed}:others`));
+    for (const pool of [plan.skills, others]) {
+      let round = 0;
+      while (slots.length < n) {
+        const order = shuffled(pool, rng(`plan:${this.seed}:round:${round++}`)); let any = false;
+        for (const sk of order) { if (slots.length >= n) break; if (take(sk)) any = true; }
+        if (!any) break;
       }
     }
     const items: RunItem[] = []; const shownSkills = new Set<Skill>(); let rules = 0;
@@ -107,35 +127,72 @@ export class DecisionRun {
     return run;
   }
 
-  /** Total decisions this run will have (planned + repeats inserted so far - micro scenarios that produced none). */
+  /** MOB-053 / BUG-16: the run's card count, fixed at plan time (a repeat takes the place of a later card; a micro that gives no card is
+   *  replaced by another kind). Only when no replacement can be found does it shrink. */
   get total(): number { return this.planned - this.skipped; }
   /** The scenario of the decision on screen (for the book row renderer), or null. */
   scenario(): Scenario | null { return this.runner?.scenario ?? null; }
   /** The DecisionRunner playing the current micro scenario (agents, debugging). */
   currentRunner(): DecisionRunner | null { return this.runner; }
 
+  /** Cards of `kind` played, on screen or still queued. */
+  private kindCount(kind: DecisionKind): number {
+    return this.verdicts.filter(v => v.kind === kind).length + (this.step && this.step.type === 'decision' && this.step.decision.kind === kind && !this.answeredStep ? 1 : 0)
+      + this.queue.filter(it => it.type === 'decision' && !it.micro.bossLeg && it.micro.kind === kind).length;
+  }
+  private answeredStep = false;
+  /** A kind of `skill` (or any kind, when `skill` is null) still under the cap, preferring `kind` itself; null when none is. */
+  private kindUnderCap(kind: DecisionKind | null, skill: Skill | null, salt: string): DecisionKind | null {
+    if (kind && this.kindCount(kind) < MAX_PER_KIND) return kind;
+    const pool = skill ? [...KINDS_OF_SKILL[skill]] as DecisionKind[] : [...DECISION_KINDS];
+    const c = shuffled(pool, rng(`cap:${this.plan.seed}:${salt}`)).filter(k => this.kindCount(k) < MAX_PER_KIND);
+    return c[0] ?? null;
+  }
+  private bossFilled = false;
+  /** MOB-059: after the boss leg, one micro card for every kind it did not give, then more (under the cap) to the fixed count. */
+  private fillBoss(): void {
+    this.bossFilled = true;
+    const r = rng(`boss-fill:${this.plan.seed}`);
+    const seen = new Set(this.verdicts.map(v => v.kind));
+    const left = Math.max(0, this.planned - this.verdicts.length);
+    const kinds: DecisionKind[] = shuffled(DECISION_KINDS.filter(k => !seen.has(k)), r);
+    let guard = 0;
+    while (kinds.length < left && guard++ < 200) {
+      const k = this.kindUnderCap(null, null, `boss:${guard}`); if (!k) break;
+      const pending = kinds.filter(x => x === k).length;
+      if (this.verdicts.filter(v => v.kind === k).length + pending >= MAX_PER_KIND) { if (DECISION_KINDS.every(x => this.verdicts.filter(v => v.kind === x).length + kinds.filter(y => y === x).length >= MAX_PER_KIND)) break; continue; }
+      kinds.push(k);
+    }
+    kinds.slice(0, left).forEach((kind, i) => this.queue.push({ type: 'decision', micro: { kind, skill: SKILL_OF_KIND[kind], seed: seedOf(`boss:${this.plan.seed}:${i}`), variant: r.int(0, 3) } }));
+    this.skipped += Math.max(0, left - kinds.length);
+  }
+
   next(): RunStep | null {
     if (this.step !== undefined) return this.step;
     for (;;) {
       if (this.runner && this.runner.decisions.length < this.runnerMax) {
         const d = this.runner.next();
-        if (d) return (this.step = { type: 'decision', decision: d, index: this.verdicts.length + 1, of: this.total });
+        if (d) { this.answeredStep = false; return (this.step = { type: 'decision', decision: d, index: this.verdicts.length + 1, of: this.total }); }
         const cur = this.current;
-        if (this.runner.decisions.length === 0 && cur?.type === 'decision' && !cur.micro.bossLeg && this.retries < 2) {
-          // a micro scenario that offered no decision (rare): try another layout of the same kind
-          this.retries++; this.queue.unshift({ type: 'decision', micro: { ...cur.micro, seed: cur.micro.seed + 7919, variant: cur.micro.variant + 1 } });
+        if (cur?.type === 'decision' && cur.micro.bossLeg) { /* the boss leg ended early: fillBoss covers the rest */ }
+        else if (this.runner.decisions.length === 0 && cur?.type === 'decision' && this.retries < 3) {
+          // a micro scenario that offered no decision (rare): another layout, then another kind of the same skill (the count stays fixed)
+          this.retries++;
+          const kind = this.retries < 3 ? cur.micro.kind : (this.kindUnderCap(null, cur.micro.skill, `skip:${this.verdicts.length}`) ?? cur.micro.kind);
+          this.queue.unshift({ type: 'decision', micro: { ...cur.micro, kind, skill: SKILL_OF_KIND[kind], seed: cur.micro.seed + 7919, variant: cur.micro.variant + 1 } });
         } else this.skipped += this.runnerMax - this.runner.decisions.length;
       }
+      if (this.plan.mode === 'boss' && !this.bossFilled && this.current?.type === 'decision' && this.current.micro.bossLeg) this.fillBoss();
       this.runner = null;
       const it = this.queue.shift();
-      if (it && !(it.type === 'decision' && this.current?.type === 'decision' && it.micro.kind === this.current.micro.kind && this.retries > 0 && it.micro.seed === this.current.micro.seed + 7919)) this.retries = 0;
+      if (it && !(it.type === 'decision' && this.current?.type === 'decision' && this.retries > 0 && it.micro.seed === this.current.micro.seed + 7919)) this.retries = 0;
       this.current = it ?? null;
       if (!it) return (this.step = null);
       if (it.type === 'rule') return (this.step = { type: 'rule', card: it.card, index: this.verdicts.length, of: this.total });
       const boss = it.micro.bossLeg;
       const m: MicroScenario = boss ? bossScenario(it.micro.seed, this.plan.rung) : buildMicro(it.micro, this.plan.rung);
       this.runnerMax = boss ?? m.maxDecisions;
-      this.runner = new DecisionRunner(m.scenario, { kinds: m.kinds, maxDecisions: this.runnerMax, prereadRows: m.prereadRows, missTurns: m.missTurns, rung: this.plan.rung });
+      this.runner = microRunner(m, this.plan.rung, this.runnerMax);
     }
   }
   /** Acknowledge the rule card on screen. */
@@ -152,16 +209,18 @@ export class DecisionRun {
     const s = this.next();
     if (!s || s.type !== 'decision' || !this.runner) throw new Error('no decision on screen');
     const v = this.runner.answer(s.decision, response);
-    this.responses.push(response ?? null); this.verdicts.push(v); this.step = undefined;
+    this.responses.push(response ?? null); this.verdicts.push(v); this.step = undefined; this.answeredStep = true;
     if (this.plan.mode === 'boss' && this.runner.decisions.length >= this.runnerMax) this.runner = null;
-    // MOB-005: a missed skill comes back later in the same run
-    if (!v.correct && this.plan.mode !== 'boss' && this.total < RUN_MAX_DECISIONS && (this.repeats[v.skill] ?? 0) < MAX_REPEATS_PER_SKILL) {
-      this.repeats[v.skill] = (this.repeats[v.skill] ?? 0) + 1;
-      const n = this.verdicts.length;
-      const micro: MicroSpec = { kind: v.kind, skill: v.skill, seed: seedOf(`repeat:${this.plan.seed}:${n}`), variant: (n + 1) % 4 };
-      // two decisions later (or at the end)
-      let pos = 0, dec = 0; while (pos < this.queue.length && dec < 2) { if (this.queue[pos]!.type !== 'rule') dec++; pos++; }
-      this.queue.splice(pos, 0, { type: 'decision', micro }); this.planned++;
+    // MOB-005 / MOB-053: a missed skill comes back two cards later, in the place of a planned card (the count stays), under the kind cap
+    if (!v.correct && this.plan.mode !== 'boss' && (this.repeats[v.skill] ?? 0) < MAX_REPEATS_PER_SKILL) {
+      const kind = this.kindUnderCap(v.kind, v.skill, `repeat:${this.verdicts.length}`);
+      const slots = this.queue.map((it, i) => ({ it, i })).filter(x => x.it.type === 'decision' && !(x.i > 0 && this.queue[x.i - 1]!.type === 'rule'));
+      const target = slots.slice(1).find(x => x.it.type === 'decision' && x.it.micro.skill !== v.skill) ?? slots.slice(1)[0] ?? slots[0];
+      if (kind && target) {
+        this.repeats[v.skill] = (this.repeats[v.skill] ?? 0) + 1;
+        const n = this.verdicts.length;
+        this.queue[target.i] = { type: 'decision', micro: { kind, skill: v.skill, seed: seedOf(`repeat:${this.plan.seed}:${n}`), variant: (n + 1) % 4 } };
+      }
     }
     return v;
   }

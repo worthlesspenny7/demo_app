@@ -13,15 +13,15 @@ export const SKILL_TITLE: Record<Skill, string> = {
 /** Decision point kinds (MOB-002). */
 export type DecisionKind =
   | 'preread' | 'turn' | 'speedChange' | 'timedStart' | 'pause' | 'restart' | 'transitOut'
-  | 'makeup' | 'hazard' | 'ta' | 'lost' | 'checkpoint' | 'clock';
-export const DECISION_KINDS: readonly DecisionKind[] = ['preread', 'turn', 'speedChange', 'timedStart', 'pause', 'restart', 'transitOut', 'makeup', 'hazard', 'ta', 'lost', 'checkpoint', 'clock'];
+  | 'makeup' | 'hazard' | 'ta' | 'lost' | 'checkpoint' | 'clock' | 'watch';
+export const DECISION_KINDS: readonly DecisionKind[] = ['preread', 'turn', 'speedChange', 'timedStart', 'pause', 'restart', 'transitOut', 'makeup', 'hazard', 'ta', 'lost', 'checkpoint', 'clock', 'watch'];
 /** Which meter a decision kind fills. */
 export const SKILL_OF_KIND: Record<DecisionKind, Skill> = {
   preread: 'safetyCourse', turn: 'safetyCourse', checkpoint: 'safetyCourse', lost: 'recovery',
   restart: 'startOnTime', transitOut: 'startOnTime',
   pause: 'stayOnTime', speedChange: 'stayOnTime', timedStart: 'stayOnTime',
   makeup: 'recovery', hazard: 'recovery', ta: 'recovery',
-  clock: 'instruments',
+  clock: 'instruments', watch: 'instruments',
 };
 /** The kinds the player answers in real time (MOB-004); every other kind is instant. */
 export const TIMED_KINDS: readonly DecisionKind[] = ['pause', 'restart', 'timedStart', 'speedChange'];
@@ -41,6 +41,13 @@ export interface TimingSpec {
   secondTapSeconds?: number;
   /** Longest wait the UI should allow before answering automatically (a late tap). */
   maxSeconds: number;
+  /** MOB-052: seconds from the card's moment until the front of the car reaches the sign (the driver says "Mark!" then and the
+   *  distance bar reaches zero). Present on speedChange and timedStart cards, the only cards that ask for a tap "at the sign". */
+  signSeconds?: number;
+  /** Distance to the sign at the card's moment (ft), for the shrinking distance bar. */
+  signFt?: number;
+  /** MOB-058: the big digits of the face show the time of day (restart / launch cards); the elapsed count is small. */
+  todPrimary?: boolean;
   /** What the tap does in the car ("GO", "LAUNCH", "CALL 45", "START"). */
   tapLabel: string;
   secondTapLabel?: string;
@@ -57,6 +64,10 @@ export interface BookRowView {
   cameoSvg?: string;
 }
 
+/** A simple chart cell the card uses (MOB-050): `meaning` says what the number is: 'sit' = the time to wait at a pause (pause - loss),
+ *  'loss' = the stop-and-go or standing-start loss to subtract, 'lead' = how early to call a change. The chip is labelled by it. */
+export interface ChartCell { kind: 'stopGo' | 'accel' | 'lead' | 'turn' | 'speedChange'; vIn: number; vOut: number; seconds: number; meaning?: 'sit' | 'loss' | 'lead' }
+
 /** The facts a card may show (MOB-001). Absent fields are not relevant to the decision. */
 export interface DecisionContext {
   /** Time of day (s since midnight) at the moment of the card. */
@@ -69,16 +80,24 @@ export interface DecisionContext {
   speeds?: { current: number; assigned: number; in?: number; out?: number; target?: number };
   distanceFt?: number;
   /** Printed or computed times (time of day in s since midnight unless named Seconds). */
-  times?: { base?: number; own?: number; launch?: number; in?: number; out?: number; intervalSeconds?: number; pauseSeconds?: number };
+  times?: { base?: number; own?: number; launch?: number; in?: number; out?: number; intervalSeconds?: number; pauseSeconds?: number; /** MOB-058: starting position in minutes after the base time (RULE-010) */ position?: number };
   /** The simple chart cell that applies (buildPerfTable), seconds; `kind` names the chart. */
-  chart?: { kind: 'stopGo' | 'accel' | 'lead' | 'turn' | 'speedChange'; vIn: number; vOut: number; seconds: number } | null;
+  chart?: ChartCell | null;
   /** Seconds late (+) / early (-) against the ghost at this moment; present only for recovery cards. */
   lateSeconds?: number;
   hazard?: { kind: string; label: string };
   /** Dash clock face (degrees from 12) and its minute when readable. */
   clock?: { hourAngle: number; minuteAngle: number; secondAngle: number; minuteAmbiguous: boolean; minute: number | null };
-  /** TA ledger facts for a ta card. */
-  ta?: { measured: number; claim: number; cause: string | null; legIndex: number };
+  /** TA ledger facts for a ta card: `measured` = the delay on the watch (whole s), `madeUp` = what the card says could be made up. */
+  ta?: { measured: number; claim: number; cause: string | null; legIndex: number; madeUp?: number };
+  /** MOB-053: the stopwatch as a stopwatch card shows it (main digits and the lap table, seconds). */
+  watch?: { reading: number; laps: { interval: number; cumulative: number }[] };
+  /** MOB-055: a posted limit the card shows (make-up), mph. */
+  limit?: number;
+  /** MOB-055: what lies ahead within the make-up room (a timed interval or the checkpoint) and how far, ft. */
+  room?: { what: 'timed' | 'checkpoint'; ft: number };
+  /** MOB-056: a lost card: seconds since the car left the route, and the extra time of the detour when the road meets the route again (null = it does not). */
+  lost?: { agoSeconds: number; detourSeconds: number | null };
   /** Free text the card may print under the prompt (<= 20 words). */
   note?: string;
 }
@@ -117,12 +136,14 @@ export interface Verdict {
   expected: string;
   /** What the player did, short. */
   chosen: string;
+  /** MOB-054: the part that was missed, for the headline ("START 1.6 s early", "claimed 10 s too much"); absent when right. */
+  missed?: string;
   /** Seconds of sim time until the next decision (null when none left in this scenario). */
   nextDecisionIn: number | null;
 }
 
 /** A rule card shown before the first decision of a skill not yet passed (MOB-005, MOB-010). */
-export interface RuleCard { id: string; skill: Skill; text: string; source: string; title?: string; kinds?: DecisionKind[] }
+export interface RuleCard { id: string; skill: Skill; text: string; source: string; title?: string; kinds?: DecisionKind[]; /** MOB-061: the card as a phone screen shows it (one rule and its number, <= 40 words); `text` stays one tap away. */ short?: string }
 
 export interface DecisionRunnerOptions {
   /** Which kinds are presented; the others are handled by the runner as a perfect navigator. Default: all. */
@@ -190,6 +211,8 @@ export interface DecisionProgressState {
   /** Unfinished run for "Continue": its plan and the responses so far (replayed deterministically). */
   unfinished: { plan: RunPlan; responses: (DecisionResponse | null)[] } | null;
   runs: number;
+  /** MOB-059: finished Boss runs (the first one plays at rung 2 with the chart on the card, later ones at rung 1 with a chart button). */
+  bossRuns?: number;
 }
 
 export type { Scenario };

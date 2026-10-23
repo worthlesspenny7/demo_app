@@ -88,7 +88,7 @@ function checkSpec(x: DecisionRunSpec): string | null {
 }
 function startRun(x: DecisionRunSpec, fallbackSeed: number): DecisionRun {
   const seed = x.seed ?? fallbackSeed; const rung = x.rung ?? 2;
-  if (x.mode === 'boss') return Scheduler.boss(seed, null, x.rung ?? 1).start();
+  if (x.mode === 'boss') return Scheduler.boss(seed, null, x.rung).start();
   if (x.mode === 'daily') return Scheduler.daily(x.day ?? '2026-10-23', x.dailyIndex ?? 0, null, rung).start();
   return new Scheduler(x.skills?.length ? x.skills : [...SKILLS], seed, null, { mode: 'practice', rung, ...(x.decisions !== undefined ? { decisions: x.decisions } : {}) }).start();
 }

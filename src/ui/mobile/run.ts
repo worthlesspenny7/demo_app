@@ -7,7 +7,7 @@
 import { SKILL_TITLE, type Decision, type DecisionResponse, type Verdict } from '../../core/decision/index.js';
 import { el } from '../state.js';
 import { app } from '../state.js';
-import { decisionCardHtml, ruleCardHtml, verdictParts, driverLine } from './cards.js';
+import { decisionCardHtml, ruleCardHtml, verdictParts, driverLine, signState } from './cards.js';
 import { mountTapWatch, type TapWatch } from './tapwatch.js';
 import { loadProgress, saveProgress, setUnfinished, recordRun } from './progress.js';
 import { haptic, speak } from './pwa.js';
@@ -36,12 +36,34 @@ export function renderRun(root: HTMLElement): () => void {
 
   let watch: TapWatch | null = null;
   const timers: number[] = [];
-  const clearTimers = (): void => { while (timers.length) clearTimeout(timers.pop()); if (watch) { watch.destroy(); watch = null; } };
+  let signRaf = 0;
+  const clearTimers = (): void => { while (timers.length) clearTimeout(timers.pop()); if (watch) { watch.destroy(); watch = null; } if (signRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(signRaf); signRaf = 0; };
+
+  /** MOB-052: the sign arrives: the bar shrinks to zero at the sign and Dad says "Mark!" (text, speech, a short buzz) as it lines up. */
+  function animateSign(d: Decision): void {
+    const t = d.timing; const bar = card.querySelector<HTMLElement>('.msign'); if (!t?.signSeconds || !bar) return;
+    const fill = bar.querySelector<HTMLElement>('.msign-fill'); const ft = bar.querySelector<HTMLElement>('.msign-ft'); const mark = bar.querySelector<HTMLElement>('.msign-mark');
+    let marked = false;
+    const frame = (): void => {
+      if (view.decision !== d || view.phase !== 'decision') return;
+      const st = signState(t, wallSeconds() - view.shownAt);
+      if (fill) fill.style.width = `${(st.frac * 100).toFixed(1)}%`;
+      if (ft) ft.textContent = `${st.ft} ft`;
+      if (st.mark && !marked) {
+        marked = true; bar.classList.add('marked'); if (mark) mark.textContent = 'Mark!';
+        driver.textContent = 'Dad: "Mark!"'; speak('Mark', speechOn());
+        try { if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(40); } catch { /* no haptics */ }
+      } else if (marked && !st.mark && mark) { mark.textContent = ''; bar.classList.remove('marked'); }
+      signRaf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(frame) : 0;
+    };
+    frame();
+  }
 
   const quit = el('a', { class: 'mob-quit', href: '#/m', 'aria-label': 'Home (the run is kept for Continue)' }, '×');
   function renderStrip(skill: string): void {
     const pos = h!.position(); const p = loadProgress();
-    strip.replaceChildren(quit, el('span', { class: 'mob-skill', 'data-testid': 'strip-skill' }, skill), el('span', { class: 'mob-streak' }, `Streak ${p.streak.current}`), el('span', { class: 'mob-count', 'data-testid': 'card-count' }, `Card ${Math.max(1, pos.n)} of ${pos.of}`));
+    // MOB-061: a 3-5 word strip (skill, streak, n/N); the long forms are the accessible names
+    strip.replaceChildren(quit, el('span', { class: 'mob-skill', 'data-testid': 'strip-skill' }, skill), el('span', { class: 'mob-streak', 'aria-label': `Streak ${p.streak.current}`, title: 'Streak (days in a row)' }, `★${p.streak.current}`), el('span', { class: 'mob-count', 'data-testid': 'card-count', 'aria-label': `Card ${Math.max(1, pos.n)} of ${pos.of}` }, `${Math.max(1, pos.n)}/${pos.of}`));
   }
 
   function submit(resp: DecisionResponse | null): void {
@@ -114,8 +136,9 @@ export function renderRun(root: HTMLElement): () => void {
           else if ((kind === 'lap' || kind === 'stop') && taps.length === 1) { taps.push(s); submit({ taps: [...taps] }); }
         } });
       } else {
-        watch = mountTapWatch(actions, { mode: 'go', label: t.tapLabel, autoStart: true, todAtZero: d.context.tod, now: wallSeconds, onTap: s => submit({ tapSeconds: s }) });
+        watch = mountTapWatch(actions, { mode: 'go', label: t.tapLabel, autoStart: true, todAtZero: d.context.tod, todPrimary: !!t.todPrimary, now: wallSeconds, onTap: s => submit({ tapSeconds: s }) });
       }
+      animateSign(d);
       // no tap by maxSeconds: answer with what was tapped (a late or missing call)
       timers.push(window.setTimeout(() => submit(taps.length ? { taps: [...taps] } : null), Math.max(1, t.maxSeconds) * 1000));
     } else {

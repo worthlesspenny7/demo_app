@@ -10,7 +10,8 @@ import { SKILLS, type DecisionProgressState, type DecisionResponse, type RunPlan
 export const DECISION_PROGRESS_KEY = 'rally-trainer.decision.v1';
 export const DAILY_RUNS = 3;
 export const LEGAL_AT = 0.8;
-export const BOSS_AT = 0.6;
+/** MOB-059: the Boss opens at 50 % on every meter. */
+export const BOSS_AT = 0.5;
 
 export interface KV { getItem(k: string): string | null; setItem(k: string, v: string): void; removeItem?(k: string): void }
 
@@ -46,6 +47,7 @@ export function normalize(raw: unknown): DecisionProgressState {
     rulesSeen: Array.isArray(r.rulesSeen) ? r.rulesSeen.filter(x => typeof x === 'string') : [],
     unfinished: r.unfinished && Array.isArray(r.unfinished.plan?.items) && Array.isArray(r.unfinished.responses) ? r.unfinished : null,
     runs: typeof r.runs === 'number' ? r.runs : 0,
+    ...(typeof r.bossRuns === 'number' ? { bossRuns: r.bossRuns } : {}),
   };
 }
 
@@ -109,7 +111,7 @@ export function legalUnlocked(p: DecisionProgressState, s: Skill): boolean {
   const fn = coreP().legalUnlocked; if (typeof fn === 'function') { try { return fn(p, s); } catch { /* fall back */ } }
   return p.meters[s].value >= LEGAL_AT || p.meters[s].passed;
 }
-/** MOB-031: the Boss run (a full generated leg, about 25 cards) opens when all five meters are at 60 % or more. */
+/** MOB-031 / MOB-059: the Boss run opens when all five meters are at 50 % or more. */
 export function bossUnlocked(p: DecisionProgressState): boolean {
   const fn = coreP().bossUnlocked; if (typeof fn === 'function') { try { return fn(p); } catch { /* fall back */ } }
   return SKILLS.every(s => p.meters[s].value >= BOSS_AT);

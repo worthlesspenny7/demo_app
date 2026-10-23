@@ -18,6 +18,8 @@ export interface TapWatchOptions {
   lapLabel?: string;
   /** Rally time of day at the card's moment (the TOD strip). */
   todAtZero?: number;
+  /** MOB-058: the big digits show the time of day (restart / launch cards); the elapsed count is small. */
+  todPrimary?: boolean;
   /** Start the watch at the card's moment (a pause: the car has just stopped). */
   autoStart?: boolean;
   /** Called with the seconds since the card's moment for every scoring tap (GO, or START then LAP in split mode). */
@@ -41,14 +43,15 @@ export function mountTapWatch(host: HTMLElement, o: TapWatchOptions): TapWatch {
   const elapsed = (): number => Math.max(0, now() - t0);
   const watch = new Stopwatch('digital', 60, 0);
   if (o.autoStart) watch.start(0);
-  const digits = el('div', { class: 'mw-digits', 'aria-live': 'off', 'data-testid': 'watch-digits' }, '0:00.00');
-  const tod = el('div', { class: 'mw-tod' }, '');
+  const digits = el('div', { class: `mw-digits${o.todPrimary ? ' mw-small' : ''}`, 'aria-live': 'off', 'data-testid': 'watch-digits' }, '0:00.00');
+  const tod = el('div', { class: `mw-tod${o.todPrimary ? ' mw-big' : ''}`, 'data-testid': 'tod-digits' }, '');
   const laps = el('table', { class: 'mw-laps', 'aria-label': 'laps: interval and cumulative' });
   const root = el('div', { class: `mw-face mw-${o.mode}`, 'data-face': o.mode });
   let stopped = false;
   const fire = (kind: 'go' | 'start' | 'stop' | 'lap'): void => { if (!stopped) o.onTap(Math.round(elapsed() * 100) / 100, kind); };
   if (o.mode === 'go') {
     const btn = el('button', { class: 'mw-go', type: 'button', 'data-action': 'go', 'aria-label': `${o.label ?? 'GO'}: tap at the second` }, el('span', { class: 'mw-go-label' }, o.label ?? 'GO'));
+    if (o.todPrimary) root.classList.add('mw-todprimary');
     btn.prepend(tod, digits);
     btn.addEventListener('pointerdown', ev => { ev.preventDefault(); const t = elapsed(); watch.lap(t); render(); fire('go'); });
     btn.addEventListener('click', ev => { if ((ev as MouseEvent).detail === 0) { const t = elapsed(); watch.lap(t); render(); fire('go'); } });   // keyboard / synthetic activation

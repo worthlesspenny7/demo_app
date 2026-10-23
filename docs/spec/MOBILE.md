@@ -36,7 +36,8 @@ fast-forwarding a real scenario (a drill or a generated leg) to the next moment 
 | ta | the TA point box, your ledger | pick the claim in 10 s steps | credit vs claim |
 | lost | you missed a turn N s ago | pick: turn around and time it / keep going / rejoin behind a car | seconds lost, rule |
 | checkpoint | the green sign ahead | tap: do nothing / slow / stop | penalty or none |
-| clock | the dash clock near a minute change | read the minute from the watch or the clock | right/wrong |
+| clock | a launch coming up, the dash clock | which instrument for the job: the minute, the launch second, the next interval | right/wrong |
+| watch | the stopwatch just after the lap at a timed line's sign | the main-digit reading at which to call the next speed | seconds off |
 
 Cards are chosen by a scheduler that mixes skills, repeats what was missed, and never shows a rule card twice
 unless the skill is failing.
@@ -46,7 +47,7 @@ unless the skill is failing.
 - **Skill meters**: Safety and course, Start on time, Stay on time (pauses, timed, speed changes), Recovery (make-up,
   TA, lost), Instruments (clock, stopwatch). Each fills with correct cards; the legal rung (no hints) unlocks per
   skill at 80 %.
-- **Boss runs**: a full generated leg in decision mode (about 25 cards), then a full day in Desk mode.
+- **Boss runs**: a full generated leg in decision mode then a card of every kind it missed (22 cards), opening at 50 % on every meter; the first Boss shows the chart on the card, later ones keep it behind a Chart button; then a full day in Desk mode.
 - Dad's card and the reference stay one tap away.
 
 ## Mobile shell
@@ -55,7 +56,7 @@ unless the skill is failing.
 - The tap-stopwatch is the handbook's digital lap/split watch: big digits, left half START/STOP, right half LAP,
   a TOD strip; in a pause card the whole face is the GO button.
 - Landscape phone: a mini cockpit (watch large, book row, driver line).
-- PWA: manifest, icons, service worker caching the app shell and content for offline play, "Add to Home Screen"
+- PWA: manifest (any orientation, so the installed app reaches the landscape cockpit), icons, service worker caching the app shell and content for offline play, "Add to Home Screen"
   hint once; state in localStorage (progress, streak, settings) as today.
 - Haptics via navigator.vibrate on verdicts; speech via speechSynthesis for the driver's lines when enabled.
 
@@ -67,3 +68,10 @@ unless the skill is failing.
 - Every button reachable with one thumb (bottom 40 % of the screen) and at least 56 px tall.
 - Installable PWA (manifest valid, service worker registered), runs offline after one load.
 - No horizontal scroll, no text under 16 px, no page errors.
+
+## Fix sprint PT-13 (2026-10-23)
+A player who follows the rule cards is never marked wrong (MOB-050..061 in SPECS.md): the pause card prints the number it grades, the TA
+grader is RULE-033, timed cards show the sign arriving (a distance bar and Dad's "Mark!"), at most two cards of a kind per run with a
+fixed "Card n of N", verdicts cite the sentence that decided them, the Boss covers every kind, no card has a fixed answer, restart numbers
+vary (base + position too), Continue is the primary button while a run is unfinished, and a screen stays under 40 words (rule cards 60)
+with the chips behind "details".

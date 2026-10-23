@@ -19,8 +19,8 @@ const card = (id: string): RuleCard => { const c = ruleById(id); if (!c) throw n
 const text = (id: string): string => card(id).text;
 
 describe('MOB-010 rule cards: shape, budgets, sources', () => {
-  it('MOB-010 there are 30 to 40 cards with unique ids RULE-001.., a known skill, and every skill has cards', () => {
-    expect(RULES.length).toBeGreaterThanOrEqual(30); expect(RULES.length).toBeLessThanOrEqual(40);
+  it('MOB-010 there are 30 to 45 cards with unique ids RULE-001.., a known skill, and every skill has cards', () => {
+    expect(RULES.length).toBeGreaterThanOrEqual(30); expect(RULES.length).toBeLessThanOrEqual(45);   // 40 in Phase VIII, RULE-041..043 from the PT-13 fix sprint
     expect(new Set(RULES.map(r => r.id)).size).toBe(RULES.length);
     RULES.forEach((r, i) => { expect(r.id).toBe(`RULE-${String(i + 1).padStart(3, '0')}`); expect(RULE_SKILLS).toContain(r.skill); });
     for (const s of RULE_SKILLS) expect(rulesForSkill(s).length, s).toBeGreaterThan(0);
@@ -63,13 +63,13 @@ describe('MOB-010 rule cards: shape, budgets, sources', () => {
       if (r.sim) expect(sourceLine(r)).toContain(SIM_LABEL);
       if (!r.videoOnly) expect(sourceLine(r)).not.toContain(VIDEO_LABEL);
     }
-    expect(RULES.filter(r => r.sim).map(r => r.id)).toEqual(['RULE-016', 'RULE-020', 'RULE-021']);   // the cards whose numbers are the simulator's Ford or its ghost reading
+    expect(RULES.filter(r => r.sim).map(r => r.id)).toEqual(['RULE-016', 'RULE-020', 'RULE-021', 'RULE-043']);   // the cards whose numbers are the simulator's Ford or its ghost reading
     expect(text('RULE-016')).toMatch(/simulator's performance card; measure your car/); expect(text('RULE-020')).toMatch(/simulator Ford, measure yours/);
   });
   it('MOB-010 every decision kind of MOB-002 has at least one card, and the kinds list is the spec\'s', () => {
     const mob002 = SPECS.split('\n').find(l => l.startsWith('MOB-002 '))!;
     let at = 0; for (const k of DECISION_KINDS) { const i = mob002.indexOf(`${k} (`, at); expect(i, `${k} in MOB-002 order`).toBeGreaterThanOrEqual(at); at = i; }
-    expect(DECISION_KINDS.length).toBe(13);
+    expect(DECISION_KINDS.length).toBe(14);   // + watch (MOB-053)
     for (const k of DECISION_KINDS) expect(rulesForKind(k).length, `a card precedes ${k}`).toBeGreaterThan(0);
     for (const r of RULES) { expect(r.kinds.length, r.id).toBeGreaterThan(0); for (const k of r.kinds) expect(DECISION_KINDS).toContain(k as DecisionKind); expect(new Set(r.kinds).size, r.id).toBe(r.kinds.length); }
   });
@@ -115,14 +115,17 @@ describe('MOB-010 every rule the drills grade is on a card', () => {
     ['a checkpoint resets you', 'RULE-030', /automatically on time the instant you reach a checkpoint/],
     ['TA only for trains/accidents and the like', 'RULE-031', /train[\s\S]*accident[\s\S]*wrong turn/],
     ['TA in 10 s steps within 15 min', 'RULE-032', /multiples of 10 seconds[\s\S]*15 minutes/],
-    ['measured delay = stopped time + chart loss', 'RULE-033', /time you stood still[\s\S]*plus the stop-and-go loss/],
-    ['lost: turn around, time it, double it', 'RULE-034', /turn around[\s\S]*stopwatch[\s\S]*double/],
+    ['measured delay = stopped time + chart loss; claim the rest rounded down', 'RULE-033', /time stood still[\s\S]*stop-and-go loss[\s\S]*rounded down to 10 s[\s\S]*claim 3m40s/],
+    ['lost: turn around, time it, double it', 'RULE-034', /turn around[\s\S]*stopwatch[\s\S]*half the time you lost[\s\S]*94/],
     ['rejoin 30 s behind a car', 'RULE-035', /30 seconds behind a car/],
     ['the car a minute behind is your clock', 'RULE-036', /car a minute behind you[\s\S]*ten minutes late/],
     ['the loose minute hand', 'RULE-037', /minute hand is loose/],
     ['read the minute off the watch', 'RULE-038', /hour and minute from the stopwatch in time-of-day mode/],
     ['stopwatch for intervals / clock for time of day', 'RULE-039', /stopwatch measures how long[\s\S]*time of day/],
     ['clock set to WWV at pickup', 'RULE-040', /WWV/],
+    ['read the bold CAMEO arrow', 'RULE-041', /bold arrow is the route/],
+    ['Column C prints the speed', 'RULE-042', /0 MPH, 0m15s, 45 MPH/],
+    ['rejoin ahead when the detour costs less', 'RULE-043', /twice the time since you left the route[\s\S]*detour costs less/],
   ];
   it('MOB-010 each graded rule is on its card and each card is used by exactly one rule', () => {
     for (const [what, id, re] of COVER) expect(text(id), `${what} (${id})`).toMatch(re);
@@ -162,7 +165,7 @@ describe('MOB-010 every rule the drills grade is on a card', () => {
 describe('MOB-010 School: rule cards by the Four S\'s, "Try it", check cards; the long form moved to Reference', () => {
   it('MOB-010 the School groups every card once, in the order safety and course, start, stay on time, recovery, instruments', () => {
     const gs = schoolGroups(); expect(gs.map(g => g.skill)).toEqual([...RULE_SKILLS]);
-    expect(gs.flatMap(g => g.cards.map(c => c.id))).toEqual(RULES.map(r => r.id));
+    expect(gs.flatMap(g => g.cards.map(c => c.id))).toEqual(RULE_SKILLS.flatMap(sk => RULES.filter(r => r.skill === sk).map(r => r.id)));
     expect(gs[0]!.title).toBe('Safety and course'); expect(gs[0]!.fourS).toMatch(/Four S's 1 and 3/); expect(gs[1]!.fourS).toMatch(/2/); expect(gs[2]!.fourS).toMatch(/4/);
   });
   it('MOB-010 "Try it" opens #/run?skill=<skill> and sits in the card header before the rule text', () => {
@@ -242,7 +245,7 @@ describe('MOB-012 text budgets (content part): the School before its first Try i
 describe('MOB-010 sanity of the module surface used by the other agents', () => {
   it('MOB-010 RULES is the RuleCard[] the Scheduler imports: exported kinds and skills are the closed sets', () => {
     expect(RULE_SKILLS).toEqual(['safetyCourse', 'startOnTime', 'stayOnTime', 'recovery', 'instruments']);
-    expect(DECISION_KINDS).toEqual(['preread', 'turn', 'speedChange', 'timedStart', 'pause', 'restart', 'transitOut', 'makeup', 'hazard', 'ta', 'lost', 'checkpoint', 'clock']);
+    expect(DECISION_KINDS).toEqual(['preread', 'turn', 'speedChange', 'timedStart', 'pause', 'restart', 'transitOut', 'makeup', 'hazard', 'ta', 'lost', 'checkpoint', 'clock', 'watch']);
     expect(ruleById('RULE-001')!.skill).toBe('safetyCourse'); expect(ruleById('RULE-999')).toBeUndefined();
   });
 });

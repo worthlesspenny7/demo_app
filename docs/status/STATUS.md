@@ -14,11 +14,12 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-10-23): fix sprint PT-13 (Opus) on 154746c. PT-13 phone playtest: pace targets met (first decision
-  5 s, median gap 6.5 s, runs under 4 min, offline OK), engagement 25/40; fixing: pause card printed number = graded
-  number, TA grader = rule cards, sign cue (Mark!) on timed cards, scheduler repeat cap + Instruments variety, verdict by
-  outcome, Boss at rung 2 with every kind, guessable cards removed, varied restart numbers, protect unfinished run,
-  40-word screens. When it lands: five checks, commit, push, PT-14 phone replay. Queued: PT-12 top-10 (Desk).
+- In flight (2026-10-23): fix sprint PT-13 (resumed after a container restart) on 5029dd5, all ten items done, NOT committed:
+  pause card number = graded number (MOB-050), TA grader = RULE-033 (`ruleClaim`, MOB-051), sign bar + Dad's "Mark!" on timed cards
+  (MOB-052), kind cap 2 + Instruments `watch` kind + fixed "Card n of N" (MOB-053), verdict sentence + `missed` by outcome (MOB-054),
+  Boss rung 2 then 1 / every kind / 22 cards / unlock 50 % (MOB-059), guessable cards varied (MOB-055..057), restart numbers + base +
+  position + TOD digits (MOB-058), Continue primary + confirm (MOB-060), 40/60-word screens, CAMEO labels, School link, manifest any
+  (MOB-061). Tests in tests/mob-pt13.test.ts and e2e/mobile.spec.ts. Next: five checks, commit, push, PT-14 phone replay. Queued: PT-12 top-10 (Desk).
 - If a sub-agent's report arrives after a reset: its file is on disk under docs/research or docs/playtest; read
   it, fold it, commit.
 

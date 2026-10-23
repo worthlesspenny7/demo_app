@@ -93,3 +93,9 @@ export function collectErrors(page: Page): string[] {
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
   return errors;
 }
+
+/** MOB-061: the words on the phone screen (what is rendered: closed "details" and the hidden driver line do not count); a token counts when it has a letter or a digit. */
+export async function screenWords(page: Page): Promise<number> {
+  const text = await page.evaluate(() => (document.querySelector('.mob') as HTMLElement | null)?.innerText ?? '');
+  return text.split(/\s+/).filter(w => /[A-Za-z0-9]/.test(w)).length;
+}
