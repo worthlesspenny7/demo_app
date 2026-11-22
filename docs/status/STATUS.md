@@ -14,11 +14,10 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-11-22): PT-18 newcomer replay (Opus, read-only) on the fix-sprint PT-17 commit (873 unit, 174 e2e,
-  447/447). Hosted copy republished at https://claude.ai/artifact/JQkqWo6HtCuNLpuYjfTAvD after this commit. When PT-18
-  lands: commit report; fix sprint only if a High remains; five checks; commit; push; republish; then wrap. Open: video
-  URLs + intro video from Josh; m10 p7 plain restart card; twin-sign prompt gives its answer away; checkpoint widget has
-  no Try again; Desk watch mode still labelled CHRONO.
+- In flight (2026-11-22): final small sprint PT-18 (Sonnet) on 3e4ff33: checkpoint widget fairness + Try again, honest
+  failed-try-it recap, restart verdict from the card's numbers, pointers from the card, reasons on wrong checks, two
+  figure fits. PT-18 verdict: no High, send the link today. When it lands: five checks, commit, push, republish
+  https://claude.ai/artifact/JQkqWo6HtCuNLpuYjfTAvD, wrap. Open: video URLs + intro video from Josh; PT-18 lows R6-R16.
 - Next session, in order: (1) whatever Josh reports from his phone (card kind, run seed from the recap); (2) PT-15 lows
   P5-P11 (pre-read pause slot asks 'Which way', clock card mix, 'What speed' reads Column C, details/Chart placement,
   'Line 2' on micro cards, Reference polish, meters saturate in one evening); (3) PT-12 Desk top-10 (posted limits

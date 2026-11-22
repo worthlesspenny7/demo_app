@@ -455,3 +455,5 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Also (SCH-022/032): a run's option card with a deadline (turn calls) now waits under Start (options disabled, bar + timer start on the tap).
 - DONE (not committed): five checks green: tsc clean, 873 unit (was 859; +14 sch-pt17), 174 e2e (was 151; +23 school-pt17), build clean, 447/447 specs (SCH-028..037 added). Screenshots touched by e2e restored. Not done: video URLs (Josh); m10 p7 restart still a plain launch card (only m6 p8 was asked to test the queue); twin-sign prompt still gives itself away; whereCheckpoint has no Try again; Desk cockpit still labels the watch mode CHRONO (Desk only).
 - Fix sprint PT-17 landed: 873 unit, 174 e2e, 447/447. PT-18 newcomer replay launched (Opus).
+- PT-18 (3e4ff33): no High, 12/17 fixed, 0 regressed, rubric 3.8/5, "send the link today". Final sprint PT-18
+  launched (Sonnet) on the checkpoint widget and failed-try-it recap plus three small items.
