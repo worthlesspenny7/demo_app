@@ -415,3 +415,5 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Content/engine note: m1's three preread mini-sims (seeds 101-103) get the engine's default variant seed % 4 (pause / speed questions, not "which way"); MinisimPage has no variant field, so the page cannot ask for variant 0.
 - Phase IX landed (169b9e9): 13 modules / 99 pages / ~3,120 words; 61 excerpts; guided controls; widgets; try-it runs.
   838 unit, 133 e2e, 420/420. Hosted copy republished. PT-16 newcomer playtest launched (Opus).
+- PT-16 (45354d9): Modules 0-1 work; from Module 2 untaught terms/controls; touch restart bug; rubric 3.2/5.
+  Fix sprint PT-16 launched (Opus).
