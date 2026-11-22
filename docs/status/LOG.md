@@ -432,3 +432,5 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Fixes after the full run: Start overlay one word (MOB-061 word budget), prompts 'START on Mark!' / 'before Mark!', e2e routes for m0 check (m0/8), MOB-052 test taps Start.
 - DONE (not committed): five checks green: tsc clean, 859 unit (was 838; +13 sch-pt16, +8 sch-josh), 151 e2e (was 133; +10 school-pt16, +8 school-josh), build clean, 437/437 specs (SCH-011..027 added). Screenshots touched by e2e restored. Not done: turn-card answer deadline is not behind Start (SCH-022 e2e covers pause/speedChange/timedStart/restart); m2 speed-change verdict rule says "half a ramp" before m5 teaches it; m1 "Pre-read" card title untaught.
 - Fix sprint PT-16 + Josh's notes landed: 859 unit, 151 e2e, 437/437. PT-17 newcomer replay launched (Opus).
+- PT-17 (128eee4): 18/24 fixed, 5/7 notes pass, rubric 3.4/5; High: Start does not start the clock. Fix sprint PT-17
+  launched (Opus).
