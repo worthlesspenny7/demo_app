@@ -14,11 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight (2026-11-22): fix sprint PT-16 (Opus) on 45354d9. PT-16 newcomer pass: Modules 0-1 shareable (Module 1 done
-  in ~8 min), rubric 3.2/5; High: touch makes timed mini-sims restart silently, callAtMark pointer says the wrong thing,
-  Module 2 try-it hides the cue, first unguided run uses untaught kinds; plus Module 3 lead arithmetic, checkpoint
-  widget, Module 4 car mismatch, inline citations in verdicts, LAP button drift, polish. When it lands: five checks,
-  commit, push, republish https://claude.ai/artifact/JQkqWo6HtCuNLpuYjfTAvD, PT-17 newcomer replay. Open: video URLs from Josh.
+- In flight (2026-11-22): PT-17 newcomer replay (Opus, read-only) on the fix-sprint PT-16 commit (859 unit, 151 e2e,
+  437/437). Hosted copy to be republished at https://claude.ai/artifact/JQkqWo6HtCuNLpuYjfTAvD after this commit. When PT-17
+  lands: commit report; fix sprint if a High remains; five checks; commit; push; republish. Open: video URLs + an intro
+  video link from Josh; turn cards' deadline still starts on card show (SCH-022 covers the four timed kinds); PT-16 lower
+  items B13/B15/B17/B19/B23.
 - Next session, in order: (1) whatever Josh reports from his phone (card kind, run seed from the recap); (2) PT-15 lows
   P5-P11 (pre-read pause slot asks 'Which way', clock card mix, 'What speed' reads Column C, details/Chart placement,
   'Line 2' on micro cards, Reference polish, meters saturate in one evening); (3) PT-12 Desk top-10 (posted limits

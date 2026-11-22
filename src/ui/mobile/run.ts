@@ -8,22 +8,26 @@ import { SKILL_TITLE, type Decision, type DecisionResponse, type Verdict } from 
 import { wallMaxOf } from '../../core/decision/runner.js';
 import { el } from '../state.js';
 import { app } from '../state.js';
-import { decisionCardHtml, ruleCardHtml, verdictParts, driverLine, signState } from './cards.js';
+import { decisionCardHtml, ruleCardHtml, verdictParts, driverLine, signState, cueState } from './cards.js';
 import { mountTapWatch, type TapWatch } from './tapwatch.js';
 import { loadProgress, saveProgress, setUnfinished, recordRun } from './progress.js';
 import { haptic, speak } from './pwa.js';
 import { speechOn } from './prefs.js';
 import { session, wallSeconds } from './session.js';
 import { applyGuided } from './guided.js';
+import { sourceChips } from '../school2/sheet.js';
 import { finishTryIt } from '../school2/tryit.js';
 
 export interface RunView { screen: 'run'; phase: 'rule' | 'decision' | 'verdict' | 'done'; decision: Decision | null; shownAt: number; verdict: Verdict | null;
   /** PT-15 P2: wall seconds (since the card) at which a compressed hold jumps; null until it is due (a START card jumps only after the START tap). */
-  jumpAt: number | null }
-export const view: RunView = { screen: 'run', phase: 'done', decision: null, shownAt: 0, verdict: null, jumpAt: null };
+  jumpAt: number | null;
+  /** SCH-022: a timed card's clock runs only after its Start tap (false until then; true for option cards) */
+  started?: boolean }
+export const view: RunView = { screen: 'run', phase: 'done', decision: null, shownAt: 0, verdict: null, jumpAt: null, started: true };
 /** PT-14 N6 / PT-15 P2: seconds on the card's own clock (the TimingSpec time base): wall seconds since the card, plus the jump of a compressed
  *  hold once it is due. On a START / CALL card the jump comes 2 s after the START tap, so START is always graded in wall seconds. */
 export function cardSeconds(): number {
+  if (view.started === false) return 0;   // SCH-022: frozen until Start
   const w = wallSeconds() - view.shownAt; const k = view.decision?.timing?.skip;
   return k && view.jumpAt !== null && w >= view.jumpAt ? w + (k.to - view.jumpAt) : w;
 }
@@ -51,7 +55,7 @@ export function renderRun(root: HTMLElement): () => void {
   let signRaf = 0;
   const clearTimers = (): void => { while (timers.length) clearTimeout(timers.pop()); if (watch) { watch.destroy(); watch = null; } if (signRaf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(signRaf); signRaf = 0; };
 
-  /** MOB-052: the sign arrives: the bar shrinks to zero at the sign and Dad says "Mark!" (text, speech, a short buzz) as it lines up.
+  /** MOB-052: the sign arrives: the bar shrinks to zero at the sign and the driver says "Mark!" (text, speech, a short buzz) as it lines up.
    *  PT-14 N6: a compressed hold shows its note when the watch jumps. */
   function animateSign(d: Decision): void {
     const t = d.timing; const bar = card.querySelector<HTMLElement>('.msign'); const skipNote = card.querySelector<HTMLElement>('[data-testid=skip-note]');
@@ -60,16 +64,16 @@ export function renderRun(root: HTMLElement): () => void {
     let marked = false;
     const frame = (): void => {
       if (view.decision !== d || view.phase !== 'decision') return;
-      if (skipNote && t.skip && skipNote.hidden && view.jumpAt !== null && wallSeconds() - view.shownAt >= view.jumpAt) { skipNote.hidden = false; driver.textContent = 'Dad: "Holding. Tell me when."'; }
+      if (skipNote && t.skip && skipNote.hidden && view.jumpAt !== null && wallSeconds() - view.shownAt >= view.jumpAt) { skipNote.hidden = false; driver.textContent = 'Driver: "Holding. Tell me when."'; }
       if (!bar || !t.signSeconds) { signRaf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(frame) : 0; return; }
-      const st = signState(t, cardSeconds());
+      const e = cardSeconds(); const st = t.cues?.length ? cueState(t.cues, e) : { ...signState(t, e), label: '' };   // PT-16 SCH-015: several signs
       if (fill) fill.style.width = `${(st.frac * 100).toFixed(1)}%`;
-      if (ft) ft.textContent = `${st.ft} ft`;
+      if (ft) ft.textContent = st.label ? `${st.label} ${st.ft} ft` : `${st.ft} ft`;
       if (st.mark && !marked) {
         marked = true; bar!.classList.add('marked'); if (mark) mark.textContent = 'Mark!';
-        driver.textContent = 'Dad: "Mark!"'; speak('Mark', speechOn());
+        driver.textContent = 'Driver: "Mark!"'; speak('Mark', speechOn());
         try { if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(40); } catch { /* no haptics */ }
-      } else if (marked && !st.mark && mark) { mark.textContent = ''; bar!.classList.remove('marked'); }
+      } else if (marked && !st.mark && mark) { mark.textContent = ''; bar!.classList.remove('marked'); if (t.cues?.length) marked = false; }
       signRaf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(frame) : 0;
     };
     frame();
@@ -101,6 +105,7 @@ export function renderRun(root: HTMLElement): () => void {
     const ov = el('div', { class: `mob-verdict ${v.correct ? 'v-ok' : 'v-bad'}`, role: 'status', 'data-testid': 'verdict', 'data-correct': String(v.correct) },
       el('div', { class: 'mv-head' }, el('span', {}, vp.head), el('b', { class: 'mv-sec' }, vp.seconds)),
       el('p', { class: 'mv-rule' }, vp.rule), el('p', { class: 'mv-detail' }, vp.detail));
+    const chips = sourceChips(vp.source, v.kind); if (chips.length) ov.append(el('div', { class: 's2-vchips', 'data-testid': 'verdict-chips' }, ...chips));   // PT-16 B10: the source as a chip
     card.append(ov);
     const next = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'next' }, h!.done() ? 'See the run' : 'Next card');
     next.onclick = () => advance();
@@ -147,11 +152,11 @@ export function renderRun(root: HTMLElement): () => void {
       return;
     }
     const d = step.decision;
-    view.phase = 'decision'; view.decision = d; view.verdict = null; view.shownAt = wallSeconds();
+    view.phase = 'decision'; view.decision = d; view.verdict = null; view.shownAt = wallSeconds(); view.started = !d.timing;
     view.jumpAt = d.timing?.skip && d.timing.kind !== 'startStop' ? d.timing.skip.at : null;
     renderStrip(SKILL_TITLE[d.skill]);
     card.innerHTML = decisionCardHtml(d, h!.plan.rung);
-    const line = driverLine(d); driver.textContent = line; speak(line.replace(/^Dad: /, '').replace(/"/g, ''), speechOn());
+    const line = driverLine(d); driver.textContent = line; speak(line.replace(/^Driver: /, '').replace(/"/g, ''), speechOn());
     actions.replaceChildren();
     const t = d.timing;
     if (t) {
@@ -159,16 +164,17 @@ export function renderRun(root: HTMLElement): () => void {
       let deadline = 0; let startTapped = (_s: number): void => undefined;
       // the watch runs on the card's clock (it jumps at a compressed hold, PT-14 N6); the time base the taps are graded on
       const cardNow = (): number => view.shownAt + cardSeconds();
+      // SCH-022: the card waits under Start; its clock (shownAt), the bar and the give-up timer start on the tap
+      const onStart = (): void => { view.shownAt = wallSeconds(); view.started = true; begin(); };
       if (t.kind === 'startStop') {
-        watch = mountTapWatch(actions, { mode: 'split', lapLabel: t.secondTapLabel ?? 'LAP', todAtZero: d.context.tod, zone: d.context.zone, now: cardNow, onTap: (s, kind) => {
+        watch = mountTapWatch(actions, { mode: 'split', gate: true, onStart, lapLabel: t.secondTapLabel ?? 'LAP', todAtZero: d.context.tod, zone: d.context.zone, now: cardNow, onTap: (s, kind) => {
           if (kind === 'start' && taps.length === 0) { taps.push(s); startTapped(s); }
           else if ((kind === 'lap' || kind === 'stop') && taps.length === 1) { taps.push(s); submit({ taps: [...taps] }); }
         } });
       } else {
         // PT-14 item 8: a speed-change card times nothing, so no elapsed digits (the sign bar is the cue)
-        watch = mountTapWatch(actions, { mode: 'go', label: t.tapLabel, autoStart: true, todAtZero: d.context.tod, zone: d.context.zone, todPrimary: !!t.todPrimary, hideDigits: d.kind === 'speedChange', now: cardNow, onTap: s => submit({ tapSeconds: s }) });
+        watch = mountTapWatch(actions, { mode: 'go', gate: true, onStart, label: t.tapLabel, autoStart: true, todAtZero: d.context.tod, zone: d.context.zone, todPrimary: !!t.todPrimary, hideDigits: d.kind === 'speedChange', now: cardNow, onTap: s => submit({ tapSeconds: s }) });
       }
-      animateSign(d);
       // no tap by maxSeconds: answer with what was tapped (a late or missing call)
       const giveUp = (wallSecs: number): void => { if (deadline) clearTimeout(deadline); deadline = window.setTimeout(() => submit(taps.length ? { taps: [...taps] } : null), Math.max(1, wallSecs) * 1000); timers.push(deadline); };
       // PT-15 P2: a compressed START / CALL hold jumps 2 s after the START tap (never before the sign), so START is graded in wall seconds
@@ -179,7 +185,7 @@ export function renderRun(root: HTMLElement): () => void {
         const now = wallSeconds() - view.shownAt;
         if (k.to > at + 1) { view.jumpAt = at; giveUp(t.maxSeconds - (k.to - at) - now); } else giveUp(t.maxSeconds - now);
       };
-      giveUp(t.kind === 'startStop' && t.skip ? Math.min(wallMaxOf(t), (t.signSeconds ?? 0) + 10) : wallMaxOf(t));
+      function begin(): void { animateSign(d); giveUp(t!.kind === 'startStop' && t!.skip ? Math.min(wallMaxOf(t!), (t!.signSeconds ?? 0) + 10) : wallMaxOf(t!)); }
     } else {
       const opts = d.options ?? [];
       const grid = el('div', { class: `mob-opts n${Math.min(4, opts.length)}` });

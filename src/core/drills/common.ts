@@ -1,6 +1,6 @@
 /** Shared pieces of the drill definitions: tiers, scenario base, hidden cars, ASP draw, generator hook (DRILL-001, DRILL-010, DRILL-021, DRILL-025). */
 import { ScenarioBuilder, PERFECT_TIMEWISE } from '../builder.js';
-import { aidsForRung, DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE, FORD_1939, PACKARD_1936, type Scenario, type DriverSpec, type AidsConfig } from '../course.js';
+import { aidsForRung, DRIVER_EXPERT, DRIVER_SPORTSMAN, DRIVER_ROOKIE, FORD_1939, PACKARD_1936, type Scenario, type DriverSpec, type AidsConfig } from '../course.js';
 import { hms } from '../units.js';
 import { bookStyleForRung } from '../griid.js';
 import { rng } from '../rng.js';
@@ -29,16 +29,16 @@ export function d06Car(seed: number, attempt = 0, base = FORD_1939): typeof FORD
 }
 
 export function tiers(rungs: [0 | 1 | 2 | 3, 0 | 1 | 2 | 3, 0 | 1 | 2 | 3] = [3, 2, 1]): DrillTier[] {
-  const drivers: DriverSpec[] = [DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE];
+  const drivers: DriverSpec[] = [DRIVER_EXPERT, DRIVER_SPORTSMAN, DRIVER_ROOKIE];
   const names = ['Bronze', 'Silver', 'Gold'];
   return names.map((name, i) => ({ name, aids: i === 0 && rungs[0] === 2 ? { ...aidsForRung(2), printsTimes: true } : aidsForRung(rungs[i]!), driver: drivers[i]!, description: `${name}: aids rung ${rungs[i]}, ${drivers[i]!.skill} driver` }));
 }
 /** B20: the legal day drills (D12, D13) name their tiers Bronze / Silver / Gold like every drill: Rookie / Sportsman / Expert are the campaign's DIVISIONS, a different choice. */
 export function legalTiers(): DrillTier[] {
   return [
-    { name: 'Bronze', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Bronze: Great Race legal (no aids), sportsman driver' },
-    { name: 'Silver', aids: aidsForRung(0), driver: DRIVER_DAD_SPORTSMAN, description: 'Silver: Great Race legal, stock speedometer' },
-    { name: 'Gold', aids: aidsForRung(0), driver: DRIVER_DAD_ROOKIE, description: 'Gold: Great Race legal, rookie driver on a rough road' },
+    { name: 'Bronze', aids: aidsForRung(0), driver: DRIVER_SPORTSMAN, description: 'Bronze: Great Race legal (no aids), sportsman driver' },
+    { name: 'Silver', aids: aidsForRung(0), driver: DRIVER_SPORTSMAN, description: 'Silver: Great Race legal, stock speedometer' },
+    { name: 'Gold', aids: aidsForRung(0), driver: DRIVER_ROOKIE, description: 'Gold: Great Race legal, rookie driver on a rough road' },
   ];
 }
 export function tierOf(d: Pick<Drill, 'tiers'>, t: number): DrillTier { return d.tiers[Math.max(0, Math.min(d.tiers.length - 1, t))]!; }

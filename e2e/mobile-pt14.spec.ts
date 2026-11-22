@@ -3,7 +3,7 @@
 // human-model pauses (MOB-068), and the display finish: one clock format, CAMEO labels at their own size, verdict seconds on one line,
 // phone layouts for the Reference and the School (MOB-071).
 import { test, expect, type Page } from '@playwright/test';
-import { PHONES, state, step, collectErrors, type W } from './mobile-helpers.js';
+import { PHONES, state, step, collectErrors, type W, startCard } from './mobile-helpers.js';
 import { Scheduler, DecisionRun, emptyProgress, type DecisionResponse } from '../src/core/decision/index.js';
 
 test.use({ viewport: PHONES[0], hasTouch: true, isMobile: true });
@@ -67,6 +67,7 @@ test('MOB-067 a Boss-leg hold over 25 s jumps the watch to 5 s before the CALL a
     await page.waitForFunction(x => (window as unknown as W).__rally.decision.elapsed() >= x - 0.04, sec, { polling: 'raf', timeout: 60_000 });
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   };
+  await startCard(page);
   await tapCard('.mob-actions [data-action=startstop]', o!.taps![0]!);
   // the jump: shortly after START the card clock is past skip.to and the note says so; the watch reads the interval run so far
   await expect(page.locator('[data-testid=skip-note]')).toBeVisible({ timeout: 10_000 });
@@ -91,6 +92,7 @@ test('MOB-068 Try it: Stay on time with the human-model pauses makes at least 4 
     if (st.phase === 'verdict') { await page.waitForTimeout(2000); await page.locator('.mob-actions [data-action=next]').click(); continue; }
     if (st.phase !== 'decision' || st.id === lastId) { await page.waitForTimeout(30); continue; }
     lastId = st.id; n++; if (!first) first = Date.now() - st.elapsed * 1000;
+    await startCard(page);
     const o = await page.evaluate(() => (window as unknown as W).__rally.decision.oracle());
     const at = async (sel: string, sec: number): Promise<void> => {
       const box = (await page.locator(sel).boundingBox())!;

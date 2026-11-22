@@ -10,6 +10,12 @@ export async function state(page: Page): Promise<ReturnType<DecisionHelpers['sta
   return page.evaluate(() => (window as unknown as W).__rally.decision.state());
 }
 
+/** SCH-022: a timed card waits under its Start button; tap it (no-op on an option card or a card already started). */
+export async function startCard(page: Page): Promise<void> {
+  const b = page.locator('.mob-actions [data-action=start-card], .s2-miniacts [data-action=start-card]');
+  if (await b.count()) await b.first().click();
+}
+
 /** Tap a timing card at `seconds` after the card was shown (real time; the tap lands on the button centre via the mouse). */
 async function tapAt(page: Page, selector: string, seconds: number): Promise<void> {
   const box = await page.locator(selector).boundingBox(); if (!box) throw new Error(`no ${selector}`);
@@ -27,6 +33,7 @@ export async function step(page: Page, opts: { wrong?: boolean } = {}): Promise<
   if (st.phase === 'rule') { await page.locator('.mob-actions [data-action=ack]').click(); return 'rule'; }
   if (st.phase === 'verdict') { await page.locator('.mob-actions [data-action=next]').click(); return 'next'; }
   if (st.phase !== 'decision') return 'other';
+  await startCard(page);
   const o = await page.evaluate(() => (window as unknown as W).__rally.decision.oracle());
   if (o?.optionId !== undefined) {
     const id = opts.wrong ? (st.options.find(x => x !== o.optionId) ?? o.optionId) : o.optionId;
@@ -47,7 +54,7 @@ export async function step(page: Page, opts: { wrong?: boolean } = {}): Promise<
 export async function toDecision(page: Page, maxSteps = 10): Promise<void> {
   for (let i = 0; i < maxSteps; i++) {
     const st = await state(page);
-    if (st.phase === 'decision') return;
+    if (st.phase === 'decision') { await startCard(page); return; }
     if (st.phase === 'rule') await page.locator('.mob-actions [data-action=ack]').click();
     else if (st.phase === 'verdict') await page.locator('.mob-actions [data-action=next]').click();
     else await page.waitForTimeout(50);

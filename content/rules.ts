@@ -1,7 +1,7 @@
 /**
  * MOB-010: the rule cards of Phase VIII. One card is one rule with the one number the player must apply, in at most 60 words, with its source.
  * The long lessons (content/lessons.ts) moved to the Reference page under "Long form"; these cards are what the School, the Scheduler (MOB-005) and
- * "Dad reads this" (MOB-011) show. Pure data, no DOM, so tests can check the words and the sources.
+ * "The driver reads this" (MOB-011) show. Pure data, no DOM, so tests can check the words and the sources.
  *
  * Sources are exact: a REG rule number (docs/research/09-event-regulations-2026.md), a Rookie Handbook page (08, 08b) or a video with its caption
  * timestamp [mm:ss] (10, 10a, 10b, 10c; the captions were read, not watched, so a timestamp is good to about 30 seconds). A claim that only a video
@@ -158,7 +158,7 @@ export const RULES: RuleCard[] = [
   {
     id: 'RULE-020', skill: 'stayOnTime', title: 'Lead = half the ramp', lesson: 'timed-leads', kinds: ['speedChange', 'timedStart'], sim: true,
     text: "Start the new speed half a ramp early so the ramp straddles the sign. If the car needs 4.6 s to go from 30 to 40 mph (simulator Ford, measure yours), call it 2.3 s early. For a timed hold, call about 2 s early.",
-    source: "HB p.12; timed hold: 2026 Training Session [120:16] (video)",
+    source: "HB p.12; 2026 Training Session [92:24] (video); timed hold [119:47]",
   },
   {
     id: 'RULE-021', skill: 'stayOnTime', title: 'Timed changes count from departure', lesson: 'timed-leads', kinds: ['timedStart', 'watch'], sim: true,

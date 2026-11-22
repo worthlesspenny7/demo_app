@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ScenarioBuilder, EXITS, PERFECT_TIMEWISE } from '../src/core/builder.js';
 import { Simulator } from '../src/core/sim.js';
-import { DRIVER_EXPERT, DRIVER_DAD_ROOKIE, FORD_1939, type Scenario } from '../src/core/course.js';
+import { DRIVER_EXPERT, DRIVER_ROOKIE, FORD_1939, type Scenario } from '../src/core/course.js';
 import { hms } from '../src/core/units.js';
 import { stopLoss } from '../src/core/perf-table.js';
 import { OracleBot, RandomBot, makeBot, runBot } from '../src/agent/bots.js';
@@ -54,7 +54,7 @@ describe('bots and validation targets', () => {
   });
   it('BOT-004 random bot never crashes the simulator (20 seeds)', () => {
     for (let seed = 1; seed <= 20; seed++) {
-      const sim = new Simulator(variedLeg(seed, DRIVER_DAD_ROOKIE));
+      const sim = new Simulator(variedLeg(seed, DRIVER_ROOKIE));
       const r = runBot(sim, new RandomBot(sim, seed), 1800);
       expect(r.score.raw).toBeGreaterThanOrEqual(0);
     }

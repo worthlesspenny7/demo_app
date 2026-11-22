@@ -80,14 +80,14 @@ test.describe('school phone 390x844', () => {
   });
 
   test('SCH-006 check page: tap an option, instant right or wrong', async ({ page }) => {
-    await page.goto('/?mode=mobile#/school/m0/5');
+    await page.goto('/?mode=mobile#/school/m0/8');
     await page.locator('.s2-checkopts [data-right=false]').first().click();
     await expect(page.locator('.s2-checkopts .s2-wrong')).toHaveCount(1);
     await expect(page.locator('[data-testid=check-result]')).toHaveText(/^Not quite: /);
     await page.locator('.s2-checkopts [data-right=true]').click();
-    await expect(page.locator('[data-testid=check-result]')).toHaveText(/^Right\./);
+    await expect(page.locator('[data-testid=check-result]')).toHaveText(/^Correct\./);
     expect((await sch(page)).complete).toBe(true);
-    await expect(page.locator('.s2-dot[data-page="4"]')).toHaveClass(/done/);
+    await expect(page.locator('.s2-dot[data-page="7"]')).toHaveClass(/done/);
   });
 
   test('SCH-005 mini-sim page: one phone card with a ring and a one-line pointer on its control; a wrong answer shows the rule and a second try; complete after a right answer with the why line', async ({ page }) => {
@@ -115,6 +115,7 @@ test.describe('school phone 390x844', () => {
     test.setTimeout(90_000);
     await page.goto('/?mode=mobile#/school/m2/6');
     await expect(page.locator('.s2-miniacts [data-action=go]')).toBeVisible();
+    await page.locator('.s2-miniacts [data-action=start-card]').click();   // SCH-022
     const o = await page.evaluate(() => (window as unknown as W).__rally.school.oracle());
     expect(o?.tapSeconds).toBeGreaterThan(0);
     await page.waitForFunction(t => (window as unknown as W).__rally.school.mini().elapsed >= t - 0.04, o!.tapSeconds!, { polling: 'raf', timeout: 60_000 });
@@ -139,7 +140,7 @@ test.describe('school phone 390x844', () => {
     await page.waitForTimeout(2500);
     await page.locator('[data-action=leg-ended]').click();
     await expect(page.locator('[data-testid=checkpoint]')).toBeVisible();
-    await expect(page.locator('[data-testid=cp-result]')).toHaveText(/The checkpoint was at [\d.]+ s .* \d+ points?/);
+    await expect(page.locator('[data-testid=cp-result]')).toHaveText(/The ghost reached the sign at [\d.]+ s\. You tapped at [\d.]+ s.* \d+ points?/);
     expect((await sch(page)).complete).toBe(true);
   });
 
@@ -150,7 +151,7 @@ test.describe('school phone 390x844', () => {
     await page.locator('.s2-q [data-right=false]').first().click();
     await expect(page.locator('[data-testid=split-result]')).toHaveText(/^Not quite/);
     await page.locator('.s2-q [data-right=true]').click();
-    await expect(page.locator('[data-testid=split-result]')).toHaveText(/^Right/);
+    await expect(page.locator('[data-testid=split-result]')).toHaveText(/^Correct/);
     expect((await sch(page)).complete).toBe(true);
   });
 
@@ -160,7 +161,7 @@ test.describe('school phone 390x844', () => {
     await page.locator('[data-widget=readScorecard] button[data-right=false]').first().click();
     await expect(page.locator('[data-testid=card-result]')).toHaveText(/^Not quite/);
     await page.locator('[data-widget=readScorecard] button[data-right=true]').click();
-    await expect(page.locator('[data-testid=card-result]')).toHaveText(/^Right/);
+    await expect(page.locator('[data-testid=card-result]')).toHaveText(/^Correct/);
   });
 
   test('SCH-007 try-it: the last page starts a 5-card run on the run screen, then a recap with stars and the module\'s "You can now" line; the module is recorded done', async ({ page }) => {

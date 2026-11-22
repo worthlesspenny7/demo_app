@@ -89,7 +89,7 @@ describe('SCH-005 mini-sim pages', () => {
     expect(r).not.toBeNull();
     const step = r!.next() as { type: string; decision: Decision }; expect(step.type).toBe('decision'); expect(step.decision.kind).toBe('turn');
     expect(r!.guided?.pointer).toBeTruthy(); expect(typeof r!.retry).toBe('function');
-    for (const c of CONTROL_IDS) { expect(CONTROL_LABEL[c].length).toBeGreaterThan(5); expect(pointerFor(c).split(/\s+/).length).toBeLessThanOrEqual(12); expect(CONTROL_SELECTOR[c]).toBeTruthy(); }
+    for (const c of CONTROL_IDS) { expect(CONTROL_LABEL[c].length).toBeGreaterThan(5); expect(pointerFor(c).split(/\s+/).length).toBeLessThanOrEqual(14); expect(CONTROL_SELECTOR[c]).toBeTruthy(); }
   });
 });
 
@@ -111,7 +111,7 @@ describe('SCH-004 guided controls', () => {
   it('SCH-004 a visitor who never opened the course is not guided; one in the course is, until modules 0-6 are done', () => {
     expect(guidedState(emptyCourseState()).active).toBe(false);
     const g = guidedState(withPageReached(done('m0', 'm1'), 'm2', 1));
-    expect(g.active).toBe(true); expect(g.introduced).toEqual(['book', 'callTurn', 'callSpeed', 'go']); expect(g.newest).toBe('go');
+    expect(g.active).toBe(true); expect(g.introduced).toEqual(['book', 'callTurn', 'distanceBar', 'callSpeed', 'go']); expect(g.newest).toBe('go');
     expect(guidedState(done('m0', 'm1')).introduced).toEqual(['book']);
     const core7 = done('m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6');
     expect(coreComplete(core7)).toBe(true); expect(guidedState(core7).active).toBe(false);

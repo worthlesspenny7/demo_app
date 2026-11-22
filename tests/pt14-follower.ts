@@ -86,8 +86,8 @@ export function follow(d: Decision, o: FollowOpts = {}): DecisionResponse {
       // the player taps when the TOD digits (whole seconds) show the launch second
       return { tapSeconds: Math.max(0, t - Math.round(loss) - tod0) + react() };
     }
-    case 'speedChange': {                                                                // RULE-020: call the lead before Dad's Mark!
-      const L = Number(/ ([\d.]+) s before Dad's Mark/.exec(p)?.[1] ?? o.chart);
+    case 'speedChange': {                                                                // RULE-020: call the lead before the driver's Mark!
+      const L = Number(/ ([\d.]+) s before Mark/.exec(p)?.[1] ?? o.chart);
       return { tapSeconds: Math.max(0.2, (d.timing!.signSeconds ?? 0) - L) + react() };
     }
     case 'timedStart': {                                                                 // RULE-022 START on the Mark, RULE-021 CALL off the watch

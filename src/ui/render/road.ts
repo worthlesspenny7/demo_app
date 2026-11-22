@@ -63,7 +63,7 @@ export function drawRoad(ctx: CanvasRenderingContext2D, obs: Observation | null,
   if (ov.offCourseHint) label(ctx, 'This does not look like the route...', cx, carY - 60, 13, th.danger, '700');
   // overlays: pending callout + driver line (bottom-left), pace bar (bottom-right)
   const pad = 10; let y = h - pad;
-  if (ov.driverLine) { boxText(ctx, `Dad: ${ov.driverLine}`, pad, y, 13, th, '#f3efe4', 'rgba(20,26,34,0.85)'); y -= 30; }
+  if (ov.driverLine) { boxText(ctx, `Driver: ${ov.driverLine}`, pad, y, 13, th, '#f3efe4', 'rgba(20,26,34,0.85)'); y -= 30; }
   if (ov.pendingCallout) boxText(ctx, `Pending: ${ov.pendingCallout}`, pad, y, 13, th, th.accent, 'rgba(20,26,34,0.85)');
   if (ov.paceMode === 'wait' && ov.waitMore !== null && ov.waitMore !== undefined) {
     const more = ov.waitMore; const txt = more > 0.05 ? `wait ${more.toFixed(1)} more s` : 'GO now';

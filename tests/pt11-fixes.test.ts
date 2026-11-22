@@ -114,7 +114,7 @@ describe('PLAY-046 N-D5 / N-D6: the D11 Debrief tells the truth', () => {
   });
 });
 
-describe('PLAY-047 N-D7..N-D11: Silver leftovers, the D06 card, path seams, the start bucket and Dad\'s card', () => {
+describe('PLAY-047 N-D7..N-D11: Silver leftovers, the D06 card, path seams, the start bucket and Driver\'s card', () => {
   it('PLAY-047 N-D7 / N-D8: Silver prints no launch second (pre-read, start card, card, warning) and no "card dwell" hint; no "(minus 0 s)" anywhere', async () => {
     const { launchPlan, withheldLaunchText, startCount } = await import('../src/ui/viewmodels/v3.js');
     const p = launchPlan(8 * 3600, 4.6); expect(p.text).toMatch(/launch at 07:59:55 \(minus 5 s\)/);
@@ -163,7 +163,7 @@ describe('PLAY-047 N-D7..N-D11: Silver leftovers, the D06 card, path seams, the 
       for (const w of workedRestarts(r.events, sc)) { expect(w.idealGoTod % 1).toBe(0); expect(w.idealGoTod).toBe(Math.floor(w.outTod) - Math.round(w.accelLoss)); }
     }
   });
-  it('PLAY-047 N-D10: Dad\'s card prints on a white page (no dark frame with background graphics), spells ICE out once, and line 20 reads plainly', async () => {
+  it('PLAY-047 N-D10: Driver\'s card prints on a white page (no dark frame with background graphics), spells ICE out once, and line 20 reads plainly', async () => {
     const css = readFileSync('src/ui/styles.css', 'utf8'); expect(css).toMatch(/html\.print-card-only \{ color-scheme: light !important;[^}]*background-color: #fff !important; \}/);
     const { LESSONS } = await import('../content/lessons.js');
     const card = LESSONS.find(l => l.id === 'protocol')!.body.find((b): b is { card: { title: string; lines: string[] } } => typeof b === 'object' && 'card' in b)!.card.lines;
@@ -212,7 +212,7 @@ describe('PLAY-048 evening one reads less: tables and lists move to the Referenc
     const has = (id: string, phrases: string[]): void => { const t = lessonWithReferenceText(LESSONS.find(l => l.id === id)!); for (const p of phrases) expect(t, `${id}: ${p}`).toContain(p); };
     has('four-s', ['1 s per second']); has('transits', ['Position 1 leaves at base + 1 minute', '30 minutes before your start time (REG VII.B.2.a)']); has('which-timer', ['Restart time = base + ASP', 'box cumulative']);
     has('protocol', ['Next: STOP sign, crossroad, turn right, 35 after.', 'Rule 10 (simulator convention, not in the documents)', '"Mark."']); has('lost', ['double it ("lost 94")', 'Rejoin about 30 seconds behind']); has('griid-cameo', ['hourglass']);
-    // the lost lesson keeps the doctrine in six short steps; Dad's card stays in the protocol lesson
+    // the lost lesson keeps the doctrine in six short steps; Driver's card stays in the protocol lesson
     const lost = LESSONS.find(l => l.id === 'lost')!; const steps = lost.body.find((b): b is { list: string[]; ordered?: boolean } => typeof b === 'object' && 'list' in b)!; expect(steps.list).toHaveLength(6);
     expect(LESSONS.find(l => l.id === 'protocol')!.body.some(b => typeof b === 'object' && 'card' in b)).toBe(true);
     // the screens: the lesson renders the link, the Reference page renders the sections and opens at #/reference/<id>

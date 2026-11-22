@@ -1,7 +1,7 @@
 // Final sprint PT-15 (docs/playtest/PT-15-phone-replay-2.md): the run is kept for Continue from the moment it starts (MOB-075, N13) and a
 // compressed hold jumps only after the START tap, so a START 2.5 s late reads "START 2.5 s late" and the CALL stays reachable (MOB-073).
 import { test, expect } from '@playwright/test';
-import { PHONES, state, collectErrors, type W } from './mobile-helpers.js';
+import { PHONES, state, collectErrors, type W, startCard } from './mobile-helpers.js';
 import { Scheduler, DecisionRun, emptyProgress, type DecisionResponse } from '../src/core/decision/index.js';
 
 test.use({ viewport: PHONES[0], hasTouch: true, isMobile: true });
@@ -43,6 +43,7 @@ test('MOB-073 on a compressed Boss hold the watch jumps only after the START tap
     await page.waitForFunction(x => (window as unknown as W).__rally.decision.elapsed() >= x - 0.04, sec, { polling: 'raf', timeout: 60_000 });
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   };
+  await startCard(page);
   await tapCard('.mob-actions [data-action=startstop]', t.truthSeconds + 2.5);
   // no jump before the START: the card clock was wall time up to the tap; the jump follows it
   await expect(page.locator('[data-testid=skip-note]')).toBeVisible({ timeout: 10_000 });

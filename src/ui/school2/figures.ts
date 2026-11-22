@@ -3,6 +3,10 @@
  * the ghost car beside the real car, the five book columns, a stop sign with its chart cell, the dash clock face and the distance bar.
  * A page's `figure` names one of them, or a content/course.ts FIGURES id mapped onto one (FIGURE_ALIAS).
  */
+import { STOP_EXAMPLE } from '../../../content/course.js';
+import { videoByKey } from '../../../content/videos.js';
+/** PT-16 B8: the stop figure quotes the same car and cell as Module 4's worked example (this app's car, not the handbook's Packard). */
+const STOP_FIG = STOP_EXAMPLE[0]!;
 export type FigureId = 'ghost' | 'columns' | 'stop' | 'clock' | 'distance';
 export const FIGURE_IDS: FigureId[] = ['ghost', 'columns', 'stop', 'clock', 'distance'];
 
@@ -45,7 +49,7 @@ const SVG: Record<FigureId, () => string> = {
   stop: () => {
     const pts = Array.from({ length: 8 }, (_, i) => { const a = (Math.PI / 8) + i * Math.PI / 4; return `${(70 + Math.cos(a) * 46).toFixed(1)},${(60 + Math.sin(a) * 46).toFixed(1)}`; }).join(' ');
     return `<svg viewBox="0 0 300 120" role="img" aria-label="a stop sign and its chart cell"><polygon points="${pts}" fill="#c0392b" stroke="#fff" stroke-width="3"/><text x="70" y="67" font-size="22" font-weight="800" text-anchor="middle" fill="#fff">STOP</text>`
-      + `<rect x="150" y="26" width="140" height="68" rx="8" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="2"/><text x="220" y="48" font-size="13" text-anchor="middle" fill="var(--muted)">Stop &amp; go 35 → 35</text><text x="220" y="80" font-size="24" font-weight="800" text-anchor="middle" fill="var(--accent)">sit 9.0 s</text></svg>`;
+      + `<rect x="150" y="26" width="140" height="68" rx="8" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="2"/><text x="220" y="48" font-size="13" text-anchor="middle" fill="var(--muted)">This app's car: ${STOP_FIG.vIn} → ${STOP_FIG.vOut}</text><text x="220" y="80" font-size="24" font-weight="800" text-anchor="middle" fill="var(--accent)">sit ${STOP_FIG.sit.toFixed(1)} s</text></svg>`;
   },
   clock: () => {
     let t = ''; for (let i = 0; i < 60; i++) { const a = i * 6 * Math.PI / 180; const r0 = i % 5 ? 44 : 39; t += `<line x1="${(150 + Math.sin(a) * r0).toFixed(1)}" y1="${(60 - Math.cos(a) * r0).toFixed(1)}" x2="${(150 + Math.sin(a) * 48).toFixed(1)}" y2="${(60 - Math.cos(a) * 48).toFixed(1)}" stroke="#111" stroke-width="${i % 5 ? 0.7 : 1.8}"/>`; }
@@ -58,7 +62,23 @@ const SVG: Record<FigureId, () => string> = {
     + `<text x="60" y="96" font-size="14" fill="var(--muted)">160 ft</text><text x="236" y="108" font-size="15" font-weight="800" text-anchor="middle" fill="var(--accent)">Mark!</text></svg>`,
 };
 
+/** SCH-024: the Great Race vibe page: stills from the official rally school videos (docs/research/frames, copied to public/intro), credited;
+ *  plus the intro video when content/videos.ts gets an `intro` URL. */
+export const INTRO_PHOTOS: { src: string; caption: string; frame: string }[] = [
+  { src: 'intro/lapboard.jpg', caption: 'Lapboard and clock', frame: '2026-13m56s+0' },
+  { src: 'intro/rally-clock.jpg', caption: 'Rally clock', frame: 'clock-00m40s+4' },
+  { src: 'intro/stop-board.jpg', caption: 'STOP board', frame: 'classen1-02m40s+0' },
+];
+export const PHOTO_CREDIT = 'Stills from Great Race rally school videos';
+const BASE = ((import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL) ?? '/';
+function photosHtml(): string {
+  const intro = videoByKey('intro' as never)?.url;
+  return `<figure class="s2-fig s2-photos" data-figure="photos"><div class="s2-photo-row">${INTRO_PHOTOS.map(p => `<span class="s2-photo"><img src="${BASE}${p.src}" alt="${p.caption}" loading="lazy" width="160" height="90"><span>${p.caption}</span></span>`).join('')}</div>`
+    + `<figcaption class="s2-credit" data-testid="photo-credit">${PHOTO_CREDIT}${intro ? ` · <a href="${intro}" target="_blank" rel="noopener" data-testid="intro-video">Watch the intro video</a>` : ''}</figcaption></figure>`;
+}
+
 /** The figure's SVG markup, or '' when the name does not resolve. */
 export function figureSvg(name: string | undefined): string {
+  if (name === 'photos') return photosHtml();
   const id = figureId(name); return id ? `<figure class="s2-fig" data-figure="${id}">${SVG[id]()}</figure>` : '';
 }

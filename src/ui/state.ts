@@ -1,6 +1,6 @@
 /** App state: settings (persisted), the current run, scenario sources (drills or built-ins). */
 import type { Scenario, DriverSkill } from '../core/course.js';
-import { DRIVER_DAD_ROOKIE, DRIVER_DAD_SPORTSMAN, DRIVER_EXPERT } from '../core/course.js';
+import { DRIVER_ROOKIE, DRIVER_SPORTSMAN, DRIVER_EXPERT } from '../core/course.js';
 import type { Simulator, StageResult } from '../core/sim.js';
 import type { Drill } from '../core/drills/types.js';
 import { createProgressStore, type ProgressStore } from './viewmodels/progress.js';
@@ -54,7 +54,7 @@ export function restoreLastRun(): { run: Run; result: StageResult } | null {
 
 export function withDriver(sc: Scenario, skill: Settings['driverSkill']): Scenario {
   if (skill === 'scenario') return sc;
-  const driver = skill === 'expert' ? DRIVER_EXPERT : skill === 'sportsman' ? DRIVER_DAD_SPORTSMAN : DRIVER_DAD_ROOKIE;
+  const driver = skill === 'expert' ? DRIVER_EXPERT : skill === 'sportsman' ? DRIVER_SPORTSMAN : DRIVER_ROOKIE;
   return { ...sc, driver };
 }
 

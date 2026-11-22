@@ -14,6 +14,7 @@ import { signalIsRed, trainActive } from '../hazards.js';
 import { mphToFps } from '../units.js';
 import { rng } from '../rng.js';
 import { TA_CAUSES } from '../sim.js';
+import type { SignForm } from './types.js';
 import { Navigator, emptyOverrides, isHoldIns, chartDwell, capFor, ruleClaim, type NavPlan, type NavOverrides } from './navigator.js';
 import type { MicroHint } from './scenarios.js';
 import { verdictRule, words } from './rules.js';
@@ -30,6 +31,8 @@ export function cardWords(d: Pick<Decision, 'prompt' | 'options'>): number { ret
 function clip(s: string): string { const w = s.trim().split(/\s+/); return w.length <= PROMPT_MAX_WORDS ? s.trim() : `${w.slice(0, PROMPT_MAX_WORDS).join(' ')}`; }
 
 /** Correct-answer tolerances for the timed kinds (seconds), after the drill rubrics: D03 (1 s legs), D16 (late > 2 s finding), D04 / D05 call errors. */
+/** PT-16 SCH-015: the stopwatch card's START and LAP may each be this far from the car at the sign. */
+export const WATCH_LAP_TOLERANCE = 1.0;
 export const TIMING_TOLERANCE: Record<'pause' | 'restart' | 'timedStart' | 'speedChange', number> = { pause: 1.0, restart: 1.0, timedStart: 1.3, speedChange: 1.3 };
 
 /** PT-14 N6: no card stays open longer than this many seconds of wall time; a hold whose last tap is later than HOLD_MAX_SECONDS is
@@ -244,7 +247,7 @@ export class DecisionRunner {
   private chartAvail(): boolean { return this.rung >= 1; }
   private make(kind: DecisionKind, key: string, prompt: string, context: DecisionContext, extra: { options?: DecisionOption[]; timing?: TimingSpec; deadlineSeconds?: number }, oracle: DecisionResponse, x: Record<string, unknown> = {}): Pending {
     this.seen.add(key);
-    if (extra.timing) { extra = { ...extra, timing: fitWall(extra.timing) }; if (extra.timing!.skip) prompt = prompt.replace(/^Line \d+: /, '').replace(/START on Dad's Mark!, then CALL \d+ half a ramp/, 'START on Mark!, CALL half a ramp').replace(/START on Dad's Mark!, then CALL/, 'START on Mark!, CALL'); }   // PT-15 P5: a compressed hold keeps a short prompt (the jump is explained behind "details", skip.detail)
+    if (extra.timing) { extra = { ...extra, timing: fitWall(extra.timing) }; if (extra.timing!.skip) prompt = prompt.replace(/^Line \d+: /, '').replace(/START on Mark!, then CALL \d+ half a ramp/, 'START on Mark!, CALL half a ramp').replace(/START on Mark!, then CALL/, 'START on Mark!, CALL'); }   // PT-15 P5: a compressed hold keeps a short prompt (the jump is explained behind "details", skip.detail)
     const d: Decision = { id: `${kind}:${key.split(':').slice(1).join(':') || '0'}:${++this.n}`, kind, skill: SKILL_OF_KIND[kind], prompt: clip(prompt), context, ...extra };
     return { d, key, tod0: this.sim.tod, pace0: this.safePace(), oracle, x };
   }
@@ -289,6 +292,7 @@ export class DecisionRunner {
   private detectPreread(): Pending | null {
     const asked = [...this.seen].filter(s => s.startsWith('preread:')).length;
     if (asked >= this.prereadRows) return null;
+    if (this.hint.sign) return this.detectSignCase(this.hint.sign);
     const sc = this.scenario;
     for (const p of this.nav.plans) {
       const ins = p.ins; if (ins.n === 1 || ins.omitted || this.seen.has(`preread:${ins.n}`)) continue;
@@ -320,6 +324,33 @@ export class DecisionRunner {
       return this.make('preread', key, `Pre-read, line ${ins.n}. What speed do you call at this sign?`, ctx, { options: opts }, { optionId: `v${v}` }, { what: 'speed', truth: v, ins, plan: p });
     }
     return null;
+  }
+
+  // SCH-025: the School's sign cases: one booked sign row and the question that tests its trap; the right answer is always what the book
+  // (Column C, or the carried speed) says, the trap is one of the options
+  private detectSignCase(form: SignForm): Pending | null {
+    const sc = this.scenario;
+    const p = this.nav.plans.find(q => q.ins.n > 1 && (form === 'sign:blank' ? q.ins.speed === undefined && !q.ins.turn : q.ins.speed !== undefined && q.ins.speed !== q.vIn));
+    if (!p) return null;
+    const ins = p.ins; const key = `preread:${ins.n}`; if (this.seen.has(key)) return null;
+    const ctx = this.ctx({ line: ins.n, row: this.row(ins), nextRow: this.row(this.nextIns(ins)) }); ctx.speeds = { current: p.vIn, assigned: p.vIn };
+    const node = nodeById(sc.course, ins.nodeId); const sign = node.sign?.text ?? '';
+    const v = p.vIn; const nv = ins.speed ?? v;
+    const mph = (x: number, label?: string): DecisionOption => ({ id: `v${x}`, label: label ?? `${x} mph` });
+    let prompt = ''; let truth = nv; let opts: DecisionOption[] = [];
+    const nextSpeed = this.nextIns(ins)?.speed;
+    switch (form) {
+      case 'sign:normal': prompt = `Pre-read, line ${ins.n}: ${sign}. What speed do you call at this sign?`; opts = [mph(nv), mph(v, `Hold ${v}`), mph(nv + 5)]; break;
+      case 'sign:limit': { const lim = Number(/\d+/.exec(sign)?.[0] ?? nv + 10); prompt = `Pre-read, line ${ins.n}: the sign reads ${sign}. What speed do you call?`; opts = [mph(nv), mph(lim), mph(v, `Hold ${v}`)]; break; }
+      case 'sign:blank': truth = v; prompt = `Pre-read, line ${ins.n}: a ${sign} sign; Column C is blank. What speed after it?`; opts = [mph(v, `Hold ${v}`), ...(nextSpeed && nextSpeed !== v ? [mph(nextSpeed, `${nextSpeed} mph (next line)`)] : []), mph(15, '15 mph (curve)')]; break;
+      case 'sign:partial': prompt = `Pre-read, line ${ins.n}: the book quotes "Welcome to"; the sign reads ${sign}. What speed there?`; opts = [mph(nv), mph(v, `Hold ${v}: not that sign`), mph(nv + 5)]; break;
+      case 'sign:twin': prompt = `Pre-read, line ${ins.n}: two SPEED LIMIT signs come up; the book quotes ${sign}. What speed at that sign?`; opts = [mph(nv), mph(nv + 10, `${nv + 10} mph (the first sign)`), mph(v, `Hold ${v}`)]; break;
+      case 'sign:overhead': prompt = `Pre-read, line ${ins.n}: the ${sign} sign hangs overhead. What speed do you call under it?`; opts = [mph(nv), mph(v, `Hold ${v}: overhead signs do not count`), mph(nv + 5)]; break;
+      case 'sign:bracket': { const old = Number(/\((?:\D*)(\d+)/.exec(ins.remark ?? '')?.[1] ?? nv + 15); prompt = `Pre-read, line ${ins.n}: Column D says ${ins.remark ?? ''}. What speed do you call?`; opts = [mph(nv), mph(old), mph(v, `Hold ${v}`)]; break; }
+    }
+    const seen = new Set<string>(); opts = opts.filter(o => !seen.has(o.id) && seen.add(o.id));
+    for (const x of [nv + 10, nv - 10, v + 10]) if (opts.length < 3 && x >= 10 && !seen.has(`v${x}`)) { seen.add(`v${x}`); opts.push(mph(x)); }
+    return this.make('preread', key, prompt, ctx, { options: this.shuffle(key, opts) }, { optionId: `v${truth}` }, { what: 'speed', truth, ins, plan: p, sign: form });
   }
 
   /** Options for a turn: the book's direction plus the other roads at that node (and Straight). */
@@ -613,10 +644,10 @@ export class DecisionRunner {
       this.ov.timed.set(ins.n, 'wait');
       const ctx = this.ctx({ line: ins.n, row: this.row(ins), distanceFt: Math.round(d), speeds: { current: Math.round(car.mph()), assigned: seg.holdSpeed }, times: { intervalSeconds: seg.seconds } });
       if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: seg.holdSpeed, vOut: seg.thenSpeed, seconds: L, meaning: 'lead' };
-      // MOB-052: Dad says "Mark!" as the front of the car reaches the sign (RULE-022); the distance bar reaches zero then
+      // MOB-052: the driver says "Mark!" as the front of the car reaches the sign (RULE-022); the distance bar reaches zero then
       const prompt = this.showChart()
-        ? `Line ${ins.n}: START on Dad's Mark!, then CALL ${seg.thenSpeed} ${L.toFixed(1)} s before the ${formatInterval(seg.seconds)} ends.`
-        : `Line ${ins.n}: START on Dad's Mark!, then CALL ${seg.thenSpeed} half a ramp before the ${formatInterval(seg.seconds)} ends.`;
+        ? `Line ${ins.n}: START on Mark!, then CALL ${seg.thenSpeed} ${L.toFixed(1)} s before the ${formatInterval(seg.seconds)} ends.`
+        : `Line ${ins.n}: START on Mark!, then CALL ${seg.thenSpeed} half a ramp before the ${formatInterval(seg.seconds)} ends.`;
       const timing: TimingSpec = { kind: 'startStop', truthSeconds: t1, secondTapSeconds: t2, toleranceSeconds: TIMING_TOLERANCE.timedStart, maxSeconds: Math.max(t2 + 12, t1 + seg.seconds + 8), tapLabel: 'START', secondTapLabel: `CALL ${seg.thenSpeed}`, signSeconds: t1, signFt: Math.round(d) };
       return this.make('timedStart', key, prompt, ctx, { timing }, { taps: [t1, t2] }, { ins, t1, t2 });
     }
@@ -641,10 +672,10 @@ export class DecisionRunner {
       const ctx = this.ctx({ line: ins.n, row: this.row(ins), distanceFt: Math.round(d / 10) * 10, speeds: { current: Math.round(car.mph()), assigned: p.vIn, in: p.vIn, out: ins.speed } });
       const L = chartLead(p.vIn, ins.speed, sc.car);
       if (this.chartAvail()) ctx.chart = { kind: 'lead', vIn: p.vIn, vOut: ins.speed, seconds: L, meaning: 'lead' };
-      // MOB-052: the sign arrives on screen (distance bar to zero, Dad's "Mark!" at the sign); the call leads it by the chart lead
+      // MOB-052: the sign arrives on screen (distance bar to zero, the driver's "Mark!" at the sign); the call leads it by the chart lead
       const prompt = this.showChart()
-        ? `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign. Call ${ins.speed} ${L.toFixed(1)} s before Dad's Mark!`
-        : `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign. Call ${ins.speed} half a ramp before Dad's Mark!`;
+        ? `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign. Call ${ins.speed} ${L.toFixed(1)} s before Mark!`
+        : `Line ${ins.n}: ${p.vIn} to ${ins.speed} at the sign. Call ${ins.speed} half a ramp before Mark!`;
       const signSeconds = r1(d / Math.max(car.v, 1));
       const timing: TimingSpec = { kind: 'tapAt', truthSeconds: t, toleranceSeconds: TIMING_TOLERANCE.speedChange, maxSeconds: Math.max(t + 12, signSeconds + 4), tapLabel: `CALL ${ins.speed}`, signSeconds, signFt: Math.round(d) };
       return this.make('speedChange', key, prompt, ctx, { timing }, { tapSeconds: t }, { ins, plan: p, t, lead: ld });
@@ -655,6 +686,7 @@ export class DecisionRunner {
   // watch (MOB-053): the navigator laps the watch as the car reaches a timed line's sign; just after, the card shows the watch (main digits
   // and the lap table) and asks at which reading to call the next speed: the lap's cumulative plus the interval minus the lead (RULE-021).
   private detectWatch(): Pending | null {
+    if (this.hint.watch === 'lap') return this.detectWatchLap();
     const sim = this.sim; const car = sim.car; const sc = this.scenario;
     const w = this.watchArm;
     if (w) {
@@ -692,6 +724,25 @@ export class DecisionRunner {
       return null;
     }
     return null;
+  }
+  // PT-16 SCH-015: the School's stopwatch card: START as the car reaches the first sign (the driver's Mark), LAP at the second, then the lap
+  // reads the gap between the two signs (the verdict shows the reading). Both taps within WATCH_LAP_TOLERANCE of the car at the sign.
+  private detectWatchLap(): Pending | null {
+    const car = this.sim.car;
+    const ps = this.nav.plans.filter(p => /^(START|LAP) watch$/.test(p.ins.remark ?? ''));
+    const a = ps[0]; const b = ps[1]; if (!a || !b) return null;
+    const key = `watch:${a.ins.n}`; if (this.seen.has(key)) return null;
+    const dA = a.s - car.s; if (dA < 0) { this.seen.add(key); return null; }
+    const tA = dA / Math.max(car.v, 1); if (tA > this.lead(key, 4, 6)) return null;
+    if (tA < 2) { this.seen.add(key); return null; }
+    if (!this.steadyAt(this.assigned())) return null;
+    const dB = b.s - car.s; const t1 = r1(tA); const t2 = r1(dB / Math.max(car.v, 1));
+    const nameOf = (p: NavPlan): string => nodeById(this.scenario.course, p.ins.nodeId).label ?? `line ${p.ins.n}`;
+    const ctx = this.ctx({ line: a.ins.n, row: this.row(a.ins), nextRow: this.row(b.ins), distanceFt: Math.round(dA), speeds: { current: Math.round(car.mph()), assigned: this.assigned() } });
+    const timing: TimingSpec = { kind: 'startStop', truthSeconds: t1, secondTapSeconds: t2, toleranceSeconds: WATCH_LAP_TOLERANCE, maxSeconds: r1(t2 + 6), tapLabel: 'START', secondTapLabel: 'LAP', signSeconds: t1, signFt: Math.round(dA),
+      cues: [{ at: t1, ft: Math.round(dA), label: nameOf(a) }, { at: t2, ft: Math.round(dB), label: nameOf(b) }] };
+    const prompt = `Line ${a.ins.n}: START the watch on Mark at the ${nameOf(a)}. Line ${b.ins.n}: LAP at the ${nameOf(b)}. Then read your lap.`;
+    return this.make('watch', key, prompt, ctx, { timing }, { taps: [t1, t2] }, { lap: true, t1, t2 });
   }
   private fallbackWatch(w: { n: number; crossTod: number; plan: NavPlan }): void {
     const seg = w.plan.ins.timed!; const tmov = this.ov.timed.get(w.n);
@@ -842,6 +893,16 @@ export class DecisionRunner {
           q === 'minute' ? 'the minute' : q === 'second' ? 'the launch second' : 'the interval');
       }
       case 'watch': {
+        if (p.x.lap) {
+          const t1 = p.x.t1 as number; const t2 = p.x.t2 as number; const gap = t2 - t1;
+          const taps = (res?.taps ?? []).map(x => Math.max(0, x)); const a = taps[0]; const b = taps[1];
+          const expected = `START at ${t1.toFixed(1)} s, LAP at ${t2.toFixed(1)} s: the lap reads ${formatInterval(gap, true)}`;
+          if (a === undefined) return base(false, gap, expected, 'no taps', 'lap', 'no START');
+          const sd = a - t1; const startOk = Math.abs(sd) <= WATCH_LAP_TOLERANCE;
+          if (b === undefined) return base(false, startOk ? gap : sd, expected, `START ${early(sd)}, no LAP`, 'lap', startOk ? 'no LAP' : `START ${early(sd)}`);
+          const ld = b - t2; const lapOk = Math.abs(ld) <= WATCH_LAP_TOLERANCE;
+          return base(startOk && lapOk, !startOk ? sd : ld, expected, `your lap reads ${formatInterval(b - a, true)}`, 'lap', !startOk ? `START ${early(sd)}` : `LAP ${early(ld)}`);
+        }
         const truth = p.x.truth as number; const n = p.x.n as number; const seg = p.x.seg as { holdSpeed: number; seconds: number; thenSpeed: number };
         const x = Number((res?.optionId ?? '').slice(1)); const chosen = Number.isFinite(x) && x > 0 ? x : truth + 5;
         const reading = p.x.reading as number; const tmov = this.ov.timed.get(n);

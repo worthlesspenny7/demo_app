@@ -98,7 +98,7 @@ export function renderQuiz(root: HTMLElement, kind: 'quiz' | 'math', drillId: st
     const answer = (k: number): void => {
       if (answered) return; answered = true;
       const b = buttons[k]; if (!b) { answered = false; return; }
-      if (k === c.answer) { correct++; b.classList.add('right'); fb.textContent = `Right. ${c.tip}`; fb.className = 'ok'; }
+      if (k === c.answer) { correct++; b.classList.add('right'); fb.textContent = `Correct. ${c.tip}`; fb.className = 'ok'; }
       else { b.classList.add('wrong'); buttons[c.answer]?.classList.add('reveal'); if (c.category) missed.push(c.category); fb.textContent = `No: ${c.options[c.answer]}. ${c.tip}`; fb.className = 'danger'; }
       const next = el('button', { class: 'primary', id: 'quiz-next' }, 'Next'); next.onclick = () => { i++; show(); }; box.append(next); nextBtn = next;
     };

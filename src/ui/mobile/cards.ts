@@ -84,7 +84,18 @@ export function signState(t: Pick<NonNullable<Decision['timing']>, 'signSeconds'
   const frac = Math.max(0, Math.min(1, 1 - elapsed / T));
   return { frac, ft: Math.round((t.signFt ?? 0) * frac / 10) * 10, mark: elapsed >= T && elapsed < T + 1.5 };
 }
-/** MOB-052: the distance-to-sign bar of a timed card (the run screen animates it; it reaches zero at the sign, where Dad says "Mark!").
+/** PT-16 SCH-015: the bar of a card that times several signs: it runs from the last sign passed to the next one (distance and name), and
+ *  says "Mark!" for 1.5 s as the car reaches each. */
+export function cueState(cues: readonly { at: number; ft: number; label: string }[], elapsed: number): { frac: number; ft: number; mark: boolean; label: string } {
+  const mark = cues.some(c => elapsed >= c.at && elapsed < c.at + 1.5);
+  const i = cues.findIndex(c => c.at > elapsed);
+  if (i < 0) { const last = cues[cues.length - 1]; return { frac: 0, ft: 0, mark, label: last?.label ?? '' }; }
+  const c = cues[i]!; const prev = i > 0 ? cues[i - 1]! : { at: 0, ft: 0 };
+  const span = c.at - prev.at; const frac = span > 0 ? Math.max(0, Math.min(1, (c.at - elapsed) / span)) : 0;
+  const ftNow = i > 0 ? (c.ft - prev.ft) * frac : c.ft * frac;
+  return { frac, ft: Math.round(ftNow / 10) * 10, mark, label: c.label };
+}
+/** MOB-052: the distance-to-sign bar of a timed card (the run screen animates it; it reaches zero at the sign, where the driver says "Mark!").
  *  A speed-change card at rung 2 marks the call point (the chart lead before the sign) with a tick labelled CALL (PT-14 item 8). */
 export function signBarHtml(d: Decision, rung: number): string {
   const t = d.timing; if (!t?.signSeconds) return '';
@@ -129,25 +140,31 @@ export function ruleCardHtml(r: RuleCard): string {
 }
 
 /** The verdict overlay text: the headline (with the missed part, MOB-054), signed seconds and the one-sentence rule. */
-export function verdictParts(v: Verdict): { head: string; seconds: string; rule: string; detail: string } {
+/** PT-16 B10: the verdict's rule sentence without its trailing "(source)": the source is a chip on the verdict (`source`). */
+export function ruleWithoutSource(rule: string, source: string): string {
+  const tail = ` (${source}).`;
+  if (source && rule.endsWith(tail)) return `${rule.slice(0, -tail.length)}.`;
+  const m = /^(.*?)\s*\((?:[^()]|\([^()]*\))*\)\.$/s.exec(rule); return m && /\b(HB|REG|video|Session|Rally School|p\.\d)/.test(rule.slice(m[1]!.length)) ? `${m[1]}.` : rule;
+}
+export function verdictParts(v: Verdict): { head: string; seconds: string; rule: string; detail: string; source: string } {
   const s = Math.abs(v.secondsDelta) < 0.05 ? '0.0 s' : `${v.secondsDelta > 0 ? '+' : '−'}${Math.abs(v.secondsDelta).toFixed(1)} s`;
-  return { head: v.correct ? 'Right' : v.missed ? `Not quite: ${v.missed}` : 'Not quite', seconds: s, rule: v.rule, detail: v.correct ? v.chosen : `You: ${v.chosen}. Right: ${v.expected}.` };
+  return { head: v.correct ? 'Correct' : v.missed ? `Not quite: ${v.missed}` : 'Not quite', seconds: s, rule: ruleWithoutSource(v.rule, v.source), detail: v.correct ? v.chosen : `You: ${v.chosen}. Correct: ${v.expected}.`, source: v.source };
 }
 
 /** The driver's line for the landscape mini cockpit and speech (MOB-022, MOB-024). */
 export function driverLine(d: Decision): string {
   const c = d.context;
   switch (d.kind) {
-    case 'pause': return 'Dad: "Stopped. Give me the go."';
-    case 'restart': return 'Dad: "At the line. Count me down."';
-    case 'timedStart': return `Dad: "Holding ${c.speeds?.assigned ?? c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
-    case 'speedChange': return `Dad: "Holding ${c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
-    case 'watch': return 'Dad: "Lapped. When do I change?"';
-    case 'turn': return 'Dad: "Which way here?"';
-    case 'checkpoint': return /red GREAT RACE STOP/.test(d.prompt) ? 'Dad: "Red board ahead, we stop."' : /pulls off/.test(d.prompt) ? 'Dad: "Car ahead pulling off, we keep going."' : 'Dad: "Green sign up ahead."';
-    case 'hazard': return `Dad: "${c.hazard?.label ?? 'Something ahead'}."`;
-    case 'lost': return 'Dad: "I think we missed it."';
-    case 'makeup': return 'Dad: "Are we late?"';
-    default: return c.speeds ? `Dad: "Holding ${c.speeds.current}."` : 'Dad: "Ready."';
+    case 'pause': return 'Driver: "Stopped. Give me the go."';
+    case 'restart': return 'Driver: "At the line. Count me down."';
+    case 'timedStart': return `Driver: "Holding ${c.speeds?.assigned ?? c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
+    case 'speedChange': return `Driver: "Holding ${c.speeds?.current ?? 'speed'}. I'll say mark at the sign."`;
+    case 'watch': return 'Driver: "Lapped. When do I change?"';
+    case 'turn': return 'Driver: "Which way here?"';
+    case 'checkpoint': return /red GREAT RACE STOP/.test(d.prompt) ? 'Driver: "Red board ahead, we stop."' : /pulls off/.test(d.prompt) ? 'Driver: "Car ahead pulling off, we keep going."' : 'Driver: "Green sign up ahead."';
+    case 'hazard': return `Driver: "${c.hazard?.label ?? 'Something ahead'}."`;
+    case 'lost': return 'Driver: "I think we missed it."';
+    case 'makeup': return 'Driver: "Are we late?"';
+    default: return c.speeds ? `Driver: "Holding ${c.speeds.current}."` : 'Driver: "Ready."';
   }
 }

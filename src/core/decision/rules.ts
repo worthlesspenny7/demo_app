@@ -51,7 +51,8 @@ const PREFERRED: Record<DecisionKind, Record<string, string[]>> = {
   lost: { default: ['RULE-034', 'RULE-035'], loop: ['RULE-043', 'RULE-034'], ta: ['RULE-031~wrong turn', 'RULE-035'] },
   checkpoint: { default: ['RULE-003', 'RULE-004'], slow: ['RULE-004', 'RULE-003'], red: ['RULE-003~red GREAT RACE STOP', 'RULE-003'] },
   clock: { default: ['RULE-038', 'RULE-037'], mid: ['RULE-038', 'RULE-037'], second: ['RULE-038~second hand', 'RULE-038'], interval: ['RULE-039', 'RULE-038'] },
-  watch: { default: ['RULE-021~Lap the watch', 'RULE-039'] },
+  // PT-16 SCH-015: the School's stopwatch card (START / LAP at two signs) cites the Mark rule, not the lead it has not taught yet
+  watch: { default: ['RULE-021~Lap the watch', 'RULE-039'], lap: ['RULE-022~starts the stopwatch', 'RULE-039'] },
 };
 const parseRef = (ref: string): { id: string; words: string | null } => { const i = ref.indexOf('~'); return i < 0 ? { id: ref, words: null } : { id: ref.slice(0, i), words: ref.slice(i + 1) }; };
 /** The sentences of a card's text. */

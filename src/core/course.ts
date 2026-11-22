@@ -294,9 +294,9 @@ export function aidsForRung(rung: 0 | 1 | 2 | 3): AidsConfig {
 export const FORD_1939: CarSpec = { name: '1939 Ford Deluxe (85 hp flathead V8)', year: 1939, a0: 7.0, vMax: 110, aDec: 8, turnSpeedMph: { turn: 12, bear: 22, acute: 8 } };
 export const MODERN_CAR: CarSpec = { name: 'Modern sedan', year: 1974, a0: 11, vMax: 160, aDec: 10, turnSpeedMph: { turn: 15, bear: 25, acute: 10 } };
 
-export const DRIVER_DAD_ROOKIE: DriverSpec = { skill: 'rookie', inconsistency: 0.12, patienceSeconds: 25, name: 'Dad' };
-export const DRIVER_DAD_SPORTSMAN: DriverSpec = { skill: 'sportsman', inconsistency: 0.06, patienceSeconds: 25, name: 'Dad' };
-export const DRIVER_EXPERT: DriverSpec = { skill: 'expert', inconsistency: 0.03, patienceSeconds: 25, name: 'Dad' };
+export const DRIVER_ROOKIE: DriverSpec = { skill: 'rookie', inconsistency: 0.12, patienceSeconds: 25, name: 'Driver' };
+export const DRIVER_SPORTSMAN: DriverSpec = { skill: 'sportsman', inconsistency: 0.06, patienceSeconds: 25, name: 'Driver' };
+export const DRIVER_EXPERT: DriverSpec = { skill: 'expert', inconsistency: 0.03, patienceSeconds: 25, name: 'Driver' };
 export const DRIVER_PERFECT: DriverSpec = { skill: 'perfect', inconsistency: 0, patienceSeconds: 1e9, name: 'Ghost' };
 /** Instantaneous car used for SIM-014 ghost-equivalence tests. */
 export const INSTANT_CAR: CarSpec = { name: 'Instant (ghost) car', year: 1974, a0: 1e5, vMax: 1e9, aDec: 1e5, turnSpeedMph: { turn: 1e4, bear: 1e4, acute: 1e4 } };

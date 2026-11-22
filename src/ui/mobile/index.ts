@@ -102,7 +102,7 @@ export function watchOrientation(): void {
 
 export interface DecisionHelpers {
   source(): 'core' | 'runner' | 'stub' | null;
-  state(): { screen: string; phase: string; kind: string | null; id: string | null; timing: unknown; options: string[]; elapsed: number; n: number; of: number; correct: number; answered: number };
+  state(): { screen: string; phase: string; kind: string | null; id: string | null; timing: unknown; options: string[]; elapsed: number; started: boolean; n: number; of: number; correct: number; answered: number };
   oracle(): DecisionResponse | null;
   /** Seconds since the card on screen was shown (the TimingSpec time base). */
   elapsed(): number;
@@ -121,7 +121,7 @@ function installHelpers(): void {
       const h = session.handle; const pos = h?.position() ?? { n: 0, of: 0 };
       const d = view.phase === 'decision' ? view.decision : null;
       const screen = (document.querySelector('[data-screen]') as HTMLElement | null)?.dataset.screen ?? '';
-      return { screen, phase: screen === 'run' ? view.phase : screen, kind: d?.kind ?? null, id: d?.id ?? null, timing: d?.timing ?? null, options: d?.options?.map(o => o.id) ?? [], elapsed: d ? wallSeconds() - view.shownAt : 0, n: pos.n, of: pos.of, correct: (h?.verdicts ?? session.last?.result.verdicts ?? []).filter(v => v.correct).length, answered: (h?.verdicts ?? session.last?.result.verdicts ?? []).length };
+      return { screen, phase: screen === 'run' ? view.phase : screen, kind: d?.kind ?? null, id: d?.id ?? null, timing: d?.timing ?? null, options: d?.options?.map(o => o.id) ?? [], elapsed: d ? (view.started === false ? 0 : wallSeconds() - view.shownAt) : 0, started: view.started !== false, n: pos.n, of: pos.of, correct: (h?.verdicts ?? session.last?.result.verdicts ?? []).filter(v => v.correct).length, answered: (h?.verdicts ?? session.last?.result.verdicts ?? []).length };
     },
     oracle: () => (view.phase === 'decision' && view.decision && session.handle ? session.handle.oracle(view.decision) : null),
     elapsed: () => (view.phase === 'decision' ? cardSeconds() : 0),

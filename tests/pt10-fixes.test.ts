@@ -264,7 +264,7 @@ describe('PLAY-040 lighter evening one: the TA procedure leaves lesson 1, long l
   });
 });
 
-describe('PLAY-041 text hygiene: D10, residual lines, lock chips, D03 keys, the pre-read button, the driver\'s name, Dad\'s card', () => {
+describe('PLAY-041 text hygiene: D10, residual lines, lock chips, D03 keys, the pre-read button, the driver\'s name, Driver\'s card', () => {
   it('PLAY-041 D10 never advises the 10 % rule before its lesson: the rubric, the Debrief tips and the feedback on a slow on-course leg', () => {
     const d = drillById('D10')!; let slow = 0;
     for (const seed of [1, 2, 3, 4, 5, 6]) for (const t of [0, 1, 2]) {
@@ -289,11 +289,11 @@ describe('PLAY-041 text hygiene: D10, residual lines, lock chips, D03 keys, the 
     const dig = drillHint('D03'); expect(dig.keys.map(k => k.join(' ')).join(' | ')).toMatch(/digital watch: lap L/); expect(JSON.stringify(dig)).not.toMatch(/bezel/);
     const an = drillHint('D03', 'analog'); expect(JSON.stringify(an)).toMatch(/bezel/); expect(JSON.stringify(drillHint('D04'))).not.toMatch(/bezel/);
   });
-  it('PLAY-041 the status line names the driver "Dad" for every tier of every drill (no "Pro")', () => {
-    for (const d of allDrills()) { if (d.kind !== 'drive') continue; for (const t of [0, 1, 2]) expect(d.scenario(1, t).driver.name, `${d.id} ${tierName[t]}`).toBe('Dad'); }
+  it('PLAY-041 the status line names the driver "Driver" for every tier of every drill (no "Pro")', () => {
+    for (const d of allDrills()) { if (d.kind !== 'drive') continue; for (const t of [0, 1, 2]) expect(d.scenario(1, t).driver.name, `${d.id} ${tierName[t]}`).toBe('Driver'); }
     expect(readFileSync('src/ui/screens/cockpit.ts', 'utf8')).toMatch(/\$\{scenario\.driver\.name\} \(\$\{scenario\.driver\.skill\}\)/);
   });
-  it('PLAY-041 Dad\'s card: 0.6 in page margins, 13 pt, 21 lines under 25 words; lines 8, 11, 17 and 20 are plain', () => {
+  it('PLAY-041 Driver\'s card: 0.6 in page margins, 13 pt, 21 lines under 25 words; lines 8, 11, 17 and 20 are plain', () => {
     const css = readFileSync('src/ui/styles.css', 'utf8'); expect(css).toMatch(/@page \{ margin: 0\.6in; \}/); expect(css).toMatch(/#print-root \.printcard ol \{ font-size: 13pt;/);
     const card = LESSONS.find(l => l.id === 'protocol')!.body.find((b): b is { card: { title: string; lines: string[] } } => typeof b === 'object' && 'card' in b)!.card.lines;
     expect(card.length).toBe(21); for (const l of card) expect(l.trim().split(/\s+/).length, l).toBeLessThan(25);

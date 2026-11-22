@@ -69,7 +69,10 @@ export class RunHandle {
 function coreRun(req: RunRequest, progress: DecisionProgressState | null): RunCore | null {
   try {
     const S = (core as unknown as { Scheduler?: typeof core.Scheduler }).Scheduler; if (typeof S !== 'function') return null;
-    const sch = new S(req.skills, req.seed, progress, { mode: req.mode, rung: req.rung, ...(req.decisions ? { decisions: req.decisions } : {}), ...(req.day ? { day: req.day } : {}), ...(req.dailyIndex !== undefined ? { dailyIndex: req.dailyIndex } : {}) });
+    // PT-16 SCH-013: a School taker's daily and skill runs draw only the kinds the course has taught (core.runKinds; null = all)
+    const rk = (core as unknown as { runKinds?: (c: unknown) => core.DecisionKind[] | null }).runKinds;
+    const kinds = req.mode !== 'boss' && typeof rk === 'function' ? rk((progress as (DecisionProgressState & { course?: unknown }) | null)?.course ?? null) : null;
+    const sch = new S(req.skills, req.seed, progress, { mode: req.mode, rung: req.rung, ...(kinds ? { kinds } : {}), ...(req.decisions ? { decisions: req.decisions } : {}), ...(req.day ? { day: req.day } : {}), ...(req.dailyIndex !== undefined ? { dailyIndex: req.dailyIndex } : {}) });
     const run = sch.start() as unknown as RunCore;
     if (!run?.plan?.items?.length) return null;
     return run;

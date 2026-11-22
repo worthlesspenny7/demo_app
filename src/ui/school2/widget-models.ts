@@ -54,14 +54,22 @@ export class WhereCheckpointModel {
   tap: number | null = null;
   constructor(readonly assigned = 30, readonly miles = 0.1, seed = 1) {
     this.ghost = steadyGhost(assigned); this.legFt = milesToFt(miles); this.perfect = ghostTimeAt(this.ghost, this.legFt);
-    const r = rng(`where:${seed}`); this.carMph = assigned + (r.next() < 0.5 ? -1 : 1) * (1 + r.int(0, 2));
+    // PT-16 B7: the car drives the book exactly beside the ghost, so a tap as the cars reach the drawn sign is the right answer (seed kept for the API)
+    void seed; this.carMph = assigned;
   }
   /** The car's distance at t seconds. */
   carS(t: number): number { return mphToFps(this.carMph) * t; }
   /** When the car actually reached the checkpoint. */
   carAtCheckpoint(): number { return this.legFt / mphToFps(this.carMph); }
-  /** Max seconds the leg runs before giving up (twice the leg). */
-  maxSeconds(): number { return this.perfect * 2; }
+  /** Max seconds the leg runs before giving up (the cars stop at the sign; a little longer to tap). */
+  maxSeconds(): number { return this.perfect + 6; }
+  /** PT-16 B7: the score explained: the ghost's time at the sign, the tap, the gap and the points (one per whole second off). */
+  explain(): string {
+    const sc = this.score(); if (!sc || this.tap === null) return '';
+    const gap = this.tap - this.perfect; const a = Math.abs(gap);
+    const off = a < 0.05 ? 'exactly with it' : `${a.toFixed(1)} s ${gap > 0 ? 'after' : 'before'} it`;
+    return `The ghost reached the sign at ${this.perfect.toFixed(1)} s. You tapped at ${this.tap.toFixed(1)} s, ${off}. The crew counts whole seconds: ${sc.penalty} point${sc.penalty === 1 ? '' : 's'}${sc.penalty === 0 ? ', an Ace!' : '.'}`;
+  }
   press(t: number): LegScore { this.tap = t; return this.score()!; }
   /** The score of the tap: the tap is when you say the car crossed; the ghost's perfect time is the leg's. */
   score(): LegScore | null { return this.tap === null ? null : legScore(this.perfect, this.tap); }

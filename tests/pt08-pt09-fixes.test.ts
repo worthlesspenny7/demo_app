@@ -12,7 +12,7 @@ import { LESSONS, LESSON_ORDER, type LessonBlock } from '../content/lessons.js';
 import { TRAPS, TRAP_QUIZ } from '../src/core/generator/traps.js';
 import { trapCards } from '../src/ui/screens/quiz.js';
 import { chartPairs, runMeasurement } from '../src/core/drills/d06.js';
-import { isMeasureRun, validateScenario, freeZoneEndS, instructionS, DRIVER_DAD_ROOKIE, aidsForRung } from '../src/core/course.js';
+import { isMeasureRun, validateScenario, freeZoneEndS, instructionS, DRIVER_ROOKIE, aidsForRung } from '../src/core/course.js';
 import { ScenarioBuilder, EXITS } from '../src/core/builder.js';
 import { perfCardFor, instrumentPolicy, holdCardFor, clockReadPrompt, secondsToReach, alertExpired, ledgerTaHint, MEASURE_TEXT, MEASURE_COPY_TEXT } from '../src/ui/viewmodels/cockpitinfo.js';
 import { startLaunchFor } from '../src/ui/viewmodels/v3.js';
@@ -214,7 +214,7 @@ describe('PLAY-030 STOP + timed lines: the engine\'s anchor is the card\'s (arri
   });
 });
 
-describe('PLAY-031 Dad\'s card: one printed page, "navigator" / "driver", the instrument rule, short lines', () => {
+describe('PLAY-031 Driver\'s card: one printed page, "navigator" / "driver", the instrument rule, short lines', () => {
   it('PLAY-031 every line is under 25 words, uses no pronoun for the team, and the instrument line says the clock has no digital readout while the stopwatch may be digital', () => {
     const lesson = LESSONS.find(l => l.id === 'protocol')!; const card = lesson.body.find((b): b is Extract<LessonBlock, { card: unknown }> => typeof b !== 'string' && 'card' in b)!.card;
     for (const l of card.lines) { expect(words(l), l).toBeLessThan(25); expect(l, l).not.toMatch(/\b(she|he|her|him|his|hers)\b/i); }
@@ -315,7 +315,7 @@ describe('ENG-023 D17 grades the first "elapsed" note after the reset; parseDura
 describe('ENG-024 the driver makes a turn called in time from 50-55 mph; the oracle leads turns by speed', () => {
   it('ENG-024 no "too late" for the oracle on the PT-09 seeds (D12 Gold 2, D06 Gold 7) and a turn called 900 ft out at 55 mph is made; one called 150 ft out is missed', () => {
     for (const [id, seed] of [['D06', 7], ['D12', 2]] as const) { const sc = drillById(id)!.scenario(seed, 2); const r = play(sc, s => new OracleBot(s, { useWatch: true })); expect(r.events.filter(e => e.type === 'turnMissed'), `${id} ${seed}`).toEqual([]); expect(r.offCourseCount).toBe(0); }
-    const mk = () => new ScenarioBuilder({ startTime: 8 * 3600, driver: DRIVER_DAD_ROOKIE, aids: aidsForRung(3), prereadSeconds: 5 }).start(55).advanceMiles(1.2).instruction({ exits: EXITS.crossroads('L'), sightDistance: 1500 }, { turn: 'L', speed: 30 }).advanceMiles(0.6).checkpoint().advanceFt(300).finish().build();
+    const mk = () => new ScenarioBuilder({ startTime: 8 * 3600, driver: DRIVER_ROOKIE, aids: aidsForRung(3), prereadSeconds: 5 }).start(55).advanceMiles(1.2).instruction({ exits: EXITS.crossroads('L'), sightDistance: 1500 }, { turn: 'L', speed: 30 }).advanceMiles(0.6).checkpoint().advanceFt(300).finish().build();
     const at = (lead: number): StageResult => { const sc = mk(); const sim = new Simulator(sc); const ts = instructionS(sc.course, sc.book[1]!); let called = false; sim.act({ type: 'skipPreread' }); sim.act({ type: 'start' });
       for (let i = 0; i < 6000 && sim.phase !== 'finished'; i++) { if (!called && ts - sim.car.s <= lead) { called = true; sim.act({ type: 'call.turn', dir: 'L' }); } sim.step(0.1); } return sim.result(); };
     const ok = at(900); expect(ok.events.filter(e => e.type === 'turnMissed')).toEqual([]); expect(ok.offCourseCount).toBe(0);

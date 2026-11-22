@@ -788,7 +788,7 @@ export function renderCockpit(root: HTMLElement, src: RunSource): () => void {
     renderPerfCard(o, dwellSoFar);
     renderTa(o); renderCharts(o);
     notesList.innerHTML = o.notes.slice(-4).map(n => `<div>· ${escapeHtml(n)}</div>`).join('');
-    logBody.innerHTML = driverLog.slice(-8).map(m => { const k = driverLineKind(m); return `<div class="${m.kind === 'question' ? 'q' : ''} dl dl-${k}" data-kind="${k}"><span class="muted mono">${policy.digitalReadouts ? escapeHtml(formatClock(m.tod)) : ''}</span> ${escapeHtml(m.text)}</div>`; }).join('') || '<div class="muted">Dad has not said anything yet.</div>';
+    logBody.innerHTML = driverLog.slice(-8).map(m => { const k = driverLineKind(m); return `<div class="${m.kind === 'question' ? 'q' : ''} dl dl-${k}" data-kind="${k}"><span class="muted mono">${policy.digitalReadouts ? escapeHtml(formatClock(m.tod)) : ''}</span> ${escapeHtml(m.text)}</div>`; }).join('') || '<div class="muted">The driver has not said anything yet.</div>';
     renderBook(o);
     // CP card (DEBRIEF-004)
     if (sim.events.length > seenEvents) {

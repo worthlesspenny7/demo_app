@@ -1,13 +1,13 @@
 /**
  * School routes (Phase IX, SCH-008). `#/school...` is Rally School 2.0, the course page player (src/ui/school2/player.ts), at phone and
- * desk width alike; `#/school/<old lesson id>` redirects to the module that covers it; `#/school/dad` is Dad's card with its "Dad reads
+ * desk width alike; `#/school/<old lesson id>` redirects to the module that covers it; `#/school/driver-card` is Driver's card with its "The driver reads
  * this" mode (MOB-011). The Phase VIII rule-card grid (MOB-010: cards grouped by the Four S's, each with "Try it", and the lessons'
  * check questions as one-tap cards) moved under Reference as "Rules" (`#/reference/rules`, renderRules); the long lessons stay in
  * Reference long form and read as one page each at `#/lesson/<id>` (renderLongLesson). The rule grid's layout is the pure model in
  * content/school-layout.ts; blocks (lists, call patterns, tables, the printable driver card) render from content/lessons.ts.
  */
 import { LESSONS, type LessonBlock } from '../../../content/lessons.js';
-import { CARD_PARTS, cardPartText, checkCards, dadCard, dadPages, dadStep, dadSwipe, schoolGroups, schoolIntro, SCHOOL_TITLE, tryHash, DAD_TITLE, type CheckCard } from '../../../content/school-layout.js';
+import { CARD_PARTS, cardPartText, checkCards, dadCard, dadPages, dadStep, dadSwipe, schoolGroups, schoolIntro, SCHOOL_TITLE, tryHash, DRIVER_CARD_TITLE, type CheckCard } from '../../../content/school-layout.js';
 import { type RuleCard } from '../../../content/rules.js';
 import { app, el } from '../state.js';
 import { narrowScreen } from './reference.js';
@@ -56,12 +56,12 @@ const SCHOOL_CSS = `
 .rule-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
 .rule-card { display: flex; flex-direction: column; gap: 6px; padding: 12px; } .rule-card .rule-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .rule-card h3 { margin: 0; font-size: 17px; } .rule-card button.try-it { white-space: nowrap; } .rule-card .rule-text { margin: 0; font-size: 16px; line-height: 1.4; } .rule-card .cite { margin: 0; font-size: 13px; }
-.rule-card button.try-it, .check-card button.opt, .dad-reader button { min-height: 56px; min-width: 56px; font-size: 17px; }
+.rule-card button.try-it, .check-card button.opt, .drv-reader button { min-height: 56px; min-width: 56px; font-size: 17px; }
 .check-card { padding: 12px; } .check-card .opt { display: block; width: 100%; margin: 6px 0; text-align: left; }
-.dad-reader { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--text); padding: max(12px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom)); touch-action: pan-y; }
-.dad-reader .dad-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 18px; }
-.dad-reader .dad-text { flex: 1; display: flex; align-items: center; font-size: clamp(28px, 7.5vw, 52px); line-height: 1.22; font-weight: 700; overflow-y: auto; }
-.dad-reader .dad-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .dad-reader .dad-nav button { min-height: 72px; font-size: 22px; }
+.drv-reader { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: var(--bg); color: var(--text); padding: max(12px, env(safe-area-inset-top)) 16px max(12px, env(safe-area-inset-bottom)); touch-action: pan-y; }
+.drv-reader .drv-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 18px; }
+.drv-reader .drv-text { flex: 1; display: flex; align-items: center; font-size: clamp(28px, 7.5vw, 52px); line-height: 1.22; font-weight: 700; overflow-y: auto; }
+.drv-reader .drv-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; } .drv-reader .drv-nav button { min-height: 72px; font-size: 22px; }
 /* PT-14 item 10 (BUG-10): on a phone the grid is a list, every text at least 16 px, each group a collapsible section */
 @media (max-width: 700px) {
   .rule-grid { display: flex; flex-direction: column; gap: 10px; }
@@ -100,7 +100,7 @@ function checkCardEl(c: CheckCard): HTMLElement {
     const b = el('button', { class: 'opt' }, o);
     b.onclick = () => {
       box.querySelectorAll('.opt').forEach(x => x.classList.remove('right', 'wrong'));
-      if (i === sh.answer) { b.classList.add('right'); fb.textContent = `Right. ${c.explain}`; fb.className = 'ok'; app.progress.markLesson(c.lessonId); }
+      if (i === sh.answer) { b.classList.add('right'); fb.textContent = `Correct. ${c.explain}`; fb.className = 'ok'; app.progress.markLesson(c.lessonId); }
       else { b.classList.add('wrong'); fb.textContent = `Not quite. ${c.explain}`; fb.className = 'danger'; }
     };
     box.append(b);
@@ -124,28 +124,28 @@ function renderRuleIndex(page: HTMLElement): void {
     groups.append(...section(el('h2', { 'data-skill': g.skill }, g.title), i === 0, el('p', { class: 'muted group-note' }, g.fourS), grid));
   });
   page.append(groups);
-  const dad = el('p', {}, el('a', { href: '#/school/dad', id: 'dad-link' }, `${DAD_TITLE}: print it, or read it while you drive`));
+  const drv = el('p', {}, el('a', { href: '#/school/driver-card', id: 'drv-link' }, `${DRIVER_CARD_TITLE}: print it, or read it while you drive`));
   const grid = el('div', { class: 'rule-grid' }); for (const c of checkCards()) grid.append(checkCardEl(c));
-  const checks = el('div', { class: 'school-checks' }, ...section(el('h2', {}, 'Check yourself'), false, el('p', { class: 'muted' }, 'One tap per question. A right answer marks the reading passed.'), grid));
-  page.append(dad, checks);
+  const checks = el('div', { class: 'school-checks' }, ...section(el('h2', {}, 'Check yourself'), false, el('p', { class: 'muted' }, 'One tap per question. A correct answer marks the reading passed.'), grid));
+  page.append(drv, checks);
 }
 
-/** MOB-011: Dad's card page: the printable card (printing is unchanged) and "Dad reads this", one rule per screen in large type, swipe or arrow to the next. */
+/** MOB-011: Driver's card page: the printable card (printing is unchanged) and "The driver reads this", one rule per screen in large type, swipe or arrow to the next. */
 function renderDad(page: HTMLElement): void {
   const card = dadCard(); const pages = dadPages();
-  const read = el('button', { class: 'primary', id: 'dad-read', style: 'min-height:56px;font-size:18px' }, 'Dad reads this');
-  const back = el('button', { id: 'dad-back', style: 'min-height:48px' }, 'All rules'); back.onclick = () => { location.hash = '#/reference/rules'; };
-  page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, DAD_TITLE), el('p', { class: 'muted' }, `${pages.length} rules for the driver. Print the card for the car, or tap Dad reads this to see one rule per screen.`),
+  const read = el('button', { class: 'primary', id: 'drv-read', style: 'min-height:56px;font-size:18px' }, 'The driver reads this');
+  const back = el('button', { id: 'drv-back', style: 'min-height:48px' }, 'All rules'); back.onclick = () => { location.hash = '#/reference/rules'; };
+  page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, DRIVER_CARD_TITLE), el('p', { class: 'muted' }, `${pages.length} rules for the driver. Print the card for the car, or tap The driver reads this to see one rule per screen.`),
     el('div', { class: 'actions', style: 'display:flex;gap:8px;margin:8px 0' }, read, back), el('div', { class: 'lesson' }, renderBlock({ card })));
   read.onclick = () => openDadReader(page, pages.map(p => p.text));
 }
 
 function openDadReader(host: HTMLElement, lines: string[]): void {
-  document.getElementById('dad-reader')?.remove();
+  document.getElementById('drv-reader')?.remove();
   let i = 0;
-  const count = el('span', { id: 'dad-count' }); const text = el('div', { class: 'dad-text', id: 'dad-text', 'aria-live': 'polite' });
-  const close = el('button', { id: 'dad-close' }, 'Close'); const prev = el('button', { id: 'dad-prev' }, 'Back'); const next = el('button', { class: 'primary', id: 'dad-next' }, 'Next');
-  const reader = el('div', { class: 'dad-reader', id: 'dad-reader', role: 'dialog', 'aria-label': "Dad reads this", tabindex: -1 }, el('div', { class: 'dad-bar' }, count, close), text, el('div', { class: 'dad-nav' }, prev, next));
+  const count = el('span', { id: 'drv-count' }); const text = el('div', { class: 'drv-text', id: 'drv-text', 'aria-live': 'polite' });
+  const close = el('button', { id: 'drv-close' }, 'Close'); const prev = el('button', { id: 'drv-prev' }, 'Back'); const next = el('button', { class: 'primary', id: 'drv-next' }, 'Next');
+  const reader = el('div', { class: 'drv-reader', id: 'drv-reader', role: 'dialog', 'aria-label': "The driver reads this", tabindex: -1 }, el('div', { class: 'drv-bar' }, count, close), text, el('div', { class: 'drv-nav' }, prev, next));
   const show = (): void => { text.textContent = lines[i] ?? ''; count.textContent = `Rule ${i + 1} of ${lines.length}`; (prev as HTMLButtonElement).disabled = i === 0; (next as HTMLButtonElement).disabled = i === lines.length - 1; reader.dataset['page'] = String(i + 1); };
   const go = (d: -1 | 1): void => { i = dadStep(i, d, lines.length); show(); };
   const onKey = (e: KeyboardEvent): void => {
@@ -169,7 +169,7 @@ export function renderRules(root: HTMLElement): void { const page = el('div', { 
 /** SCH-006 / SCH-008: `#/school/...` routes. Returns a cleanup (the player's listeners and timers). */
 export function renderSchool(root: HTMLElement, parts: string[] = []): (() => void) | null {
   const [lessonId, sub] = parts; const id = lessonId;
-  if (lessonId === 'dad') { const page = el('div', { class: 'page' }); renderDad(page); root.replaceChildren(page); return null; }
+  if (lessonId === 'driver-card') { const page = el('div', { class: 'page' }); renderDad(page); root.replaceChildren(page); return null; }
   if (id && !moduleById(id) && id !== 'modules') {
     // an old lesson id: the module that covers it (the long form stays at #/lesson/<id>)
     const m = moduleForLesson(id); location.replace(m ? `#/school/${m.id}` : '#/school'); return null;
@@ -214,7 +214,7 @@ export function renderLongLesson(root: HTMLElement, lessonId?: string): void {
       const b = el('button', { class: 'opt' }, o);
       b.onclick = () => {
         quiz.querySelectorAll('.opt').forEach(x => x.classList.remove('right', 'wrong'));
-        if (i === sh.answer) { b.classList.add('right'); fb.textContent = `Right. ${lesson.check.explain}`; fb.className = 'ok'; app.progress.markLesson(lesson.id); }
+        if (i === sh.answer) { b.classList.add('right'); fb.textContent = `Correct. ${lesson.check.explain}`; fb.className = 'ok'; app.progress.markLesson(lesson.id); }
         else { b.classList.add('wrong'); fb.textContent = `Not quite. ${lesson.check.explain}`; fb.className = 'danger'; }
       };
       quiz.append(b);

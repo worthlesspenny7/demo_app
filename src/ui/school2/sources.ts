@@ -13,7 +13,7 @@ export type { ControlId, Module, Page, Ref };
 export { CONTROL_IDS };
 
 import { COURSE, FIRST_VISIT, moduleForLesson as contentModuleForLesson } from '../../../content/course.js';
-import { excerptFor as contentExcerpt } from '../../../content/excerpts.js';
+import { excerptFor as contentExcerpt, EXCERPTS } from '../../../content/excerpts.js';
 import { videoLink as contentVideoLink } from '../../../content/videos.js';
 
 export interface CourseData { course: Module[]; firstVisit: string; startLabel: string; source: 'content' }
@@ -45,6 +45,9 @@ export function excerptFor(key: string): Excerpt | null {
   return out;
 }
 
+/** Every excerpt key (PT-16: verdict source chips resolve against them). */
+export const excerptKeys = (): string[] => Object.keys(EXCERPTS);
+
 /** "mm:ss" (minutes may pass 59, as the chips print "110:28"). */
 export function mmss(seconds: number): string { const s = Math.max(0, Math.round(seconds)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 /** Seconds of a video Ref key 'video:<id>:<mm>:<ss>'. */
@@ -70,10 +73,12 @@ export const engine = (): EngineSchool => core as unknown as EngineSchool;
 /** One-line labels of the controls (pointer lines). The engine's POINTER_OF_CONTROL wins when it has one. */
 export const CONTROL_LABEL: Record<ControlId, string> = {
   book: 'The book row: the line the car is on.', callTurn: 'Call the turn: tap the way to go.', callSpeed: 'Call the speed: tap the new speed.',
-  go: 'GO: tap it when the stop is over.', watchStartStop: 'START / STOP: the left half of the stopwatch.', watchLap: 'LAP: the right half of the stopwatch.',
-  chartCell: 'The chart cell: the seconds to sit or lead.', distanceBar: 'The distance bar: it reaches zero at the sign.', callAtMark: 'CALL at the Mark: tap as Dad says Mark.',
+  go: 'GO: tap it when the watch reaches the wait.', watchStartStop: 'START: the left half of the stopwatch.', watchLap: 'LAP: the right half of the stopwatch.',
+  chartCell: 'The chart cell: the seconds to sit or lead.', distanceBar: 'The bar: it empties at the sign, on the driver\'s Mark.',
+  // PT-16 B2: name what is graded: the call half a ramp before the sign
+  callAtMark: 'Tap CALL half a ramp before the Mark, when the bar reaches the tick.',
   clock: 'The dash clock: read the minute hand.', todStrip: 'The time-of-day strip under the watch.', launch: 'LAUNCH: tap at your start second.',
-  makeup: 'Make-up: pick how to win back time.', taCard: 'The TA card: claim a delay.', holdCard: 'The hold card: your OUT time.', desk: 'Desk mode: every control at once.',
+  makeup: 'Make-up: pick how to win back time.', taCard: 'The delay: pick what to claim or make up.', holdCard: 'The OUT time: pick it.', desk: 'Desk mode: every control at once.',
 };
 export function pointerFor(c: ControlId): string {
   const p = engine().POINTER_OF_CONTROL?.[c];

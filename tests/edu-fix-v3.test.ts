@@ -156,7 +156,7 @@ describe('EDU-006 the soft gates', () => {
   });
 });
 
-describe('EDU-007 Dad\'s card and the first morning', () => {
+describe('EDU-007 Driver\'s card and the first morning', () => {
   it('EDU-007 the twelve-line card carries safety, the full stop, the checkpoint signs, calibration conduct, the restart queue, lost, the phone and the emergency signs; no "stop short of the intersection"', () => {
     const c = card(); expect(c.length).toBe(21); const t = c.join('\n');   // PLAY-031 (fix sprint PT-08): one rule per line, so 21 short lines
     for (const phrase of ['Safety beats seconds', 'Every STOP sign is a full stop, even with no pause in the book', 'DNF', 'Never speed', 'Green sign = timing checkpoint: just drive on', 'Never stop or slow to 5 mph or less in sight of it: 30 second penalty', 'Red GREAT RACE STOP board: stop', 'Calibration run: hold the indicated speed exactly, say nothing about early or late', 'Never guess a speed', 'train, tractor, school bus', 'wait back among the cars; pull up only after the car ahead has left', 'go around it', 'Not sure where we are: say so', 'never in sight of a green sign', 'no U-turn in traffic', 'No score is worth an accident', 'Day-Glo "GR" sign', '"End Leg"', 'Off the clock', 'Phones off and out of reach', 'Second use: 10 seconds. Third use: 1 minute'])

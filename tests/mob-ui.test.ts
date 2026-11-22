@@ -42,7 +42,7 @@ describe('MOB-002 / MOB-026 decision cards', () => {
       expect(words(d.prompt)).toBeLessThanOrEqual(40);
       expect(!!d.timing || (d.options?.length ?? 0) >= 1).toBe(true);
       expect((d.options?.length ?? 0)).toBeLessThanOrEqual(4);
-      expect(driverLine(d)).toMatch(/^Dad: /);
+      expect(driverLine(d)).toMatch(/^Driver: /);
     }
   });
   it('MOB-026 the book row at phone width: CAMEO left, Column C right (the shared GRIID renderer), the remark below', () => {
@@ -73,7 +73,7 @@ describe('MOB-002 / MOB-026 decision cards', () => {
   });
   it('MOB-006 verdict overlay parts: signed seconds, the one-sentence rule, what was right', () => {
     const v = { ...verdict('stayOnTime', false), secondsDelta: 1.24, chosen: 'GO at 7.0 s', expected: 'GO at 5.8 s', rule: 'Sit the chart pause (HB p.8).' };
-    expect(verdictParts(v)).toEqual({ head: 'Not quite', seconds: '+1.2 s', rule: 'Sit the chart pause (HB p.8).', detail: 'You: GO at 7.0 s. Right: GO at 5.8 s.' });
+    expect(verdictParts({ ...v, source: 'HB p.8' })).toEqual({ head: 'Not quite', seconds: '+1.2 s', rule: 'Sit the chart pause.', detail: 'You: GO at 7.0 s. Correct: GO at 5.8 s.', source: 'HB p.8' });   // PT-16 B10: the source is a chip, not text
     expect(verdictParts({ ...v, correct: true, secondsDelta: -0.3 }).seconds).toBe('−0.3 s');
     expect(ruleCardHtml({ id: 'RULE-X', skill: 'recovery', text: 'Claim it.', source: 'REG V.H.3' })).toContain('REG V.H.3');
   });

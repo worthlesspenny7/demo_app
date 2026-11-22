@@ -67,7 +67,8 @@ function mountPlayer(root: HTMLElement, m: Module, pages: PlayerPage[], start: n
   const back = el('button', { class: 'mob-btn s2-back', type: 'button', 'data-action': 'back' }, 'Back') as HTMLButtonElement;
   const next = el('button', { class: 'mob-btn primary s2-next', type: 'button', 'data-action': 'next' }, 'Next') as HTMLButtonElement;
   const foot = el('footer', { class: 's2-foot' }, dots, el('div', { class: 's2-navbtns' }, back, next));
-  const shell = el('div', { class: `s2${firstVisit ? ' s2-first' : ''}`, 'data-screen': 'school', 'data-module': m.id }, strip, el('div', { class: 's2-main' }, body, chips), foot);
+  const rotate = el('div', { class: 's2-rotate', 'data-testid': 'rotate', role: 'note' }, 'Turn your phone upright: the School is made for portrait.');
+  const shell = el('div', { class: `s2${firstVisit ? ' s2-first' : ''}`, 'data-screen': 'school', 'data-module': m.id }, strip, rotate, el('div', { class: 's2-main' }, body, chips), foot);
   root.replaceChildren(shell);
   let i = start; let cleanup: (() => void) | null = null; const doneHere = new Set<number>(loadCourse().state.pages[m.id] ? Array.from({ length: loadCourse().state.pages[m.id]! }, (_, k) => k) : []);
 
@@ -155,7 +156,7 @@ function check(body: HTMLElement, p: CheckPage, complete: () => void): void {
       opts.querySelectorAll('button').forEach(x => x.classList.remove('s2-right', 's2-wrong'));
       const ok = k === p.answer; b.classList.add(ok ? 's2-right' : 's2-wrong');
       fb.className = `s2-result ${ok ? 'ok' : 'danger'}`;
-      fb.textContent = `${ok ? 'Right.' : `Not quite: ${p.options[p.answer]}.`}${rule ? ` ${rule}` : ''}`;
+      fb.textContent = `${ok ? 'Correct.' : `Not quite: ${p.options[p.answer]}.`}${rule ? ` ${rule}` : ''}`;
       if (ok) complete();
     };
     opts.append(b);
@@ -183,7 +184,7 @@ export function renderModules(root: HTMLElement): void {
   root.replaceChildren(el('div', { class: 's2 s2-modules', 'data-screen': 'school-modules' },
     el('header', { class: 's2-strip' }, el('a', { class: 'mob-quit', href: '#/m', 'aria-label': 'Home' }, '×'), el('span', { class: 's2-title' }, 'Rally School'), el('a', { class: 's2-modlink', href: '#/reference/rules' }, 'Rules')),
     el('div', { class: 's2-main s2-scroll' }, el('p', { class: 'muted' }, note), list,
-      el('p', { class: 's2-more' }, el('a', { href: '#/reference/rules' }, 'Rules'), ' · ', el('a', { href: '#/reference' }, 'Reference (long form)'), ' · ', el('a', { href: '#/school/dad' }, "Dad's card")))));
+      el('p', { class: 's2-more' }, el('a', { href: '#/reference/rules' }, 'Rules'), ' · ', el('a', { href: '#/reference' }, 'Reference (long form)'), ' · ', el('a', { href: '#/school/driver-card' }, "Driver's card")))));
 }
 
 function installHelpers(): void {
@@ -192,7 +193,7 @@ function installHelpers(): void {
   const school = {
     state: () => ({ ...playerState }),
     course: () => course().map(m => ({ id: m.id, pages: m.pages.length + 1, kinds: playerPages(m).map(p => p.kind) })),
-    mini: () => ({ kind: miniView.decision?.kind ?? null, timing: miniView.decision?.timing ?? null, options: miniView.decision?.options?.map(o => o.id) ?? [], attempt: miniView.attempt, complete: miniView.complete, elapsed: miniView.decision ? miniCardSeconds() : 0 }),
+    mini: () => ({ kind: miniView.decision?.kind ?? null, timing: miniView.decision?.timing ?? null, options: miniView.decision?.options?.map(o => o.id) ?? [], attempt: miniView.attempt, started: miniView.started, round: miniView.round, rounds: miniView.rounds, complete: miniView.complete, elapsed: miniView.decision ? miniCardSeconds() : 0 }),
     oracle: () => (miniView.handle && miniView.decision ? miniView.handle.oracle(miniView.decision) : null),
     source: () => COURSE_DATA.source,
   };

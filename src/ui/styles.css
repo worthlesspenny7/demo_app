@@ -774,7 +774,7 @@ body:not(.mob-route) .s2 { height: calc(100dvh - 52px); max-height: 940px; borde
 .s2-marker { width: 22px; background: transparent; color: var(--muted); font-weight: 800; text-align: center; border-left: 3px solid var(--muted); }
 .s2-tapmark { background: var(--danger); }
 .s2-slider { width: 100%; height: 48px; accent-color: var(--accent); }
-.s2-laps { margin: 0; padding-left: 22px; font-family: var(--mono); }
+.s2-laps { margin: 0; padding-left: 0; list-style-position: inside; font-family: var(--mono); }   /* PT-16 B9: numbers not clipped */
 .s2-ask { margin: 0; font-weight: 700; }
 .s2 .mob-opts.n3 { grid-template-columns: 1fr 1fr 1fr; }
 .s2-card { width: 100%; border-collapse: collapse; }
@@ -806,7 +806,8 @@ body:not(.mob-route) .s2 { height: calc(100dvh - 52px); max-height: 940px; borde
 @media (min-width: 700px) {
   .s2-concept.has-fig { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: center; }
   .s2-fig svg { max-height: 40dvh; }
-  .s2-minisim { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; }
+  .s2-minisim { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; align-content: start; }   /* PT-16 B20: at the top of the column */
+  .s2-minisim .s2-miniacts { justify-content: flex-start; }
   .s2-checkopts { grid-template-columns: 1fr 1fr; }
 }
 @media (max-height: 800px) {
@@ -815,3 +816,28 @@ body:not(.mob-route) .s2 { height: calc(100dvh - 52px); max-height: 940px; borde
   .s2-miniacts .mw-go { min-height: 100px; }
   .s2-miniacts .mw-halves .mw-half { min-height: 80px; }
 }
+
+/* PT-16 fix sprint */
+.s2-greensign { width: 12px; border-radius: 3px; background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 40%, transparent); }
+.s2-vchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.s2-vchips .s2-chip { min-height: 48px; padding: 2px 12px; }
+.s2-lapread { margin: 4px 0 0; font-family: var(--mono); font-weight: 700; }
+.s2-zone { align-self: flex-start; min-height: 48px; }
+.s2-rotate { display: none; }
+/* PT-16 B21: a phone held sideways gets a "turn upright" card instead of a page that scrolls */
+@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
+  .s2-rotate { display: flex; flex: 1 1 auto; align-items: center; justify-content: center; padding: 16px; text-align: center; font-size: 20px; font-weight: 700; }
+  .s2 > .s2-main, .s2 > .s2-foot { display: none; }
+}
+/* SCH-022: a timed card waits under a Start button: the face below is frozen until it is tapped */
+.mw-face { position: relative; }
+.mw-face.mw-gated > :not(.mw-ready) { opacity: 0.45; }
+.mw-ready { position: absolute; inset: 0; z-index: 3; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 56px; border: 2px solid var(--accent); border-radius: 14px; background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--text); cursor: pointer; }
+.mw-ready b { font-size: 26px; color: var(--accent); }
+.mw-ready span { font-size: 16px; }
+/* SCH-024: the Great Race photo strip */
+.s2-photos { max-width: 520px; }
+.s2-photo-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.s2-photo { display: flex; flex-direction: column; gap: 2px; color: var(--muted); text-align: center; }
+.s2-photo img { width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.s2-credit { margin-top: 4px; color: var(--muted); font-style: italic; }

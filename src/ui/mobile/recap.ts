@@ -1,7 +1,7 @@
 /** MOB-006 recap: stars, per-skill tallies, the three worst cards with their rule, then "Again" and "Next run". */
 import { SKILLS, SKILL_TITLE } from '../../core/decision/index.js';
 import { el } from '../state.js';
-import { KIND_TITLE } from './cards.js';
+import { KIND_TITLE, ruleWithoutSource } from './cards.js';
 import { session } from './session.js';
 import { dailyState, loadProgress } from './progress.js';
 
@@ -19,7 +19,7 @@ export function renderRecap(root: HTMLElement): void {
   body.append(tbl);
   if (r.worst.length) {
     const w = el('ol', { class: 'mob-worst', 'data-testid': 'worst' });
-    for (const x of r.worst.slice(0, 3)) w.append(el('li', {}, el('b', {}, `${KIND_TITLE[x.verdict.kind]}: ${x.verdict.correct ? 'right' : 'missed'}, ${Math.abs(x.verdict.secondsDelta).toFixed(1)} s`), el('span', {}, x.rule)));
+    for (const x of r.worst.slice(0, 3)) w.append(el('li', {}, el('b', {}, `${KIND_TITLE[x.verdict.kind]}: ${x.verdict.correct ? 'correct' : 'missed'}, ${Math.abs(x.verdict.secondsDelta).toFixed(1)} s`), el('span', {}, ruleWithoutSource(x.rule, x.source))));
     body.append(el('h2', {}, 'Worst three'), w);
   }
   const again = el('a', { class: 'mob-btn big', href: '#/m/play/again', 'data-action': 'again' }, 'Again');

@@ -17,7 +17,9 @@ const caf = (h: number): void => { if (typeof cancelAnimationFrame === 'function
 function road(): { root: HTMLElement; car: HTMLElement; ghost: HTMLElement; place(node: HTMLElement, frac: number): void } {
   const car = el('span', { class: 's2-car', 'aria-hidden': 'true' }); const ghost = el('span', { class: 's2-car s2-ghost', 'aria-hidden': 'true' });
   const root = el('div', { class: 's2-road', 'data-testid': 'road' }, ghost, car);
-  return { root, car, ghost, place: (n, f) => { n.style.left = `${(Math.max(0, Math.min(1, f)) * 92).toFixed(2)}%`; } };
+  // PT-16 B9: a car is placed by its nose (its left edge sits one car length, 8 %, behind), a mark by its line: the nose meets a mark at
+  // the same fraction
+  return { root, car, ghost, place: (n, f) => { const x = Math.max(0, Math.min(1, f)) * 92; n.style.left = `${(n.classList.contains('s2-car') ? x : x + 8).toFixed(2)}%`; } };
 }
 
 export function mountHoldSpeed(host: HTMLElement, page: WidgetPage, env: WidgetEnv): () => void {
@@ -48,37 +50,38 @@ export function mountHoldSpeed(host: HTMLElement, page: WidgetPage, env: WidgetE
 
 export function mountWhereCheckpoint(host: HTMLElement, page: WidgetPage, env: WidgetEnv): () => void {
   const m = new WhereCheckpointModel(page.params.speed ?? 30, page.params.miles ?? 0.1, page.params.seed ?? 1);
-  const r = road(); r.ghost.remove();
-  const cp = el('span', { class: 's2-cp', 'data-testid': 'checkpoint', hidden: '' }, '');
+  // PT-16 B7: the strip is the leg: the green sign stands at its end, the ghost drives beside your car, both reach the sign together
+  const r = road();
+  const cp = el('span', { class: 's2-cp s2-greensign', 'data-testid': 'checkpoint', 'aria-label': 'green checkpoint sign' }, '');
   const tapMark = el('span', { class: 's2-tapmark', hidden: '' });
-  r.root.append(cp, tapMark);
+  r.root.append(cp, tapMark); cp.style.left = 'calc(100% - 12px)';
   const clock = el('b', { class: 's2-readout mono', 'data-testid': 'leg-clock' }, '0.0 s');
   const result = el('p', { class: 's2-result', 'data-testid': 'cp-result' }, '');
-  const btn = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'leg-ended' }, 'The leg ended here');
+  const btn = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'leg-ended' }, 'At the sign!');
   host.append(el('div', { class: 's2-widget', 'data-widget': 'whereCheckpoint' },
     el('div', { class: 's2-wrow' }, el('span', {}, `Leg: ${m.miles} mi at ${m.assigned} mph`), clock), r.root, result, btn));
   const now = env.now ?? wall; const t0 = now(); let h = 0; let over = false;
-  // the view shows 1.5 x the leg; the checkpoint is at 1/1.5 of the strip
-  const frac = (s: number): number => s / (m.legFt * 1.5);
+  const frac = (s: number): number => s / m.legFt;
   const finish = (t: number | null): void => {
     if (over) return; over = true; caf(h);
-    const sc = m.press(t ?? m.maxSeconds());
-    cp.hidden = false; r.place(cp, frac(m.legFt)); tapMark.hidden = false; r.place(tapMark, frac(m.carS(m.tap!)));
-    const err = sc.error ?? 0;
-    result.textContent = `The checkpoint was at ${m.perfect.toFixed(1)} s (the ghost). You said ${m.tap!.toFixed(1)} s: ${sc.penalty} point${sc.penalty === 1 ? '' : 's'}${sc.ace ? ', an Ace!' : err > 0 ? ' late.' : ' early.'}`;
-    result.dataset['points'] = String(sc.penalty);
+    const at = Math.round((t ?? m.maxSeconds()) * 10) / 10;   // B24: the result quotes the time the clock showed
+    m.press(at); clock.textContent = `${at.toFixed(1)} s`;
+    tapMark.hidden = false; r.place(tapMark, frac(m.carS(at)));
+    result.textContent = m.explain();
+    result.dataset['points'] = String(m.score()!.penalty);
     btn.textContent = 'Done'; (btn as HTMLButtonElement).disabled = true;
     env.done();
   };
   btn.onclick = () => finish(now() - t0);
   const frame = (): void => {
-    const t = now() - t0; r.place(r.car, frac(m.carS(t))); clock.textContent = `${t.toFixed(1)} s`;
+    const t = now() - t0; const f = frac(m.carS(t)); r.place(r.car, f); r.place(r.ghost, frac(ghostS(m, t))); clock.textContent = `${t.toFixed(1)} s`;
     if (t >= m.maxSeconds()) { finish(null); return; }
     h = raf(frame);
   };
   frame();
   return () => caf(h);
 }
+const ghostS = (m: WhereCheckpointModel, t: number): number => Math.min(m.legFt, m.legFt * t / m.perfect);
 
 export function mountTapLap(host: HTMLElement, page: WidgetPage, env: WidgetEnv): () => void {
   const m = new TapLapModel(page.params.markers ?? 3, page.params.seed ?? 1);
@@ -89,10 +92,11 @@ export function mountTapLap(host: HTMLElement, page: WidgetPage, env: WidgetEnv)
   const laps = el('ol', { class: 's2-laps', 'data-testid': 'laps' });
   const q = el('div', { class: 's2-q' });
   const lapBtn = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'lap' }, 'LAP');
-  host.append(el('div', { class: 's2-widget', 'data-widget': 'tapLap' }, el('div', { class: 's2-wrow' }, el('span', {}, `LAP at each of ${m.markers} markers`), digits), r.root, laps, q, lapBtn));
+  // PT-16 B9: LAP sits right under the road and never moves; the lap list grows below it
+  host.append(el('div', { class: 's2-widget', 'data-widget': 'tapLap' }, el('div', { class: 's2-wrow' }, el('span', {}, `LAP at each of ${m.markers} markers`), digits), r.root, lapBtn, q, laps));
   const now = env.now ?? wall; const t0 = now(); let h = 0;
   const ask = (): void => {
-    lapBtn.remove();
+    lapBtn.hidden = true;
     q.append(el('p', { class: 's2-ask' }, `Your split at marker ${m.ask + 1}?`));
     const fb = el('p', { class: 's2-result', 'data-testid': 'split-result' });
     const opts = el('div', { class: 'mob-opts n3' });
@@ -101,7 +105,7 @@ export function mountTapLap(host: HTMLElement, page: WidgetPage, env: WidgetEnv)
       b.onclick = () => {
         opts.querySelectorAll('button').forEach(x => x.classList.remove('s2-right', 's2-wrong'));
         b.classList.add(o.right ? 's2-right' : 's2-wrong');
-        fb.textContent = o.right ? 'Right: the split is the total time since START.' : 'Not quite: the split is the total since START, not one lap.';
+        fb.textContent = o.right ? 'Correct: the split is the total time since START.' : 'Not quite: the split is the total since START, not one lap.';
         if (o.right) env.done();
       };
       opts.append(b);
@@ -139,7 +143,7 @@ export function mountReadScorecard(host: HTMLElement, page: WidgetPage, env: Wid
   for (const l of legs) {
     const right = ask === 'ace' ? aces.some(a => a.index === l.index) : ask === 'worst' && l.index === worst.index;
     const tr = el('tr', { class: `s2-leg${ask === 'total' ? ' s2-static' : ''}`, 'data-leg': l.index, 'data-right': String(right) }, el('td', {}, String(l.index)), el('td', {}, fmt(l.perfect)), el('td', {}, fmt(l.actual)), el('td', {}, String(l.score.penalty)));
-    if (ask !== 'total') { tr.setAttribute('role', 'button'); tr.tabIndex = 0; tr.onclick = () => mark(tr, right, right ? (ask === 'ace' ? 'Right: zero seconds off is an Ace.' : `Right: leg ${l.index} cost ${l.score.penalty} points, one per second.`) : (ask === 'ace' ? 'Not quite: an Ace is 0 points.' : `Not quite: leg ${worst.index} cost ${worst.score.penalty}.`)); }
+    if (ask !== 'total') { tr.setAttribute('role', 'button'); tr.tabIndex = 0; tr.onclick = () => mark(tr, right, right ? (ask === 'ace' ? 'Correct: zero seconds off is an Ace.' : `Correct: leg ${l.index} cost ${l.score.penalty} points, one per second.`) : (ask === 'ace' ? 'Not quite: an Ace is 0 points.' : `Not quite: leg ${worst.index} cost ${worst.score.penalty}.`)); }
     tb.append(tr);
   }
   if (ask === 'total') tb.append(el('tr', { class: 's2-sum' }, el('td', { colspan: '3' }, 'Raw total'), el('td', {}, String(tot.raw))), el('tr', { class: 's2-sum' }, el('td', { colspan: '3' }, 'Age factor 1939'), el('td', {}, tot.factor.toFixed(3))));
@@ -147,7 +151,7 @@ export function mountReadScorecard(host: HTMLElement, page: WidgetPage, env: Wid
   const box = el('div', { class: 's2-widget', 'data-widget': 'readScorecard' }, el('p', { class: 's2-ask' }, question), tbl);
   if (ask === 'total') {
     const opts = el('div', { class: 'mob-opts n3' });
-    for (const o of tot.options) { const b = el('button', { class: 'mob-btn opt', type: 'button', 'data-right': String(o.right) }, o.label); b.onclick = () => mark(b, o.right, o.right ? `Right: ${tot.raw} x ${tot.factor.toFixed(3)} = ${o.label}.` : `Not quite: multiply the raw total by the age factor.`); opts.append(b); }
+    for (const o of tot.options) { const b = el('button', { class: 'mob-btn opt', type: 'button', 'data-right': String(o.right) }, o.label); b.onclick = () => mark(b, o.right, o.right ? `Correct: ${tot.raw} x ${tot.factor.toFixed(3)} = ${o.label}.` : `Not quite: multiply the raw total by the age factor.`); opts.append(b); }
     box.append(opts);
   } else box.append(el('p', { class: 's2-total' }, `Total ${cardTotal(legs)} points`));
   box.append(fb); host.append(box);

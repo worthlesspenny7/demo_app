@@ -65,7 +65,9 @@ export function microRunner(m: MicroScenario, rung?: 0 | 1 | 2 | 3, maxDecisions
   return new DecisionRunner(m.scenario, { kinds: m.kinds, maxDecisions: maxDecisions ?? m.maxDecisions, prereadRows: m.prereadRows, missTurns: m.missTurns, ...(rung !== undefined ? { rung } : {}), ...(m.hint ? { hint: m.hint } : {}), ...(m.maxPerKind !== undefined ? { maxPerKind: m.maxPerKind } : {}) });
 }
 
-export interface SchedulerOptions { mode?: RunPlan['mode']; rung?: 0 | 1 | 2 | 3; decisions?: number; day?: string; dailyIndex?: number; drillId?: string }
+export interface SchedulerOptions { mode?: RunPlan['mode']; rung?: 0 | 1 | 2 | 3; decisions?: number; day?: string; dailyIndex?: number; drillId?: string;
+  /** PT-16 SCH-013: the only kinds the run may draw (a School taker's course progress, src/core/decision/school.ts runKinds); absent = all. */
+  kinds?: readonly DecisionKind[] | null }
 
 const seedOf = (label: string): number => rng(label).int(1, 2 ** 31 - 2);
 /** Seed of the daily set's run `index` (0..2) on `day` ("2026-10-23"): the same all day, a new one tomorrow (MOB-030). */
@@ -75,8 +77,8 @@ export class Scheduler {
   constructor(readonly skillPlan: Skill[], readonly seed: number, readonly progress: DecisionProgressState | null = null, readonly opts: SchedulerOptions = {}) {}
 
   /** The daily set's run `index` (0..2): every skill, re-randomised per calendar day. */
-  static daily(day: string, index: number, progress: DecisionProgressState | null = null, rung: 0 | 1 | 2 | 3 = 2): Scheduler {
-    return new Scheduler([...SKILLS], dailySeed(day, index), progress, { mode: 'daily', day, dailyIndex: index, rung });
+  static daily(day: string, index: number, progress: DecisionProgressState | null = null, rung: 0 | 1 | 2 | 3 = 2, kinds?: readonly DecisionKind[] | null): Scheduler {
+    return new Scheduler([...SKILLS], dailySeed(day, index), progress, { mode: 'daily', day, dailyIndex: index, rung, ...(kinds ? { kinds } : {}) });
   }
   /** The boss run: a full generated leg in decision mode, then every kind it missed (MOB-031, MOB-059). The first Boss plays at rung 2
    *  (the chart on the card); later ones at rung 1, where the card keeps the chart behind a button. */
@@ -89,6 +91,10 @@ export class Scheduler {
     const skills = [...new Set(this.skillPlan.filter(s => (SKILLS as readonly string[]).includes(s)))];
     const plan: RunPlan = { seed: this.seed, mode, skills: skills.length ? skills : [...SKILLS], rung, items: [], decisionCount: 0, ...(this.opts.day ? { day: this.opts.day } : {}), ...(this.opts.dailyIndex !== undefined ? { dailyIndex: this.opts.dailyIndex } : {}), ...(this.opts.drillId ? { drillId: this.opts.drillId } : {}) };
     if (mode === 'boss') { plan.items = [{ type: 'decision', micro: { kind: 'turn', skill: 'safetyCourse', seed: this.seed, variant: 0, bossLeg: BOSS_LEG_DECISIONS } }]; plan.decisionCount = BOSS_DECISIONS; return plan; }
+    // PT-16 SCH-013: a School taker's runs draw only the kinds the course has taught (skills with none left are skipped)
+    const allowed = this.opts.kinds?.length ? new Set<DecisionKind>(this.opts.kinds) : null;
+    if (allowed) plan.kinds = DECISION_KINDS.filter(k => allowed.has(k));
+    const kindsOf = (sk: Skill): readonly DecisionKind[] => allowed ? KINDS_OF_SKILL[sk].filter(k => allowed.has(k)) : KINDS_OF_SKILL[sk];
     const r = rng(`plan:${this.seed}:${plan.skills.join(',')}`);
     const n = Math.max(RUN_MIN_DECISIONS, Math.min(RUN_MAX_DECISIONS, Math.round(this.opts.decisions ?? r.int(10, 12))));
     const cap = maxPerKindFor(plan.skills, n); if (cap !== MAX_PER_KIND) plan.maxPerKind = cap;
@@ -97,10 +103,11 @@ export class Scheduler {
     const kindIdx: Record<string, number> = {}; const perKind: Partial<Record<DecisionKind, number>> = {}; const slots: MicroSpec[] = [];
     // PT-14 N5 / N7: a single-skill run of a skill whose cards are all real-time waits (Stay on time) keeps two thirds for the skill and
     // tops up with option cards, so an option card can sit between its timing cards (>= 4 decisions a minute)
-    const ownMax = plan.skills.length === 1 && KINDS_OF_SKILL[plan.skills[0]!].every(k => TIMED_KINDS.includes(k)) ? Math.ceil(n * SKILL_RUN_SHARE) : n;
+    const ownMax = plan.skills.length === 1 && kindsOf(plan.skills[0]!).every(k => TIMED_KINDS.includes(k)) ? Math.ceil(n * SKILL_RUN_SHARE) : n;
     const take = (sk: Skill): boolean => {
       if (plan.skills.length === 1 && sk === plan.skills[0] && slots.filter(m => m.skill === sk).length >= ownMax) return false;
-      const kinds = KINDS_OF_SKILL[sk]; let i = kindIdx[sk] ?? r.int(0, kinds.length - 1);
+      const kinds = kindsOf(sk); if (!kinds.length) return false;
+      let i = kindIdx[sk] ?? r.int(0, kinds.length - 1);
       for (let j = 0; j < kinds.length; j++, i++) {
         const kind = kinds[i % kinds.length]!;
         if ((perKind[kind] ?? 0) >= cap) continue;
@@ -186,8 +193,10 @@ export class DecisionRun {
   private answeredStep = false;
   /** A kind of `skill` (or any kind, when `skill` is null) still under the cap, preferring `kind` itself; null when none is. */
   private kindUnderCap(kind: DecisionKind | null, skill: Skill | null, salt: string): DecisionKind | null {
+    const ok = (k: DecisionKind): boolean => !this.plan.kinds?.length || this.plan.kinds.includes(k);
+    if (kind && !ok(kind)) kind = null;
     if (kind && this.kindCount(kind) < this.cap) return kind;
-    const pool = skill ? [...KINDS_OF_SKILL[skill]] as DecisionKind[] : [...DECISION_KINDS];
+    const pool = (skill ? [...KINDS_OF_SKILL[skill]] as DecisionKind[] : [...DECISION_KINDS]).filter(ok);
     const c = shuffled(pool, rng(`cap:${this.plan.seed}:${salt}`)).filter(k => this.kindCount(k) < this.cap);
     return c[0] ?? null;
   }
@@ -258,12 +267,13 @@ export class DecisionRun {
     // MOB-005 / MOB-053: a missed skill comes back two cards later, in the place of a planned card (the count stays), under the kind cap
     if (!v.correct && this.plan.mode !== 'boss' && (this.repeats[v.skill] ?? 0) < MAX_REPEATS_PER_SKILL) {
       const kind = this.kindUnderCap(v.kind, v.skill, `repeat:${this.verdicts.length}`);
+      const form = this.current?.type === 'decision' && this.current.micro.kind === kind ? this.current.micro.form : undefined;   // PT-16: a School stopwatch card repeats as one
       const slots = this.queue.map((it, i) => ({ it, i })).filter(x => x.it.type === 'decision' && !(x.i > 0 && this.queue[x.i - 1]!.type === 'rule'));
       const target = slots.slice(1).find(x => x.it.type === 'decision' && x.it.micro.skill !== v.skill) ?? slots.slice(1)[0] ?? slots[0];
       if (kind && target) {
         this.repeats[v.skill] = (this.repeats[v.skill] ?? 0) + 1;
         const n = this.verdicts.length;
-        this.queue[target.i] = { type: 'decision', micro: { kind, skill: v.skill, seed: seedOf(`repeat:${this.plan.seed}:${n}`), variant: (n + 1) % 4 } };
+        this.queue[target.i] = { type: 'decision', micro: { kind, skill: v.skill, seed: seedOf(`repeat:${this.plan.seed}:${n}`), variant: this.plan.variants?.[kind]?.length ? this.plan.variants[kind]![n % this.plan.variants[kind]!.length]! : (n + 1) % 4, ...(form ? { form } : {}) } };
       }
     }
     return v;

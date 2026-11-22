@@ -64,7 +64,7 @@ test('PLAY-027 PLAY-043 D06 chart notes from the last run of the seed are kept o
   expect(await page.evaluate(() => window.__rally!.observe().notes)).toEqual([]); await expect(page.locator('#alert')).toContainText(/Attempt 2 of this seed: a new hidden car/);
 });
 
-test('PLAY-031 Dad\'s card prints on one page', async ({ page }) => {
+test('PLAY-031 Driver\'s card prints on one page', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => { (window as unknown as { __printed: number }).__printed = ((window as unknown as { __printed?: number }).__printed ?? 0) + 1; }; });
   await page.goto('/#/lesson/protocol');   // PT-11 (PLAY-048): one page again, the card on it
   const pagesOf = (b: Buffer): number => (b.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length;

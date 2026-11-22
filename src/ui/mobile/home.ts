@@ -1,6 +1,6 @@
 /**
  * MOB-025: Home on a phone. Daily set (three runs), Continue (the last unfinished run), the five skill meters (tap one to practise it;
- * the legal-rung run appears at 80 %, MOB-031), streak, the Boss run when all meters are at 50 %, the School, Dad's card, Reference and Desk mode. MOB-060: Continue is the primary button while a run is unfinished.
+ * the legal-rung run appears at 80 %, MOB-031), streak, the Boss run when all meters are at 50 %, the School, Driver's card, Reference and Desk mode. MOB-060: Continue is the primary button while a run is unfinished.
  */
 import { SKILLS, SKILL_TITLE } from '../../core/decision/index.js';
 import { el } from '../state.js';
@@ -31,8 +31,9 @@ export function renderMobileHome(root: HTMLElement): void {
     page.append(el('a', { class: 'mob-btn primary big', href: '#/m/continue', 'data-testid': 'continue' }, `Continue run (${n} of ${p.unfinished.plan.decisionCount} done)`));
   }
   // SCH-004: "Continue course: Module n, page m" is the primary button for a visitor who has not finished the core modules (after a run in progress)
-  const cv = loadCourse(); const target = coreComplete(cv.state) ? null : continueTarget(cv);
-  if (target) page.append(el('a', { class: `mob-btn${p.unfinished ? '' : ' primary'} big`, href: `#/school/${target.module.id}/${target.page + 1}`, 'data-testid': 'continue-course' }, continueLabel(target)));
+  // PT-16 B14: it stays until Module 12 is done (primary only while the core modules are not; after that the daily set leads)
+  const cv = loadCourse(); const target = courseStarted(cv.state) && deskUnlocked(cv.state) ? null : continueTarget(cv);
+  if (target) page.append(el('a', { class: `mob-btn${p.unfinished || coreComplete(cv.state) ? '' : ' primary'} big`, href: `#/school/${target.module.id}/${target.page + 1}`, 'data-testid': 'continue-course' }, continueLabel(target)));
   const dailyBtn = el('a', { class: `mob-btn${p.unfinished || target ? '' : ' primary'} big`, href: daily.next === null ? '#/m/play/practice' : `#/m/play/daily/${daily.next}`, 'data-testid': 'play-daily' }, daily.next === null ? 'Daily set done: practise' : `Play daily run ${daily.next + 1} of 3`);
   page.append(el('section', { class: 'mob-sec mob-daily' }, el('h2', {}, 'Daily set'), pills, dailyBtn));
   // Skill meters
@@ -50,11 +51,11 @@ export function renderMobileHome(root: HTMLElement): void {
   page.append(boss ? el('a', { class: 'mob-btn big boss', href: '#/m/play/boss', 'data-testid': 'boss' }, 'Boss run: a full leg')
     : el('p', { class: 'mob-locked', 'data-testid': 'boss-locked' }, 'Boss run opens when every skill is at 50 %.'));
   // links
-  const voice = el('button', { class: 'mob-btn', type: 'button', 'aria-pressed': speechOn() ? 'true' : 'false' }, speechOn() ? "Dad's voice: on" : "Dad's voice: off");
-  voice.onclick = () => { setSpeech(!speechOn()); voice.textContent = speechOn() ? "Dad's voice: on" : "Dad's voice: off"; voice.setAttribute('aria-pressed', String(speechOn())); };
+  const voice = el('button', { class: 'mob-btn', type: 'button', 'aria-pressed': speechOn() ? 'true' : 'false' }, speechOn() ? "Driver's voice: on" : "Driver's voice: off");
+  voice.onclick = () => { setSpeech(!speechOn()); voice.textContent = speechOn() ? "Driver's voice: on" : "Driver's voice: off"; voice.setAttribute('aria-pressed', String(speechOn())); };
   page.append(el('nav', { class: 'mob-links' },
     el('a', { class: 'mob-btn', href: '#/school', 'data-testid': 'school' }, 'School'),
-    el('a', { class: 'mob-btn', href: '#/school/dad', 'data-testid': 'dads-card' }, "Dad's card"),
+    el('a', { class: 'mob-btn', href: '#/school/driver-card', 'data-testid': 'drivers-card' }, "Driver's card"),
     el('a', { class: 'mob-btn', href: '#/reference' }, 'Reference'),
     voice,
     // SCH-004: a visitor taking the course gets Desk mode once module 12 is done; players who never opened the course keep it

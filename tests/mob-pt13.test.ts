@@ -81,12 +81,12 @@ describe('MOB-051 the TA grader is the rule card', () => {
 });
 
 describe('MOB-052 timed cards show the sign arriving', () => {
-  it('MOB-052 speed-change and timed-start cards carry the sign moment (Dad says Mark!) and the distance; START is on Mark, a CALL leads it by the chart lead', () => {
+  it('MOB-052 speed-change and timed-start cards carry the sign moment (the driver says Mark!) and the distance; START is on Mark, a CALL leads it by the chart lead', () => {
     for (let seed = 1; seed <= 20; seed++) {
       const sc = one('speedChange', seed, seed % 4).d; const t = sc.timing!;
       expect(t.signSeconds, `speed ${seed}`).toBeGreaterThan(t.truthSeconds); expect(t.signFt).toBeGreaterThan(0); expect(sc.prompt).toMatch(/Mark!/);
       expect(Math.abs(t.signSeconds! - sc.context.chart!.seconds - t.truthSeconds), `speed ${seed}`).toBeLessThanOrEqual(TIMING_TOLERANCE.speedChange / 2);
-      const ts = one('timedStart', seed, seed % 4).d; expect(ts.timing!.signSeconds).toBe(ts.timing!.truthSeconds); expect(ts.prompt).toMatch(/START on Dad's Mark!/); expect(ts.context.row!.columnC.join(' ')).toMatch(/MPH/);
+      const ts = one('timedStart', seed, seed % 4).d; expect(ts.timing!.signSeconds).toBe(ts.timing!.truthSeconds); expect(ts.prompt).toMatch(/START on Mark!/); expect(ts.context.row!.columnC.join(' ')).toMatch(/MPH/);
     }
   });
   it('MOB-052 no card asks for a tap at the sign unless the sign is on screen (its moment is in the timing)', () => {
@@ -273,7 +273,7 @@ describe('MOB-050 MOB-052 MOB-054 MOB-059 MOB-061 the phone card', () => {
     const html = decisionCardHtml(d, 1); expect(html).toMatch(/data-testid="chart-button"><summary class="mob-reveal">Chart<\/summary>/); expect(html).toContain(`sit ${d.context.chart!.seconds.toFixed(1)} s`);
     expect(decisionCardHtml(one('pause', 2, 0, 0).d, 0)).not.toContain('mchart');
   });
-  it('MOB-052 the sign bar shrinks to zero at the sign and Mark! is due then; Dad promises the mark', () => {
+  it('MOB-052 the sign bar shrinks to zero at the sign and Mark! is due then; the driver promises the mark', () => {
     const d = one('speedChange', 4).d; const t = d.timing!;
     expect(signState(t, 0)).toMatchObject({ frac: 1, ft: Math.round(t.signFt! / 10) * 10, mark: false });
     expect(signState(t, t.signSeconds! / 2).frac).toBeCloseTo(0.5, 5);

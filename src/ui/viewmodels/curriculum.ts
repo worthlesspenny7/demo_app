@@ -34,7 +34,7 @@ export const START_PATH: StartStep[] = [
   { kind: 'lesson', id: 'ghost-car', label: 'School: the ghost car', s: 'start' },
   { kind: 'drill', id: 'D16', label: 'D16 Start on the second', s: 'start' },
   { kind: 'lesson', id: 'griid-cameo', label: 'School: the GRIID page and the CAMEO', s: 'course' },
-  { kind: 'lesson', id: 'protocol', label: "School: team protocol and Dad's card", s: 'course' },
+  { kind: 'lesson', id: 'protocol', label: "School: team protocol and Driver's card", s: 'course' },
   { kind: 'drill', id: 'D09', label: 'D09 Trap quiz: which way?', s: 'course' },
   { kind: 'lesson', id: 'lost', label: 'School: when you are lost', s: 'course' },
   { kind: 'drill', id: 'D10', label: 'D10 Course following', s: 'course' },

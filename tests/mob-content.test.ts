@@ -1,4 +1,4 @@
-// Phase VIII content: MOB-010 (rule cards), MOB-011 (Dad reads this), MOB-012 content part (text budgets).
+// Phase VIII content: MOB-010 (rule cards), MOB-011 (The driver reads this), MOB-012 content part (text budgets).
 // The page layout is a pure model (content/school-layout.ts) that src/ui/screens/school.ts renders in order, so the budgets are tested on the model;
 // the renderer is checked against the model by reading its source (there is no DOM in the unit tests), and the Playwright run covers the real page.
 import { describe, it, expect } from 'vitest';
@@ -192,7 +192,7 @@ describe('MOB-010 School: rule cards by the Four S\'s, "Try it", check cards; th
   });
 });
 
-describe('MOB-011 Dad reads this: one rule per screen, large type, swipe or arrow; the printed card is unchanged', () => {
+describe('MOB-011 The driver reads this: one rule per screen, large type, swipe or arrow; the printed card is unchanged', () => {
   it('MOB-011 the reader has one page per line of the printable card, in order, numbered n of N', () => {
     const card = dadCard(); const pages = dadPages();
     expect(card.title).toBe('Card for the driver (print and keep in the car)'); expect(card.lines.length).toBeGreaterThanOrEqual(15);
@@ -207,12 +207,12 @@ describe('MOB-011 Dad reads this: one rule per screen, large type, swipe or arro
     expect(dadStep(0, -1, 20)).toBe(0); expect(dadStep(0, 1, 20)).toBe(1); expect(dadStep(19, 1, 20)).toBe(19); expect(dadStep(19, -1, 20)).toBe(18);
     expect(dadSwipe(-120, 5)).toBe(1); expect(dadSwipe(120, -5)).toBe(-1); expect(dadSwipe(-20, 0)).toBe(0); expect(dadSwipe(-100, 90)).toBe(0); expect(dadSwipe(0, 200)).toBe(0);
   });
-  it('MOB-011 the page is #/school/dad: the print button and mountPrintCard are the existing ones, and the reader listens for touch and arrow keys', () => {
-    expect(SCHOOL_SRC).toMatch(/lessonId === 'dad'/); expect(SCHOOL_SRC).toMatch(/renderBlock\(\{ card \}\)/);
+  it('MOB-011 the page is #/school/driver-card: the print button and mountPrintCard are the existing ones, and the reader listens for touch and arrow keys', () => {
+    expect(SCHOOL_SRC).toMatch(/lessonId === 'driver-card'/); expect(SCHOOL_SRC).toMatch(/renderBlock\(\{ card \}\)/);
     expect(SCHOOL_SRC).toMatch(/'Print this card'/); expect(SCHOOL_SRC).toMatch(/export function mountPrintCard/); expect(SCHOOL_SRC).toMatch(/id: 'print-root'/);
-    expect(SCHOOL_SRC).toMatch(/'Dad reads this'/); expect(SCHOOL_SRC).toMatch(/touchstart/); expect(SCHOOL_SRC).toMatch(/touchend/); expect(SCHOOL_SRC).toMatch(/ArrowRight/); expect(SCHOOL_SRC).toMatch(/ArrowLeft/);
+    expect(SCHOOL_SRC).toMatch(/'The driver reads this'/); expect(SCHOOL_SRC).toMatch(/touchstart/); expect(SCHOOL_SRC).toMatch(/touchend/); expect(SCHOOL_SRC).toMatch(/ArrowRight/); expect(SCHOOL_SRC).toMatch(/ArrowLeft/);
     expect(SCHOOL_SRC).toMatch(/font-size: clamp\(28px, 7\.5vw, 52px\)/); expect(SCHOOL_SRC).toMatch(/dadSwipe\(/); expect(SCHOOL_SRC).toMatch(/dadStep\(/);
-    expect(SCHOOL_SRC).toMatch(/href: '#\/school\/dad'/);
+    expect(SCHOOL_SRC).toMatch(/href: '#\/school\/driver-card'/);
   });
   it('MOB-011 the protocol lesson still carries the printable card (print unchanged)', () => {
     const l = LESSONS.find(x => x.id === 'protocol')!; expect(l.body.some(b => typeof b === 'object' && 'card' in b)).toBe(true);

@@ -1,6 +1,6 @@
 /** Built-in scenario sources for the CLI and tests. */
 import { ScenarioBuilder, EXITS, PERFECT_TIMEWISE, STOCK_1939_SPEEDO } from '../core/builder.js';
-import { DRIVER_EXPERT, DRIVER_DAD_SPORTSMAN, DRIVER_DAD_ROOKIE, LEGAL_AIDS, type Scenario } from '../core/course.js';
+import { DRIVER_EXPERT, DRIVER_SPORTSMAN, DRIVER_ROOKIE, LEGAL_AIDS, type Scenario } from '../core/course.js';
 import { hms } from '../core/units.js';
 import { rng } from '../core/rng.js';
 
@@ -11,7 +11,7 @@ export function builtinScenario(name: string, seed = 1): Scenario {
     case 'onestop': return new ScenarioBuilder({ id: 'onestop', name: 'One stop', startTime: T0, seed, driver: DRIVER_EXPERT }).start(35).advanceMiles(0.5).stop('S', 35).advanceMiles(0.5).checkpoint().advanceFt(300).finish().build();
     case 'varied': {
       const r = rng(seed);
-      const b = new ScenarioBuilder({ id: `varied-${seed}`, name: 'Varied leg', startTime: T0, seed, driver: DRIVER_DAD_SPORTSMAN, speedo: PERFECT_TIMEWISE, aids: LEGAL_AIDS, prereadSeconds: 120, trafficWaitProbability: 0.2 });
+      const b = new ScenarioBuilder({ id: `varied-${seed}`, name: 'Varied leg', startTime: T0, seed, driver: DRIVER_SPORTSMAN, speedo: PERFECT_TIMEWISE, aids: LEGAL_AIDS, prereadSeconds: 120, trafficWaitProbability: 0.2 });
       b.start(r.pick([30, 35, 40]));
       b.advanceMiles(0.4 + r.next()).stop(r.pick(['L', 'R', 'S']), r.pick([30, 35, 40]), { hint: 'Comes quick' });
       b.advanceMiles(0.3 + r.next()).speedAtSign('SPEED LIMIT 45', 45);
@@ -25,7 +25,7 @@ export function builtinScenario(name: string, seed = 1): Scenario {
       b.advanceFt(400).finish();
       return b.build();
     }
-    case 'mechanical': return new ScenarioBuilder({ id: 'mechanical', name: 'Stock speedo straight', startTime: T0, seed, driver: DRIVER_DAD_ROOKIE, speedo: STOCK_1939_SPEEDO }).start(40).advanceMiles(5).checkpoint().advanceFt(300).finish().build();
+    case 'mechanical': return new ScenarioBuilder({ id: 'mechanical', name: 'Stock speedo straight', startTime: T0, seed, driver: DRIVER_ROOKIE, speedo: STOCK_1939_SPEEDO }).start(40).advanceMiles(5).checkpoint().advanceFt(300).finish().build();
     default: throw new Error(`unknown builtin scenario ${name}`);
   }
 }

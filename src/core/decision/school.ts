@@ -8,7 +8,7 @@
 import { CONTROL_IDS, type ControlId } from '../../../content/course-types.js';
 import { rng } from '../rng.js';
 import { DecisionRun, interleave } from './scheduler.js';
-import { SKILL_OF_KIND, SKILLS, TIMED_KINDS, type DecisionKind, type DecisionProgressState, type MicroSpec, type RunPlan, type Skill } from './types.js';
+import { SKILL_OF_KIND, SKILLS, TIMED_KINDS, type MicroForm, type DecisionKind, type DecisionProgressState, type MicroSpec, type RunPlan, type Skill } from './types.js';
 import type { Progress } from './progress.js';
 
 export { CONTROL_IDS };
@@ -17,29 +17,30 @@ export type { ControlId };
 /** The control a card of each kind exercises (the default pointer target of miniSim). */
 export const CONTROL_OF_KIND: Record<DecisionKind, ControlId> = {
   preread: 'book', turn: 'callTurn', speedChange: 'callAtMark', timedStart: 'callAtMark', pause: 'chartCell', restart: 'launch',
-  transitOut: 'holdCard', makeup: 'makeup', hazard: 'taCard', ta: 'taCard', lost: 'callTurn', checkpoint: 'book', clock: 'clock', watch: 'watchLap',
+  transitOut: 'holdCard', makeup: 'makeup', hazard: 'taCard', ta: 'taCard', lost: 'callTurn', checkpoint: 'callSpeed', clock: 'clock', watch: 'watchLap',
 };
-/** One-line pointers (<= 12 words) naming the one control a mini-sim page teaches. */
+/** One-line pointers (<= 14 words) naming the one control a mini-sim page teaches. */
 export const POINTER_OF_CONTROL: Record<ControlId, string> = {
   book: 'Look at the book row, then tap your answer.',
   callTurn: 'Tap the turn you would call to the driver.',
   callSpeed: 'Tap the speed you would call.',
-  go: 'Tap GO when the stop is over.',
-  watchStartStop: 'Tap START and STOP on the stopwatch.',
-  watchLap: 'Tap LAP at the marker.',
-  chartCell: 'Read the chart cell, then answer.',
-  distanceBar: 'Watch the distance bar for the Mark.',
-  callAtMark: 'Tap CALL at the Mark.',
-  clock: 'Read the dash clock.',
-  todStrip: 'Read the time of day strip.',
+  go: 'Tap GO when the watch reaches the wait.',
+  watchStartStop: 'Tap START at the first sign, LAP at the second.',
+  watchLap: 'Tap LAP as the car reaches the sign.',
+  chartCell: 'Read the chart cell, then tap GO on that second.',
+  distanceBar: 'Watch the bar; tap CALL when it reaches the tick.',
+  // PT-16 B2: what is graded right is the call half a ramp before the sign, not the call on Mark
+  callAtMark: 'Tap CALL half a ramp before the Mark, when the bar reaches the tick.',
+  clock: 'Read the clock and watch, then tap your answer.',
+  todStrip: 'Read the time of day, then tap your answer.',
   launch: 'Tap LAUNCH at the second you work out.',
   makeup: 'Pick the make-up move.',
-  taCard: 'Use the TA card to claim the delay.',
-  holdCard: 'Use the hold card for the OUT time.',
+  taCard: 'Pick what to do about the delay.',
+  holdCard: 'Pick the OUT time.',
   desk: 'The Desk has every control.',
 };
 
-export interface MiniSimOptions { rung?: 0 | 1 | 2 | 3; control?: ControlId; variant?: number }
+export interface MiniSimOptions { rung?: 0 | 1 | 2 | 3; control?: ControlId; variant?: number; /** PT-16 SCH-015 / SCH-025: the School form of the kind */ form?: MicroForm; /** PT-16 SCH-012: the page's own pointer line */ pointer?: string }
 export interface GuidedInfo { control: ControlId; pointer: string }
 
 /** SCH-005: a run of exactly one decision of `kind` (same DecisionRun API the run screen uses), plus the guided metadata. */
@@ -54,7 +55,7 @@ export class MiniSim extends DecisionRun {
     super(miniPlan(kind, seed, opts));
     this.kind = kind; this.seed = seed; this.attempt = attempt; this.spec = { kind, seed, opts };
     const control = opts.control ?? CONTROL_OF_KIND[kind];
-    this.guided = { control, pointer: POINTER_OF_CONTROL[control] };
+    this.guided = { control, pointer: opts.pointer ?? POINTER_OF_CONTROL[control] };
   }
   /** The same scenario again for a second try (a fresh run; the first run's verdict stays with the caller). */
   retry(): MiniSim { return new MiniSim(this.spec.kind, this.spec.seed, this.spec.opts, this.attempt + 1); }
@@ -62,7 +63,7 @@ export class MiniSim extends DecisionRun {
 
 function miniPlan(kind: DecisionKind, seed: number, opts: MiniSimOptions): RunPlan {
   const skill = SKILL_OF_KIND[kind];
-  const micro: MicroSpec = { kind, skill, seed, variant: opts.variant ?? ((seed % 4) + 4) % 4 };
+  const micro: MicroSpec = { kind, skill, seed, variant: opts.variant ?? ((seed % 4) + 4) % 4, ...(opts.form ? { form: opts.form } : {}) };
   return { seed, mode: 'practice', skills: [skill], rung: opts.rung ?? 2, items: [{ type: 'decision', micro }], decisionCount: 1 };
 }
 
@@ -70,7 +71,10 @@ export function miniSim(kind: DecisionKind, seed: number, opts: MiniSimOptions =
 
 /** SCH-007: the cards in a try-it run. */
 export const TRY_IT_CARDS = 5;
-export interface TryItModule { id: string; tryIt: { skills: readonly string[]; kinds: readonly DecisionKind[]; cards: number } }
+export interface TryItModule { id: string; tryIt: { skills: readonly string[]; kinds: readonly DecisionKind[]; cards: number;
+  /** PT-16 SCH-020: the sub-case variants a kind may take (Module 0: green checkpoints only) */ variants?: Partial<Record<DecisionKind, readonly number[]>>;
+  /** PT-16 SCH-015: the School form a kind is played in (Module 3: the watch as START / LAP) */ forms?: Partial<Record<DecisionKind, MicroForm>> };
+  /** the module's pages (only mini-sim kinds are read, by runKinds) */ pages?: readonly { kind: string; decisionKind?: DecisionKind }[] }
 
 /**
  * SCH-007: the module's closing run: exactly 5 decisions drawn only from `module.tryIt.kinds` (round-robin from a seeded order, the
@@ -86,12 +90,14 @@ export function tryItPlan(module: TryItModule, seed: number, _progress?: Progres
   const slots: MicroSpec[] = [];
   for (let i = 0; i < TRY_IT_CARDS; i++) {
     const kind = order[i % order.length]!;
-    slots.push({ kind, skill: SKILL_OF_KIND[kind], seed: rng(`tryit-slot:${module.id}:${seed}:${i}`).int(1, 2 ** 31 - 2), variant: r.int(0, 3) });
+    const vs = module.tryIt.variants?.[kind]; const form = module.tryIt.forms?.[kind];
+    slots.push({ kind, skill: SKILL_OF_KIND[kind], seed: rng(`tryit-slot:${module.id}:${seed}:${i}`).int(1, 2 ** 31 - 2), variant: vs?.length ? vs[r.int(0, vs.length - 1)]! : r.int(0, 3), ...(form ? { form } : {}) });
   }
   const ordered = interleave(slots, m => TIMED_KINDS.includes(m.kind));
   const skills = [...new Set(ordered.map(m => m.skill))] as Skill[];
   // maxPerKind 99: a missed card's repeat keeps its own kind, so the run never leaves the module's kinds
-  return { seed, mode: 'practice', skills: skills.length ? skills : [...SKILLS], rung: 2, items: ordered.map(micro => ({ type: 'decision', micro })), decisionCount: TRY_IT_CARDS, maxPerKind: 99 };
+  const variants = module.tryIt.variants ? Object.fromEntries(Object.entries(module.tryIt.variants).map(([k, v]) => [k, [...(v ?? [])]])) as RunPlan['variants'] : undefined;
+  return { seed, mode: 'practice', skills: skills.length ? skills : [...SKILLS], rung: 2, items: ordered.map(micro => ({ type: 'decision', micro })), decisionCount: TRY_IT_CARDS, maxPerKind: 99, kinds, ...(variants ? { variants } : {}) };
 }
 export function tryItRun(module: TryItModule, seed: number, progress?: Progress | DecisionProgressState | null): DecisionRun { return new DecisionRun(tryItPlan(module, seed, progress)); }
 
@@ -99,3 +105,23 @@ export function tryItRun(module: TryItModule, seed: number, progress?: Progress 
 let registered: readonly (TryItModule & { controls?: readonly ControlId[] })[] = [];
 export function registerCourse(modules: readonly (TryItModule & { controls?: readonly ControlId[] })[]): void { registered = modules; }
 export function courseModule(id: string): (TryItModule & { controls?: readonly ControlId[] }) | undefined { return registered.find(m => m.id === id); }
+
+/** PT-16 SCH-013: modules 0..6 are the core; until modules 7..10 are also done, a course taker's daily and skill runs draw only the
+ *  kinds of the core modules plus those of every module completed so far (the try-it and mini-sim kinds). null = no limit: the visitor
+ *  never started the course, or modules 7..10 are done. */
+export const RUN_LIMIT_CORE = 7;
+export const RUN_LIMIT_UNTIL = [7, 8, 9, 10];
+export function runKinds(c: { modulesDone: readonly string[]; pages?: Record<string, number> } | null | undefined, modules: readonly TryItModule[] = registered): DecisionKind[] | null {
+  if (!c || !modules.length) return null;
+  const started = c.modulesDone.length > 0 || Object.values(c.pages ?? {}).some(n => n > 0);
+  if (!started) return null;
+  const done = new Set(c.modulesDone);
+  if (RUN_LIMIT_UNTIL.every(i => modules[i] && done.has(modules[i]!.id))) return null;
+  const out = new Set<DecisionKind>();
+  modules.forEach((m, i) => {
+    if (i >= RUN_LIMIT_CORE && !done.has(m.id)) return;
+    for (const k of m.tryIt.kinds) out.add(k);
+    for (const p of m.pages ?? []) if (p.kind === 'minisim' && p.decisionKind) out.add(p.decisionKind);
+  });
+  return [...out];
+}

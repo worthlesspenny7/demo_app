@@ -1,7 +1,7 @@
 /**
  * Phase VIII School layout (MOB-010, MOB-011, MOB-012): the pure model behind #/school, so the word budgets can be tested without a DOM.
  * The School page is a grid of rule cards grouped by the Four S's; the long lessons live on the Reference page under "Long form";
- * Dad's card has a "Dad reads this" mode, one rule per screen. src/ui/screens/school.ts renders exactly this model, in this order.
+ * Driver's card has a "The driver reads this" mode, one rule per screen. src/ui/screens/school.ts renders exactly this model, in this order.
  */
 import { LESSONS, type Lesson } from './lessons.js';
 import { RULES, SKILL_GROUPS, ruleById, sourceLine, words, type DecisionKind, type RuleCard, type RuleSkill } from './rules.js';
@@ -69,17 +69,17 @@ export function firstRunRuleCards(path: FirstRunStep[] = FIRST_RUN_PATH): RuleCa
   return path.flatMap(s => (s.screen === 'rule' ? [ruleById(s.rule)].filter((r): r is RuleCard => !!r) : []));
 }
 
-// ---------------------------------------------------------------- Dad reads this (MOB-011)
-export const DAD_CARD_LESSON = 'protocol';
-export const DAD_TITLE = "Dad's card";
+// ---------------------------------------------------------------- The driver reads this (MOB-011)
+export const DRIVER_CARD_LESSON = 'protocol';
+export const DRIVER_CARD_TITLE = "Driver's card";
 /** The printable card of the team-protocol lesson: its title and one line per rule. */
 export function dadCard(lessons: Lesson[] = LESSONS): { title: string; lines: string[] } {
-  const l = lessons.find(x => x.id === DAD_CARD_LESSON);
+  const l = lessons.find(x => x.id === DRIVER_CARD_LESSON);
   const b = l?.body.find((x): x is { card: { title: string; lines: string[] } } => typeof x === 'object' && 'card' in x);
-  return b ? { title: b.card.title, lines: [...b.card.lines] } : { title: DAD_TITLE, lines: [] };
+  return b ? { title: b.card.title, lines: [...b.card.lines] } : { title: DRIVER_CARD_TITLE, lines: [] };
 }
 export interface DadPage { n: number; total: number; text: string }
-/** "Dad reads this while you drive": one rule per screen. */
+/** "The driver reads this while you drive": one rule per screen. */
 export function dadPages(lessons: Lesson[] = LESSONS): DadPage[] {
   const lines = dadCard(lessons).lines;
   return lines.map((text, i) => ({ n: i + 1, total: lines.length, text }));

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ScenarioBuilder, EXITS, PERFECT_TIMEWISE, STOCK_1939_SPEEDO } from '../src/core/builder.js';
 import { Simulator, replay, ENGINE_VERSION } from '../src/core/sim.js';
 import { buildGhost, ghostTimeAt } from '../src/core/ghost.js';
-import { DRIVER_EXPERT, DRIVER_DAD_ROOKIE, DRIVER_PERFECT, INSTANT_CAR, FORD_1939, LEGAL_AIDS, TRAINING_AIDS, aidsForRung, validateScenario, nodeById, DEFAULT_RULES } from '../src/core/course.js';
+import { DRIVER_EXPERT, DRIVER_ROOKIE, DRIVER_PERFECT, INSTANT_CAR, FORD_1939, LEGAL_AIDS, TRAINING_AIDS, aidsForRung, validateScenario, nodeById, DEFAULT_RULES } from '../src/core/course.js';
 import { hms, milesToFt, mphToFps } from '../src/core/units.js';
 import { Car } from '../src/core/car.js';
 import { Speedometer } from '../src/core/speedo.js';
@@ -66,7 +66,7 @@ describe('car and speedo invariants', () => {
       const m = xs.reduce((a, b) => a + b, 0) / xs.length; return Math.sqrt(xs.reduce((a, b) => a + (b - m) * (b - m), 0) / xs.length);
     };
     expect(run(DRIVER_EXPERT)).toBeLessThanOrEqual(0.35);
-    expect(run(DRIVER_DAD_ROOKIE)).toBeGreaterThanOrEqual(0.6);
+    expect(run(DRIVER_ROOKIE)).toBeGreaterThanOrEqual(0.6);
   });
 });
 

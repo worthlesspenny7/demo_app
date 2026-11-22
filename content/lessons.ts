@@ -12,7 +12,7 @@ const TURN_ADDS_35 = r1(TURN_STOP_35 - LOSS_35_35);
 const LEAD_30_40 = r1(rampLead(30, 40, FORD_1939));
 const RAMP_30_40 = r1(LEAD_30_40 * 2);
 const fmt1 = (x: number): string => x.toFixed(1);
-/** EDU-008: every Ford number in a lesson is the simulator's car model, not Dad's car (OPEN-QUESTIONS Q12/Q22): it carries this label. */
+/** EDU-008: every Ford number in a lesson is the simulator's car model, not your own car (OPEN-QUESTIONS Q12/Q22): it carries this label. */
 export const FORD_NOTE = 'simulator default, measure your car';
 /** Timewise worked example, HB Appendix C: correct 28m43.2s vs actual 28m47.3s at factor 4315. */
 const CAL_CORRECT = 28 * 60 + 43.2, CAL_ACTUAL = 28 * 60 + 47.3, CAL_FACTOR = 4315;
@@ -386,7 +386,7 @@ const ALL_LESSONS: Lesson[] = [
         ['2024 / 2026 Training Session', 'Steve and Janet, rookie coordinators', 'the TA web form, callouts, lost, calibration, pace cars'],
       ] }, caption: 'The videos cited above. Timestamps are caption markers, good to about 30 seconds.' },
     ],
-    check: { question: 'Your restart time is 9:32:00 and your car loses 3 s getting to 30 mph. Which is right?', options: ['Leave at 9:32:00 on the dot and make up the 3 s you lose later on', 'Launch at 9:31:57, warn the driver near 9:31:30, and count to land on 9:31:57', 'Leave when the car ahead leaves, because that is your own time', 'Wait for the official at the line to release you at 9:32:00'], answer: 1, explain: 'Nobody releases you, and the car cannot go from 0 to 30 instantly: launch the standing-start loss early (9:32:00 - 3 s = 9:31:57), about 30 s of warning, and a count whose last beat lands on the launch second (Starting on Time [03:41], [04:12]). The car ahead leaving only tells you when to pull up to the sign.' },
+    check: { question: 'Your restart time is 9:32:00 and your car loses 3 s getting to 30 mph. Which is correct?', options: ['Leave at 9:32:00 on the dot and make up the 3 s you lose later on', 'Launch at 9:31:57, warn the driver near 9:31:30, and count to land on 9:31:57', 'Leave when the car ahead leaves, because that is your own time', 'Wait for the official at the line to release you at 9:32:00'], answer: 1, explain: 'Nobody releases you, and the car cannot go from 0 to 30 instantly: launch the standing-start loss early (9:32:00 - 3 s = 9:31:57), about 30 s of warning, and a count whose last beat lands on the launch second (Starting on Time [03:41], [04:12]). The car ahead leaving only tells you when to pull up to the sign.' },
   },
   {
     id: 'lost', title: 'When you are lost', minutes: 4,
@@ -411,7 +411,7 @@ const ALL_LESSONS: Lesson[] = [
     id: 'measure-car', title: 'Measure your car', minutes: 6,
     source: 'docs/research/08b-rookie-handbook-appendices.md §1 (HB Appendix B, Tables B-1 to B-3); docs/research/08-rookie-handbook-body.md §3 (HB p.7-9, the 1936 Packard charts); docs/research/10c-short-videos.md §6a (Performance Charts, Jeff Stumb [03:07]-[06:10]), §6b (X-Cup chart video [00:46]-[07:04]); docs/research/10a-training-sessions-2024-2026.md 2024 54:51; docs/spec/OPEN-QUESTIONS.md Q12, Q22; CHART-006',
     body: [
-      'The book assumes "a car can stop instantaneously and accelerate to speed instantaneously" (HB Appendix B). Your car cannot, and the charts are how you correct for it. The handbook prints a 1936 Packard\'s three charts (HB p.7-9; the Reference page): "If you do not have time to calibrate your car, the 1936 Packard charts are better than nothing." Every 1939 Ford number in this simulator is a simulator default until Dad\'s car is measured (open questions Q12 and Q22).',
+      'The book assumes "a car can stop instantaneously and accelerate to speed instantaneously" (HB Appendix B). Your car cannot, and the charts are how you correct for it. The handbook prints a 1936 Packard\'s three charts (HB p.7-9; the Reference page): "If you do not have time to calibrate your car, the 1936 Packard charts are better than nothing." Every 1939 Ford number in this simulator is a simulator default until your car is measured (open questions Q12 and Q22).',
       { heading: 'The handbook method (HB Appendix B)' },
       { list: [
         'A straight road about half a mile long with little or no traffic and a safe place to turn at each end; mark both ends with something that never moves. About 40 seconds at 50 mph is right; the exact length does not matter, because you only compare runs at the same speed.',

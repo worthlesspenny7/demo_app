@@ -13,6 +13,8 @@ export interface Excerpt {
   title: string;
   text: string;
   citation: string;
+  /** where the extraction lives in this repository (maintainers only; never shown) */
+  source?: string;
   video?: { key: VideoKey; seconds: number };
   /** flat copies of video.key / video.seconds for readers that expect them at the top level */
   videoKey?: VideoKey;
@@ -22,13 +24,15 @@ export interface Excerpt {
 const HB_CITE = 'Rookie Handbook, "Preparing for the Great Race" (Croker, rev. Sept 2015)';
 const REG_CITE = '2026 Hemmings Great Race Event Regulations';
 
+// PT-16 B22: the citation a reader sees names the document and the page, rule or time only; where the extraction lives in this repo
+// (`source`) is kept for maintainers and never shown.
 const hb = (page: string, printed: string, title: string, text: string, section: string): Excerpt =>
-  ({ key: `hb:${page}`, title, text, citation: `${HB_CITE}, ${printed}; extraction docs/research/${section}` });
+  ({ key: `hb:${page}`, title, text, citation: `${HB_CITE}, ${printed}`, source: `docs/research/${section}` });
 const reg = (rule: string, title: string, text: string, section: string): Excerpt =>
-  ({ key: `reg:${rule}`, title, text, citation: `${REG_CITE}, ${rule}; extraction docs/research/09-event-regulations-2026.md ${section}` });
+  ({ key: `reg:${rule}`, title, text, citation: `${REG_CITE}, ${rule}`, source: `docs/research/09-event-regulations-2026.md ${section}` });
 const vid = (key: VideoKey, at: string, title: string, text: string, analysis: string): Excerpt => {
   const v = videoByKey(key);
-  return { key: `video:${key}:${at}`, title, text, citation: `"${v?.title ?? key}" at ${at} (auto-captions; analysis docs/research/${analysis})`, video: { key, seconds: mmssToSeconds(at) }, videoKey: key, seconds: mmssToSeconds(at) };
+  return { key: `video:${key}:${at}`, title, text, citation: `"${v?.title ?? key}" at ${at} (from the video's auto-captions)`, source: `docs/research/${analysis}`, video: { key, seconds: mmssToSeconds(at) }, videoKey: key, seconds: mmssToSeconds(at) };
 };
 
 const LIST: Excerpt[] = [
@@ -124,6 +128,8 @@ const LIST: Excerpt[] = [
     'The calibration instructions print the interval and the cumulative time (example "elapsed time 7 minutes 19.7 seconds"). Record your split in Column D: "I\'m not trying to match that; I\'m comparing it to the optimal time."', '10a-training-sessions-2024-2026.md B2'),
   vid('2026', '80:03', 'The driver says mark',
     'The driver helps by turning his head to the sign and saying "mark" when the two posts of the sign are parallel; for overhead signs use the bridge abutment. It is especially helpful for signs on the left.', '10a-training-sessions-2024-2026.md B2'),
+  vid('2026', '92:24', 'Splitting a sign',
+    'Steve on splitting a sign: do not wait until you are abeam the sign; "start the speed change before you get there" and "hit that sign right about the middle of your speed change". Doing 30 and going down to 20, be at 25 abeam the sign; it works going up and going down.', '10a-training-sessions-2024-2026.md B2'),
   vid('2026', '93:25', 'A blank box keeps the speed',
     'A blank Column C box is a sign where you do not change speed: write the previous speed in it. Write the speed from the bottom of each page at the top of the next: "they don\'t remember what speed you told them".', '10a-training-sessions-2024-2026.md B2'),
   vid('2026', '94:27', 'Missed the turn: time the way back',

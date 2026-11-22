@@ -8,7 +8,7 @@ import { aidsForRung, FORD_1939, DRIVER_EXPERT, type Scenario, type TurnDir } fr
 import { buildGhost, ghostTimeAt } from '../ghost.js';
 import { generateLeg, PROFILES } from '../generator/generate.js';
 import { rng, type Rng } from '../rng.js';
-import type { DecisionKind, MicroSpec } from './types.js';
+import type { DecisionKind, MicroSpec, MicroForm, SignForm } from './types.js';
 import { SKILL_OF_KIND, DECISION_KINDS } from './types.js';
 
 /** What the card of a micro scenario adds to the scenario itself (the runner reads it; a boss leg has none). */
@@ -25,6 +25,10 @@ export interface MicroHint {
   size?: 'short' | 'long';
   /** lost: seconds after leaving the route that the driver notices (the card's "N s ago", MOB-056). */
   lostAgo?: number;
+  /** PT-16 SCH-015: the watch card's School form: START at the first sign, LAP at the second (both rows carry a START / LAP remark). */
+  watch?: 'lap';
+  /** SCH-025: the sign case of a School pre-read speed card */
+  sign?: SignForm;
 }
 
 /** What a DecisionRunner needs to play a micro scenario. */
@@ -88,9 +92,32 @@ function restartHere(b: ScenarioBuilder, r: Rng, speed: number, asp: number): vo
 }
 
 /** Build the micro scenario for one decision kind. `variant` picks among the shapes a kind has (see each case). */
-export function microScenario(kind: DecisionKind, seed: number, variant = 0, rung: 0 | 1 | 2 | 3 = 2): MicroScenario {
+export function microScenario(kind: DecisionKind, seed: number, variant = 0, rung: 0 | 1 | 2 | 3 = 2, form?: MicroForm): MicroScenario {
   const r = rng(`micro:${kind}:${seed}:${variant}`);
   const one = (sc: Scenario, extra: Partial<MicroScenario> = {}): MicroScenario => ({ scenario: { ...sc, tags: [...(sc.tags ?? []), 'micro', `micro:${kind}`] }, kinds: [kind], maxDecisions: 1, ...extra });
+  if (kind === 'watch' && form === 'lap') {
+    // PT-16 SCH-015: two landmark signs 9-14 s apart at a steady speed; START as the car reaches the first, LAP at the second, read the lap
+    const v = r.pick([30, 35, 40]); const b = builder(kind, seed, rung).start(v);
+    const [a, z] = shuffled2(['bridge', 'water tower', 'grain elevator', 'red barn', 'church'], r);
+    b.advanceMiles(0.45 + r.next() * 0.15).instruction({ label: a, sightDistance: 500 }, { remark: 'START watch' });
+    b.advanceFt(Math.round(mphToFpsLocal(v) * r.int(9, 14))).instruction({ label: z, sightDistance: 500 }, { remark: 'LAP watch' });
+    return one(close(b, 0.35), { hint: { watch: 'lap' } });
+  }
+  if (kind === 'preread' && form?.startsWith('sign:')) {
+    // SCH-025: one sign row for the pre-read speed question, built to the trap the case teaches
+    const v = r.pick([30, 35]); const nv = r.pick([v + 10, v - 5, v + 5]); const b = builder(kind, seed, rung).start(v);
+    b.advanceMiles(0.4 + r.next() * 0.2);
+    switch (form as SignForm) {
+      case 'sign:normal': b.speedAtSign(`SPEED LIMIT ${nv}`, nv); break;
+      case 'sign:limit': b.speedAtSign(`SPEED LIMIT ${nv + 10}`, nv); break;                     // the posted limit is not the book's speed
+      case 'sign:blank': b.instruction({ sign: { text: 'CURVE', shape: 'diamond', side: 'R' }, sightDistance: 500 }, {}); b.advanceMiles(0.3).speedAtSign(`SPEED LIMIT ${nv}`, nv); break;
+      case 'sign:partial': b.speedAtSign('WELCOME TO GRANITE CITY', nv, { hint: 'At "Welcome to"' }); break;
+      case 'sign:twin': b.node({ sign: { text: `SPEED LIMIT ${nv + 10}`, shape: 'speedlimit', side: 'R' }, sightDistance: 500 }); b.advanceFt(700).speedAtSign(`SPEED LIMIT ${nv}`, nv, { shape: 'speedlimit' }); break;
+      case 'sign:overhead': b.instruction({ sign: { text: `SPEED LIMIT ${nv}`, shape: 'rect', side: 'O' }, sightDistance: 500 }, { speed: nv }); break;
+      case 'sign:bracket': b.speedAtSign(`SPEED LIMIT ${nv}`, nv, { hint: `(Old road was ${nv + 15} MPH)` }); break;
+    }
+    return one(close(b, 0.45 + r.next() * 0.2), { prereadRows: 1, hint: { sign: form as SignForm } });
+  }
   switch (kind) {
     case 'pause': {
       const v = r.pick([25, 30, 35, 40, 45]); const b = builder(kind, seed, rung).start(v);
@@ -228,7 +255,9 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
 }
 
 /** Micro spec -> scenario. */
-export function buildMicro(m: MicroSpec, rung: 0 | 1 | 2 | 3 = 2): MicroScenario { return microScenario(m.kind, m.seed, m.variant, rung); }
+export function buildMicro(m: MicroSpec, rung: 0 | 1 | 2 | 3 = 2): MicroScenario { return microScenario(m.kind, m.seed, m.variant, rung, m.form); }
+const mphToFpsLocal = (mph: number): number => mph * 5280 / 3600;
+function shuffled2<T>(xs: readonly T[], r: Rng): [T, T] { const a = xs.slice(); for (let i = a.length - 1; i > 0; i--) { const j = r.int(0, i); [a[i], a[j]] = [a[j]!, a[i]!]; } return [a[0]!, a[1]!]; }
 
 /** The boss run's leg: a full generated leg in decision mode, at most one card of each kind (MOB-059: the micro slots after it cover every
  *  kind; the Scheduler fills the plan to its fixed card count). */

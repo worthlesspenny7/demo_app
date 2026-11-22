@@ -30,7 +30,7 @@ const campaignLink = el('a', { href: '#/campaign', 'data-nav': '#/campaign', id:
 nav.append(el('a', { href: '?mode=mobile#/m', id: 'nav-phone', title: 'the phone shell: one decision every few seconds' }, 'Phone mode'));
 nav.append(el('span', { class: 'spacer' }), el('span', { class: 'muted', id: 'navnote', style: 'font-size:12px' }, ''));
 const view = el('main', { id: 'view', tabindex: '-1' });
-/** In the phone shell a Desk screen (Reference, Dad's card) gets a slim bar back to the phone Home instead of the Desk nav. */
+/** In the phone shell a Desk screen (Reference, Driver's card) gets a slim bar back to the phone Home instead of the Desk nav. */
 const mobBack = el('a', { class: 'mob-back', href: '#/m' }, '‹ Home');
 root.replaceChildren(nav, mobBack, view);
 
@@ -60,9 +60,9 @@ function route(): void {
   if (/^run(\?|$)/.test(screen)) { const skill = new URLSearchParams(screen.replace(/^run\??/, '')).get('skill'); location.replace(skill ? `#/m/play/skill/${encodeURIComponent(skill)}` : '#/m/play/practice'); return; }
   const mobileRoute = screen === 'm' || (shellMode === 'mobile' && screen === '');
   // the School player is full-screen in the phone shell (its own strip) and on a first visit (SCH-010: nothing else first)
-  const schoolFull = screen === 'school' && parts[1] !== 'dad' && (shellMode === 'mobile' || firstVisit);
+  const schoolFull = screen === 'school' && parts[1] !== 'driver-card' && (shellMode === 'mobile' || firstVisit);
   document.body.classList.toggle('mob-route', mobileRoute || schoolFull);
-  document.body.classList.toggle('s2-route', screen === 'school' && parts[1] !== 'dad');
+  document.body.classList.toggle('s2-route', screen === 'school' && parts[1] !== 'driver-card');
   if (screen !== 'school') firstVisit = false;
   try {
     if (mobileRoute) { cleanup = renderMobile(view, screen === 'm' ? parts.slice(1) : []); return; }

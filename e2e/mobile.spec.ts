@@ -1,6 +1,6 @@
 // Phase VIII phone shell (MOB-020..026, MOB-030/031, MOB-041) on phone viewports. Desk mode stays at 1366 x 800 in the other specs.
 import { test, expect } from '@playwright/test';
-import { PHONES, state, step, toDecision, geometry, expectPhoneGeometry, collectErrors, screenWords, type W } from './mobile-helpers.js';
+import { PHONES, state, step, toDecision, geometry, expectPhoneGeometry, collectErrors, screenWords, type W, startCard } from './mobile-helpers.js';
 
 for (const vp of PHONES) {
   test.describe(`phone ${vp.width}x${vp.height}`, () => {
@@ -13,13 +13,13 @@ for (const vp of PHONES) {
       // SCH-010: a brand-new visitor lands on the School's Module 0 first; its Home button opens the phone Home
       await expect(page.locator('[data-testid=first-visit]')).toBeVisible();
       await page.locator('[data-testid=s2-home]').click();
-      // MOB-025 Home: Daily set, five meters, streak, Dad's card, Desk mode (Continue appears once a run is unfinished)
+      // MOB-025 Home: Daily set, five meters, streak, Driver's card, Desk mode (Continue appears once a run is unfinished)
       await expect(page.locator('[data-screen=home]')).toBeVisible();
       await expect(page.locator('.nav')).toBeHidden();
       await expect(page.locator('[data-testid=play-daily]')).toBeVisible();
       await expect(page.locator('.mob-meter')).toHaveCount(5);
       await expect(page.locator('[data-testid=streak]')).toHaveText(/Streak \d+/);
-      await expect(page.locator('[data-testid=dads-card]')).toBeVisible();
+      await expect(page.locator('[data-testid=drivers-card]')).toBeVisible();
       await expect(page.locator('[data-testid=desk-mode]')).toBeVisible();
       await expect(page.locator('[data-testid=school]')).toHaveAttribute('href', '#/school');   // MOB-061: the School is one tap from the phone Home
       const home = await geometry(page);
@@ -84,7 +84,8 @@ test.describe('phone 390x844', () => {
           await expect(face).toBeVisible();
           await expect(face).toContainText(st.kind === 'pause' ? 'GO' : 'LAUNCH');
           const box = (await face.boundingBox())!; expect(box.height).toBeGreaterThanOrEqual(140); expect(box.width).toBeGreaterThanOrEqual(PHONES[0].width - 40);
-          // the digits run (1/100 s) from the card's moment
+          // the digits run (1/100 s) from the Start tap (SCH-022: frozen until then)
+          await startCard(page);
           const a = await page.locator('[data-testid=watch-digits]').textContent(); await page.waitForTimeout(120); const b = await page.locator('[data-testid=watch-digits]').textContent();
           expect(a).toMatch(/^\d+:\d\d\.\d\d$/); expect(a).not.toBe(b);
           faces.add('go');
@@ -102,7 +103,7 @@ test.describe('phone 390x844', () => {
     await page.setViewportSize({ width: 844, height: 390 });
     await expect(page.locator('body')).toHaveClass(/mob-landscape/);
     await expect(page.locator('[data-testid=driver-line]')).toBeVisible();
-    await expect(page.locator('[data-testid=driver-line]')).toHaveText(/^Dad: /);
+    await expect(page.locator('[data-testid=driver-line]')).toHaveText(/^Driver: /);
     const mid = await state(page);
     expect(mid.id).toBe(before.id); expect(mid.n).toBe(before.n);
     const acts = (await page.locator('[data-testid=actions]').boundingBox())!, main = (await page.locator('.mob-main').boundingBox())!;
@@ -200,7 +201,7 @@ test.describe('phone 390x844', () => {
     await expect(page.locator('[data-testid=verdict]')).toHaveAttribute('data-correct', 'false');
     await expect(page.locator('.mv-sec')).toHaveText(/s$/);
     await expect(page.locator('.mv-rule')).not.toBeEmpty();
-    expect((await page.evaluate(() => (window as unknown as { __vib: number[][] }).__vib)).slice(-1)).toEqual([[60, 80, 60]]);   // (a timed card may buzz once at Dad's Mark! first)
+    expect((await page.evaluate(() => (window as unknown as { __vib: number[][] }).__vib)).slice(-1)).toEqual([[60, 80, 60]]);   // (a timed card may buzz once at the driver's Mark! first)
     const n0 = (await state(page)).answered;
     await page.locator('.mob-actions [data-action=next]').click();
     await toDecision(page);
@@ -215,7 +216,7 @@ test.describe('phone 390x844', () => {
     expect(errors).toEqual([]);
   });
 
-  test('MOB-052 a speed-change or timed-start card shows the sign arriving: the bar shrinks to zero and Dad says Mark! at the sign', async ({ page }) => {
+  test('MOB-052 a speed-change or timed-start card shows the sign arriving: the bar shrinks to zero and the driver says Mark! at the sign', async ({ page }) => {
     test.setTimeout(180_000);
     await page.goto('/?mode=mobile#/m/play/skill/stayOnTime');
     let seen = false;
@@ -227,6 +228,7 @@ test.describe('phone 390x844', () => {
         const bar = page.locator('[data-testid=sign-bar]'); await expect(bar).toBeVisible();
         await expect(page.locator('[data-testid=mark]')).toHaveText('');
         const w0 = await page.locator('.msign-fill').evaluate(e => (e as HTMLElement).getBoundingClientRect().width);
+        await startCard(page);   // SCH-022: the sign arrives only after Start
         await page.waitForFunction(x => (window as unknown as W).__rally.decision.elapsed() >= x + 0.1, t.signSeconds, { polling: 'raf', timeout: 60_000 });
         await expect(page.locator('[data-testid=mark]')).toHaveText('Mark!');
         expect(await page.locator('.msign-fill').evaluate(e => (e as HTMLElement).getBoundingClientRect().width)).toBeLessThan(Math.max(2, w0 * 0.05));

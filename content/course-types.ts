@@ -37,7 +37,17 @@ export interface WidgetParams {
 interface PageBase { refs: Ref[] }
 export interface ConceptPage extends PageBase { kind: 'concept'; title: string; words: string; figure?: string }
 export interface ExamplePage extends PageBase { kind: 'example'; title: string; lines: string[] }
-export interface MinisimPage extends PageBase { kind: 'minisim'; decisionKind: DecisionKind; seed: number; control: ControlId; why: string }
+export interface MinisimPage extends PageBase {
+  kind: 'minisim'; decisionKind: DecisionKind; seed: number; control: ControlId; why: string;
+  /** PT-16: the sub-case variant of the card (default seed % 4) */
+  variant?: number;
+  /** PT-16 SCH-015: the School form of the kind ('lap': the watch card as START at one sign, LAP at the next) */
+  form?: import('../src/core/decision/types.js').MicroForm;
+  /** PT-16 SCH-012: the one-line pointer, when the control's default line does not name what this card grades */
+  pointer?: string;
+  /** SCH-025: further cases played on the same page after a correct answer (the page's own seed / form / why is the first case) */
+  rounds?: { seed: number; form?: import('../src/core/decision/types.js').MicroForm; variant?: number; why: string; pointer?: string }[];
+}
 export interface WidgetPage extends PageBase { kind: 'widget'; widget: WidgetId; params: WidgetParams }
 export interface CheckPage extends PageBase { kind: 'check'; question: string; options: string[]; answer: number }
 export type Page = ConceptPage | ExamplePage | MinisimPage | WidgetPage | CheckPage;
@@ -49,6 +59,10 @@ export interface TryIt {
   /** the decision kinds the 5 cards use */
   kinds: DecisionKind[];
   cards: 5;
+  /** PT-16 SCH-020: the sub-case variants a kind may take (Module 0: green checkpoints only) */
+  variants?: Partial<Record<DecisionKind, number[]>>;
+  /** PT-16 SCH-015: the School form a kind is played in (Module 3: the watch as START / LAP) */
+  forms?: Partial<Record<DecisionKind, import('../src/core/decision/types.js').MicroForm>>;
 }
 
 export interface Module {

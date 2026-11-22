@@ -55,9 +55,9 @@ describe('MOB-074 P3: the driver\'s line on a checkpoint card matches the varian
     const line = (variant: number): string => { const d = microRunner(microScenario('checkpoint', 3, variant), 2).next()!; return driverLine(d); };
     const lines = new Map<string, string>();
     for (let v = 0; v < 6; v++) { const d = microRunner(microScenario('checkpoint', 3, v), 2).next()!; lines.set(/red GREAT RACE STOP/.test(d.prompt) ? 'red' : /pulls off/.test(d.prompt) ? 'car' : 'green', line(v)); }
-    expect(lines.get('red')).toBe('Dad: "Red board ahead, we stop."');
-    expect(lines.get('green')).toBe('Dad: "Green sign up ahead."');
-    expect(lines.get('car')).toBe('Dad: "Car ahead pulling off, we keep going."');
+    expect(lines.get('red')).toBe('Driver: "Red board ahead, we stop."');
+    expect(lines.get('green')).toBe('Driver: "Green sign up ahead."');
+    expect(lines.get('car')).toBe('Driver: "Car ahead pulling off, we keep going."');
   });
 });
 

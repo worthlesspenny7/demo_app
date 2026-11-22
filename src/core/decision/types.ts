@@ -54,6 +54,9 @@ export interface TimingSpec {
   /** What the tap does in the car ("GO", "LAUNCH", "CALL 45", "START"). */
   tapLabel: string;
   secondTapLabel?: string;
+  /** PT-16 SCH-015: signs the card times taps against, in order: seconds from the card's moment until the car reaches each, its distance
+   *  then (ft) and a short label; the card's bar runs to the next one and shows "Mark!" as the car reaches it. */
+  cues?: { at: number; ft: number; label: string }[];
 }
 
 /** A book row as shown on the card (GRIID columns, see src/core/griid.ts). */
@@ -164,7 +167,13 @@ export interface MicroSpec {
   kind: DecisionKind; skill: Skill; seed: number; variant: number;
   /** Boss run: play a full generated leg (seed = `seed`) in decision mode, up to this many decisions of every kind (MOB-031). */
   bossLeg?: number;
+  /** PT-16 SCH-015: the School's stopwatch form of a kind ('lap': the watch card as START at one sign, LAP at the next, read the lap). */
+  form?: MicroForm;
 }
+/** PT-16 / SCH-025: the School's sign cases of a pre-read "what speed" card: the normal case, then the traps. */
+export const SIGN_FORMS = ['sign:normal', 'sign:limit', 'sign:blank', 'sign:partial', 'sign:twin', 'sign:overhead', 'sign:bracket'] as const;
+export type SignForm = (typeof SIGN_FORMS)[number];
+export type MicroForm = 'lap' | SignForm;
 
 export type RunItem =
   | { type: 'rule'; card: RuleCard }
@@ -185,6 +194,10 @@ export interface RunPlan {
   drillId?: string;
   /** PT-14 N5: the per-kind cap of this run (MAX_PER_KIND, relaxed in a single-skill run so the run is two thirds that skill). */
   maxPerKind?: number;
+  /** PT-16 SCH-013: the only decision kinds this run may draw (the course progress of a School taker); absent = every kind. */
+  kinds?: DecisionKind[];
+  /** PT-16 SCH-020: the sub-case variants a kind may take in this run (a School try-it: green checkpoints only in Module 0). */
+  variants?: Partial<Record<DecisionKind, number[]>>;
 }
 
 export interface SkillTally { skill: Skill; correct: number; total: number; seconds: number }

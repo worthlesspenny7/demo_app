@@ -52,7 +52,7 @@ test('PLAY-036 a lesson check shuffles its options each time it is drawn, and cl
   const seen = new Set<number>();
   for (let i = 0; i < 14; i++) { await page.goto('/#/lesson/ghost-car'); await page.reload(); const opts = await page.locator('.quiz .opt').allInnerTexts(); expect([...opts].sort()).toEqual([...right.check.options].sort()); seen.add(opts.indexOf(rightText)); }
   expect(seen.size).toBeGreaterThanOrEqual(3);
-  await page.locator('.quiz .opt', { hasText: rightText }).click(); await expect(page.locator('.quiz .opt.right')).toHaveText(rightText); await expect(page.locator('.quiz .ok')).toContainText('Right.');
+  await page.locator('.quiz .opt', { hasText: rightText }).click(); await expect(page.locator('.quiz .opt.right')).toHaveText(rightText); await expect(page.locator('.quiz .ok')).toContainText('Correct.');
   await page.goto('/#/'); await expect(page.locator('#starthere-panel li[data-step="ghost-car"]')).toHaveClass(/done/);
 });
 
@@ -107,9 +107,9 @@ test('PLAY-040 a long lesson is two pages (page 1, Next page, then the source, t
   await openDrill(page, 'D08', 0); await expect(page.locator('#scale')).toHaveText(/^[124]x/);
 });
 
-test('PLAY-041 status line says Dad, the D03 keys say "digital watch: lap L", the lock chip names the lesson, the folded pre-read does not overlap', async ({ page }) => {
+test('PLAY-041 status line says Driver, the D03 keys say "digital watch: lap L", the lock chip names the lesson, the folded pre-read does not overlap', async ({ page }) => {
   await openDrill(page, 'D16', 0);
-  const bar = await page.locator('.drawer .bar').innerText(); expect(bar).toMatch(/Dad \(expert\)/); expect(bar).not.toMatch(/\bPro\b/);
+  const bar = await page.locator('.drawer .bar').innerText(); expect(bar).toMatch(/Driver \(expert\)/); expect(bar).not.toMatch(/\bPro\b/);
   await page.locator('#preread-toggle').click(); await expect(page.locator('.preread.collapsed')).toBeVisible();
   const title = await page.locator('.preread.collapsed .preread-top h2').boundingBox(); const btn = await page.locator('#preread-toggle').boundingBox(); const hud = await page.locator('.hud').boundingBox(); const box = await page.locator('.preread.collapsed .box').boundingBox();
   expect(title).not.toBeNull(); expect(btn).not.toBeNull();
@@ -121,7 +121,7 @@ test('PLAY-041 status line says Dad, the D03 keys say "digital watch: lap L", th
   await expect(page.locator('#starthere-panel li[data-step="D10"]')).toContainText('needs pass the lesson "When you are lost"'); await expect(page.locator('#starthere-panel li[data-step="D10"]')).not.toContainText('"lost"');
 });
 
-test('PLAY-041 Dad\'s card prints on one page with 0.6 in margins at 13 pt', async ({ page }) => {
+test('PLAY-041 Driver\'s card prints on one page with 0.6 in margins at 13 pt', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => undefined; });
   await page.goto('/#/lesson/protocol');   // PT-11 (PLAY-048): one page, the card on it
   const margin = await page.evaluate(() => { for (const sh of Array.from(document.styleSheets)) for (const r of Array.from(sh.cssRules)) if (r instanceof CSSPageRule) return r.style.margin; return null; });
