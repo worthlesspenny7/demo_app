@@ -26,10 +26,10 @@ and interactivity are not.
 |---|---|---|---|---|
 | 0 | What is a TSD rally? | ghost car, assigned speeds, hidden checkpoints, 1 point per second, Ace; the Great Race in two sentences; driver and navigator roles | none (watch a car vs the ghost) | "Hold 35": slide the car's speed, watch the seconds drift; "Where is the checkpoint?" tap when you think a leg ended |
 | 1 | The book and the car | the five columns, CAMEO dot and arrow, Column C numbers, "which way" | the book row, next/previous | which way (3 rows), what speed (2 rows) |
-| 2 | Calling the driver | ICE, read-backs, "mark", the stop count, GO | call a turn, call a speed, say GO | call the turn before the point; call the speed at the sign |
+| 2 | Calling the driver | ICE, read-backs, "mark" (the driver is Dad), the stop count, GO | call a turn, the distance bar, call a speed, say GO | call the turn before the point; call the speed at the sign |
 | 3 | The stopwatch | start, stop, lap; interval vs cumulative; the tap-watch | START/STOP, LAP | lap at three markers; read a split |
 | 4 | Stops and pauses | the printed pause, the car's loss, the chart cell, sit N seconds, GO | the chart card (one cell) | tap GO at the chart second (three stops) |
-| 5 | Speed changes and timed holds | split at the sign, lead = half the ramp, timed counts from the ghost's departure | the distance bar, Mark!, CALL | call at the Mark; START at the sign then CALL |
+| 5 | Speed changes and timed holds | split at the sign, lead = half the ramp, timed counts from the ghost's departure | CALL half a ramp before the Mark | call at the Mark; START at the sign then CALL |
 | 6 | The clock and starting on time | base + position, launch early by the start loss, the loose minute hand, watch TOD mode | the dash clock, TOD strip, LAUNCH | read the minute; tap the launch second |
 | 7 | Staying on course | course before time, traps (sideroads, signs that are not the sign), lost procedure, the car behind as your clock | none new | which way with distractors; lost: what now |
 | 8 | Early, late and recovery | the 10 % and 20 % rules, chunks, never inside a timed interval, shortening a stop | the make-up buttons | make-up choices (three cases) |
@@ -39,6 +39,11 @@ and interactivity are not.
 | 12 | Your first full run | what a run is, the daily set, meters, the Boss, Desk mode | all; Desk unlocked | a 10-card run with hints |
 
 Modules 0 to 6 are the core: finishing them unlocks the unguided runs. Modules 7 to 12 unlock the rest.
+
+PT-16 changes (fix sprint, SCH-011..020): "mark" and the distance bar move into Module 2 (its CALL mini-sim needs them); Module 3's
+mini-sims and try-it use the watch card's stopwatch form (START at one sign, LAP at the next, read the lap); the lap-plus-hold "when to
+call" card and the word "lead" move to Module 5; Module 2's try-it is pre-read, turn and pause; until Modules 7-10 are done, a course
+taker's daily and skill runs draw only the kinds of Modules 0-6 and of completed modules.
 
 ## Interaction model
 - Page navigation: swipe or tap-right for next, with a page dot strip; the module remembers the page.
@@ -58,3 +63,13 @@ Modules 0 to 6 are the core: finishing them unlocks the unguided runs. Modules 7
 - A newcomer's first mini-sim within 90 seconds of opening the School.
 - Every control used in the first unguided run was introduced by a module before it.
 - Rubric (0-5): clarity for a newcomer, interaction density, fun, "I know what to do next", reference access.
+
+## Josh's notes after playing (2026-11-22), folded into the spec as SCH-021..027
+- "Right" is a direction in this game; affirmative feedback uses other words.
+- Timed challenges start on a Start button after the instructions are shown; nothing ticks before that.
+- Checks must test the concept with distinct options (Module 0's "hold speed" check taught nothing).
+- Module 0 explains driver, navigator (co-driver) and organizers talking through the roadbook, and opens with a vibe page
+  (attributed stills, a short video when a URL exists).
+- Module 1 calling: one normal case, then odd cases that make you think.
+- Module 2 must not ask for the go time before the arithmetic is taught; give the number on the card, teach the sum in Module 4.
+- The driver is "the driver", never "Dad".
