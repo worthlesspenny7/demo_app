@@ -48,6 +48,8 @@ export function normalize(raw: unknown): DecisionProgressState {
     unfinished: r.unfinished && Array.isArray(r.unfinished.plan?.items) && Array.isArray(r.unfinished.responses) ? r.unfinished : null,
     runs: typeof r.runs === 'number' ? r.runs : 0,
     ...(typeof r.bossRuns === 'number' ? { bossRuns: r.bossRuns } : {}),
+    // SCH-004: the Rally School course progress rides along (the engine's CourseState; school2/progress.ts reads and writes it)
+    ...(r.course && typeof r.course === 'object' ? { course: r.course } : {}),
   };
 }
 

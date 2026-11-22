@@ -220,6 +220,11 @@ export interface DecisionProgressState {
   runs: number;
   /** MOB-059: finished Boss runs (the first one plays at rung 2 with the chart on the card, later ones at rung 1 with a chart button). */
   bossRuns?: number;
+  /** SCH-004: the Rally School course progress (Phase IX), stored with the decision progress. */
+  course?: CourseState;
 }
+
+/** SCH-004: course progress. `pages[id]` is the page the learner reached (0-based count of pages completed), `tryItStars[id]` the best try-it stars. */
+export interface CourseState { modulesDone: string[]; pages: Record<string, number>; tryItStars: Record<string, number> }
 
 export type { Scenario };

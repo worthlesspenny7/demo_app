@@ -1,8 +1,10 @@
 /**
- * School (Phase VIII, MOB-010): a grid of rule cards grouped by the Four S's (content/rules.ts), each with a "Try it" button, and the lessons' check
- * questions as one-tap cards. The long lessons moved to the Reference page under "Long form"; `#/school/<lesson id>` still opens one (saved progress and
- * links keep working). `#/school/dad` is Dad's card with its "Dad reads this" mode (MOB-011). The page layout is the pure model in content/school-layout.ts.
- * Blocks (lists, call patterns, tables, the printable driver card) render from content/lessons.ts.
+ * School routes (Phase IX, SCH-008). `#/school...` is Rally School 2.0, the course page player (src/ui/school2/player.ts), at phone and
+ * desk width alike; `#/school/<old lesson id>` redirects to the module that covers it; `#/school/dad` is Dad's card with its "Dad reads
+ * this" mode (MOB-011). The Phase VIII rule-card grid (MOB-010: cards grouped by the Four S's, each with "Try it", and the lessons'
+ * check questions as one-tap cards) moved under Reference as "Rules" (`#/reference/rules`, renderRules); the long lessons stay in
+ * Reference long form and read as one page each at `#/lesson/<id>` (renderLongLesson). The rule grid's layout is the pure model in
+ * content/school-layout.ts; blocks (lists, call patterns, tables, the printable driver card) render from content/lessons.ts.
  */
 import { LESSONS, type LessonBlock } from '../../../content/lessons.js';
 import { CARD_PARTS, cardPartText, checkCards, dadCard, dadPages, dadStep, dadSwipe, schoolGroups, schoolIntro, SCHOOL_TITLE, tryHash, DAD_TITLE, type CheckCard } from '../../../content/school-layout.js';
@@ -11,6 +13,9 @@ import { app, el } from '../state.js';
 import { narrowScreen } from './reference.js';
 import { allDrills } from '../../core/drills/index.js';
 import { shuffleCheck } from '../viewmodels/lessoncheck.js';
+import { renderCourse } from '../school2/player.js';
+import { renderTryItRecap, startTryIt } from '../school2/tryit.js';
+import { moduleById, moduleForLesson } from '../school2/sources.js';
 import { startPathFromProgress, pathNext, beyondPathNext, unlockBest, pathStars, type PathNext } from '../viewmodels/curriculum.js';
 
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
@@ -80,7 +85,7 @@ function ruleCardEl(c: RuleCard): HTMLElement {
     else if (part === 'try') { const b = el('button', { class: 'primary try-it', 'data-skill': c.skill }, text); b.onclick = () => { location.hash = tryHash(c.skill); }; head.append(b); }
     else if (part === 'text') card.append(el('p', { class: 'rule-text' }, text));
     else if (part === 'source') card.append(el('p', { class: 'cite' }, text));
-    else if (part === 'long' && c.lesson) card.append(el('a', { href: `#/school/${c.lesson}`, class: 'rule-long', 'data-lesson-link': c.lesson }, text));
+    else if (part === 'long' && c.lesson) card.append(el('a', { href: `#/lesson/${c.lesson}`, class: 'rule-long', 'data-lesson-link': c.lesson }, text));
   }
   return card;
 }
@@ -105,7 +110,8 @@ function checkCardEl(c: CheckCard): HTMLElement {
 }
 
 function renderRuleIndex(page: HTMLElement): void {
-  page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, SCHOOL_TITLE), el('p', { class: 'muted', id: 'school-intro' }, schoolIntro()));
+  page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, 'Rules'), el('p', { class: 'muted', id: 'school-intro' }, schoolIntro()),
+    el('p', { class: 'muted', id: 'rules-course' }, `The ${SCHOOL_TITLE} is now a short course: `, el('a', { href: '#/school' }, 'open Rally School'), '.'));
   const groups = el('div', { class: 'school-groups' });
   // PT-14 item 10: on a phone each skill group is a collapsible section (the first one open), its cards one list
   const phone = narrowScreen(); page.classList.add('school-page');
@@ -128,7 +134,7 @@ function renderRuleIndex(page: HTMLElement): void {
 function renderDad(page: HTMLElement): void {
   const card = dadCard(); const pages = dadPages();
   const read = el('button', { class: 'primary', id: 'dad-read', style: 'min-height:56px;font-size:18px' }, 'Dad reads this');
-  const back = el('button', { id: 'dad-back', style: 'min-height:48px' }, 'All rules'); back.onclick = () => { location.hash = '#/school'; };
+  const back = el('button', { id: 'dad-back', style: 'min-height:48px' }, 'All rules'); back.onclick = () => { location.hash = '#/reference/rules'; };
   page.append(el('style', {}, SCHOOL_CSS), el('h1', {}, DAD_TITLE), el('p', { class: 'muted' }, `${pages.length} rules for the driver. Print the card for the car, or tap Dad reads this to see one rule per screen.`),
     el('div', { class: 'actions', style: 'display:flex;gap:8px;margin:8px 0' }, read, back), el('div', { class: 'lesson' }, renderBlock({ card })));
   read.onclick = () => openDadReader(page, pages.map(p => p.text));
@@ -157,13 +163,28 @@ function openDadReader(host: HTMLElement, lines: string[]): void {
   show(); host.append(reader); try { reader.focus(); } catch { /* jsdom */ }
 }
 
-export function renderSchool(root: HTMLElement, lessonId?: string): void {
+/** SCH-008: the rule-card grid, under Reference as "Rules" (#/reference/rules). */
+export function renderRules(root: HTMLElement): void { const page = el('div', { class: 'page', id: 'rules-page' }); renderRuleIndex(page); root.replaceChildren(page); }
+
+/** SCH-006 / SCH-008: `#/school/...` routes. Returns a cleanup (the player's listeners and timers). */
+export function renderSchool(root: HTMLElement, parts: string[] = []): (() => void) | null {
+  const [lessonId, sub] = parts; const id = lessonId;
+  if (lessonId === 'dad') { const page = el('div', { class: 'page' }); renderDad(page); root.replaceChildren(page); return null; }
+  if (id && !moduleById(id) && id !== 'modules') {
+    // an old lesson id: the module that covers it (the long form stays at #/lesson/<id>)
+    const m = moduleForLesson(id); location.replace(m ? `#/school/${m.id}` : '#/school'); return null;
+  }
+  if (id && sub === 'try') { startTryIt(id); return null; }
+  if (id && sub === 'recap') { renderTryItRecap(root, id); return null; }
+  return renderCourse(root, parts);
+}
+
+/** A long lesson as one reading (Reference long form; #/lesson/<id>). */
+export function renderLongLesson(root: HTMLElement, lessonId?: string): void {
   const page = el('div', { class: 'page' });
   const lesson = LESSONS.find(l => l.id === lessonId);
-  if (lessonId === 'dad') {
-    renderDad(page);
-  } else if (!lesson) {
-    renderRuleIndex(page);
+  if (!lesson) {
+    location.replace('#/reference/long'); return;
   } else {
     const idx = LESSONS.indexOf(lesson);
     const box = el('div', { class: 'lesson panel' }, el('h3', {}, `Lesson ${idx + 1} of ${LESSONS.length}`), el('h1', {}, lesson.title), el('p', { class: 'muted', id: 'lesson-longform' }, 'This reading is also on the Reference page, under ', el('a', { href: `#/reference/long-${lesson.id}` }, 'Long form'), '.'));
@@ -200,14 +221,14 @@ export function renderSchool(root: HTMLElement, lessonId?: string): void {
     });
     quiz.append(fb); rest.append(quiz);
     const nav = el('div', { class: 'actions', style: 'display:flex;gap:8px;margin-top:12px' });
-    const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/school'; }; nav.append(back);
+    const back = el('button', {}, 'All lessons'); back.onclick = () => { location.hash = '#/reference/long'; }; nav.append(back);
     // PLAY-001 / PLAY-023: a lesson on the Start-here path leads to the path's next step (the next lesson when one is due, else the drill); the next lesson in the School stays one click away
     let onPath: PathNext | null = null;
     {   // PT-11 N-D9: every lesson (a "Read first" lesson the path sent you to included) offers the path's next step
       try { const ds = allDrills(); const prog = app.progress.load(); const done = (id: string): boolean => id === lesson.id || app.progress.lessonDone(id); const title = (id: string): string => LESSONS.find(l => l.id === id)?.title ?? id; onPath = pathNext(startPathFromProgress(ds, prog, done), ds, unlockBest(ds, prog), done, title, pathStars(prog)) ?? beyondPathNext(ds, unlockBest(ds, prog), done, title, pathStars(prog)); if (onPath && onPath.kind === 'step' && onPath.step.kind === 'lesson' && onPath.step.id === lesson.id) onPath = null; } catch { onPath = null; }
     }
     if (onPath && onPath.kind !== 'blocked') { const p = el('button', { class: 'primary', id: 'next-path' }, `Next on your path: ${onPath.label}`); const h = onPath.hash; p.onclick = () => { location.hash = h; }; nav.append(p); }
-    if (LESSONS[idx + 1]) { const n = el('button', { class: onPath ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/school/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
+    if (LESSONS[idx + 1]) { const n = el('button', { class: onPath ? '' : 'primary', id: 'next-lesson' }, `Next lesson: ${LESSONS[idx + 1]!.title}`); n.onclick = () => { location.hash = `#/lesson/${LESSONS[idx + 1]!.id}`; }; nav.append(n); }
     else { const n = el('button', { class: 'primary' }, 'To the drills'); n.onclick = () => { location.hash = '#/'; }; nav.append(n); }
     rest.append(nav); page.append(box);
   }

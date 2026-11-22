@@ -181,7 +181,7 @@ test('UI-037 the debrief lists the one-minute mistake, the disturbed timed inter
 });
 
 test('LESSON-008 the rally school lesson renders its headings and every claim with a video timestamp and the "(video, not in the documents)" label', async ({ page }) => {
-  await page.goto('/#/school/rally-school');
+  await page.goto('/#/lesson/rally-school');
   await expect(page.locator('.lesson h1')).toHaveText('What the rally school adds');
   await page.locator('#lesson-next-page').click();   // PT-10: a long lesson is two pages; the first page is already in view, the second holds the rest and the check
   await page.locator('#lesson-prev-page').click(); await expect(page.locator('#lesson-pageno')).toHaveText('Page 1 of 2');
@@ -204,9 +204,9 @@ test('LESSON-008 the Reference page has a "Rally school" panel with the TA web f
 });
 
 test('LESSON-002 LESSON-006 the team protocol lesson teaches ICE and "keep counting", and the clock lesson is the director\'s method', async ({ page }) => {
-  await page.goto('/#/school/protocol');
+  await page.goto('/#/lesson/protocol');
   await expect(page.locator('.lesson')).toContainText('ICE: identify, confirm, execute'); await expect(page.locator('.lesson')).toContainText('keep counting'); await expect(page.locator('.printcard li')).toHaveCount(21);   // EDU-007; PLAY-031: 21 short lines
-  await page.goto('/#/school/which-timer');
+  await page.goto('/#/lesson/which-timer');
   await expect(page.locator('.lesson')).toContainText('one-minute mistake'); await expect(page.locator('.lesson')).toContainText('time-of-day (TOD) mode');
 });
 

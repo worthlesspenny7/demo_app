@@ -14,6 +14,8 @@ import { loadProgress, saveProgress, setUnfinished, recordRun } from './progress
 import { haptic, speak } from './pwa.js';
 import { speechOn } from './prefs.js';
 import { session, wallSeconds } from './session.js';
+import { applyGuided } from './guided.js';
+import { finishTryIt } from '../school2/tryit.js';
 
 export interface RunView { screen: 'run'; phase: 'rule' | 'decision' | 'verdict' | 'done'; decision: Decision | null; shownAt: number; verdict: Verdict | null;
   /** PT-15 P2: wall seconds (since the card) at which a compressed hold jumps; null until it is due (a START card jumps only after the START tap). */
@@ -28,7 +30,7 @@ export function cardSeconds(): number {
 
 /** Persist the run so far (Continue survives a reload). */
 function persist(): void {
-  const h = session.handle; if (!h) return;
+  const h = session.handle; if (!h || session.courseTry) return;   // SCH-007: a try-it run is not kept for Continue
   saveProgress(setUnfinished(loadProgress(), { ...h.plan }, h.responses));
 }
 
@@ -74,6 +76,7 @@ export function renderRun(root: HTMLElement): () => void {
   }
 
   const quit = el('a', { class: 'mob-quit', href: '#/m', 'aria-label': 'Home (the run is kept for Continue)' }, '×');
+  if (session.courseTry) quit.setAttribute('href', `#/school/${session.courseTry}`);   // SCH-007: leaving a try-it goes back to its module
   function renderStrip(skill: string): void {
     const pos = h!.position(); const p = loadProgress();
     // MOB-061: a 3-5 word strip (skill, streak, n/N); the long forms are the accessible names
@@ -114,6 +117,14 @@ export function renderRun(root: HTMLElement): () => void {
   function finish(): void {
     view.phase = 'done'; view.decision = null;
     const result = h!.result();
+    if (session.courseTry) {   // SCH-007: the School's try-it hands back to its own recap
+      const id = session.courseTry; session.courseTry = null;
+      finishTryIt(id, result);
+      session.last = { result, req: session.req!, dailyIndex: null, source: h!.source };
+      session.handle = null;
+      location.replace(`#/school/${id}/recap`);
+      return;
+    }
     const p = recordRun(loadProgress(), result, { dailyIndex: session.dailyIndex });
     saveProgress(p);
     try { app.progress.recordRun(`M-${result.mode}`, { stars: result.stars, aces: 0, score: result.total - result.correct, unit: 'wrong' }); } catch { /* desk store unavailable */ }   // MOB-032: the Desk's recent runs list it too
@@ -184,6 +195,7 @@ export function renderRun(root: HTMLElement): () => void {
         timers.push(window.setTimeout(() => submit(null), d.deadlineSeconds * 1000));
       }
     }
+    try { applyGuided(page, d); } catch { /* guided state unavailable: the full run screen */ }   // SCH-004
   }
 
   show();

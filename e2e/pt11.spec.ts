@@ -12,7 +12,7 @@ async function setProgress(page: Page, drills: Record<string, unknown>, lessons:
 }
 
 test('PLAY-048 a lesson links its moved table to the Reference page, which opens at that section', async ({ page }) => {
-  await page.goto('/#/school/four-s');
+  await page.goto('/#/lesson/four-s');
   const link = page.locator('.lesson-ref a', { hasText: 'The real penalties' }); await expect(link).toHaveAttribute('href', '#/reference/penalties');
   await link.click(); await expect(page).toHaveURL(/#\/reference\/penalties$/);
   const sec = page.locator('#ref-lesson-penalties'); await expect(sec).toHaveClass(/ref-target/); await expect(sec).toContainText('1 s per second'); await expect(sec.locator('a', { hasText: "The Four S's" })).toHaveAttribute('href', '#/school/four-s');
@@ -26,7 +26,7 @@ test('PLAY-047 N-D9 "Path complete" keeps a button toward D12, and the markup le
   const lessons = Object.fromEntries(['four-s', 'transits', 'which-timer', 'ghost-car', 'griid-cameo', 'protocol', 'lost', 'pause-arithmetic', 'timed-leads', 'measure-car', 'recovery', 'calibration', 'markup'].map(l => [l, true]));
   await setProgress(page, drills, lessons); await page.goto('/#/');
   await expect(page.locator('#path-complete')).toContainText('Path complete'); await expect(page.locator('#beyond-path')).toHaveText(/^Next: .*D12 needs/);
-  await page.goto('/#/school/markup'); await expect(page.locator('#next-path')).toHaveText(/^Next on your path: .*D12 needs/);
+  await page.goto('/#/lesson/markup'); await expect(page.locator('#next-path')).toHaveText(/^Next on your path: .*D12 needs/);
 });
 
 test('PLAY-047 N-D7 the Silver pre-read and launch card print no launch second; Bronze still does', async ({ page }) => {

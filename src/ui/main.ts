@@ -1,7 +1,11 @@
 /** Entry: hash router and top navigation. */
 import { app, applyTheme, el, parseSource } from './state.js';
 import { renderHome } from './screens/home.js';
-import { renderSchool } from './screens/school.js';
+import { renderSchool, renderRules, renderLongLesson } from './screens/school.js';
+import { markFirstVisit } from './school2/player.js';
+import { PROGRESS_KEY } from './viewmodels/progress.js';
+import { DECISION_PROGRESS_KEY } from './mobile/progress.js';
+import { COURSE_POS_KEY } from './school2/progress.js';
 import { renderCockpit } from './screens/cockpit.js';
 import { renderDebrief } from './screens/debrief.js';
 import { renderReference } from './screens/reference.js';
@@ -30,6 +34,20 @@ const view = el('main', { id: 'view', tabindex: '-1' });
 const mobBack = el('a', { class: 'mob-back', href: '#/m' }, '‹ Home');
 root.replaceChildren(nav, mobBack, view);
 
+/** SCH-010: a brand-new visitor (no saved progress of any kind) landing on the bare page opens the School's Module 0, page 1. */
+function brandNew(): boolean {
+  try { return [PROGRESS_KEY, DECISION_PROGRESS_KEY, COURSE_POS_KEY].every(k => localStorage.getItem(k) === null); } catch { return false; }
+}
+let firstVisit = false;
+if (!location.hash && brandNew()) { firstVisit = true; markFirstVisit(); history.replaceState(null, '', `${location.pathname}${location.search}#/school`); }
+
+/** SCH-008: the Reference page gains a "Rules" entry (the rule-card grid that used to be the School). */
+function addRulesLink(): void {
+  const page = view.querySelector('.page'); if (!page || page.querySelector('#ref-rules-link')) return;
+  const p = el('p', { id: 'ref-rules-link', class: 'ref-rules-link' }, el('a', { href: '#/reference/rules', class: 'btn' }, 'Rules'), ' the short rule cards, each with Try it. ', el('a', { href: '#/school' }, 'Rally School'), ' is the course.');
+  const h1 = page.querySelector('h1'); if (h1) h1.after(p); else page.prepend(p);
+}
+
 let cleanup: (() => void) | null = null;
 function route(): void {
   const hash = location.hash || '#/';
@@ -41,16 +59,21 @@ function route(): void {
   // School "Try it" links (content/school-layout.ts tryHash): `#/run?skill=<skill>` starts a decision-mode run on that skill
   if (/^run(\?|$)/.test(screen)) { const skill = new URLSearchParams(screen.replace(/^run\??/, '')).get('skill'); location.replace(skill ? `#/m/play/skill/${encodeURIComponent(skill)}` : '#/m/play/practice'); return; }
   const mobileRoute = screen === 'm' || (shellMode === 'mobile' && screen === '');
-  document.body.classList.toggle('mob-route', mobileRoute);
+  // the School player is full-screen in the phone shell (its own strip) and on a first visit (SCH-010: nothing else first)
+  const schoolFull = screen === 'school' && parts[1] !== 'dad' && (shellMode === 'mobile' || firstVisit);
+  document.body.classList.toggle('mob-route', mobileRoute || schoolFull);
+  document.body.classList.toggle('s2-route', screen === 'school' && parts[1] !== 'dad');
+  if (screen !== 'school') firstVisit = false;
   try {
     if (mobileRoute) { cleanup = renderMobile(view, screen === 'm' ? parts.slice(1) : []); return; }
     switch (screen) {
       case '': renderHome(view); break;
-      case 'school': renderSchool(view, parts[1]); break;
+      case 'school': cleanup = renderSchool(view, parts.slice(1)); break;
+      case 'lesson': renderLongLesson(view, parts[1]); break;
       case 'cockpit': { const src = parseSource(parts.slice(1)); if (!src) { renderHome(view); break; } cleanup = renderCockpit(view, src); view.focus(); break; }
       case 'debrief': renderDebrief(view); break;
       case 'book': renderBookPage(view, parts.slice(1)); break;
-      case 'reference': renderReference(view, parts[1]); break;
+      case 'reference': if (parts[1] === 'rules') renderRules(view); else { renderReference(view, parts[1]); addRulesLink(); } break;
       case 'settings': renderSettings(view); break;
       case 'campaign': {
         // N9: the campaign follows the D13 lock (D12 needs Silver/Gold stars like every other unlock)

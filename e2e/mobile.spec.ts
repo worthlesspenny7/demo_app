@@ -10,6 +10,9 @@ for (const vp of PHONES) {
       test.setTimeout(240_000);
       const errors = collectErrors(page);
       await page.goto('/');
+      // SCH-010: a brand-new visitor lands on the School's Module 0 first; its Home button opens the phone Home
+      await expect(page.locator('[data-testid=first-visit]')).toBeVisible();
+      await page.locator('[data-testid=s2-home]').click();
       // MOB-025 Home: Daily set, five meters, streak, Dad's card, Desk mode (Continue appears once a run is unfinished)
       await expect(page.locator('[data-screen=home]')).toBeVisible();
       await expect(page.locator('.nav')).toBeHidden();

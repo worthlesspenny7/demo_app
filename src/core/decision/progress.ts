@@ -5,7 +5,8 @@
  * (src/ui/viewmodels/progress.ts; the caller passes it in, the core never touches localStorage), under its own key so the Desk data (drill stars, aces, runs) is never rewritten; a run that stands in
  * for a Desk drill records its stars there through `desk.recordRun`.
  */
-import { SKILLS, type DecisionProgressState, type DecisionResponse, type RunPlan, type RunResult, type Skill, type SkillMeter } from './types.js';
+import { CONTROL_IDS, type ControlId } from '../../../content/course-types.js';
+import { SKILLS, type CourseState, type DecisionProgressState, type DecisionResponse, type RunPlan, type RunResult, type Skill, type SkillMeter } from './types.js';
 import { dailySeed, Scheduler } from './scheduler.js';
 
 export interface StorageLike { getItem(key: string): string | null; setItem(key: string, value: string): void; removeItem?(key: string): void }
@@ -29,7 +30,54 @@ export const DAILY_RUNS = 3;
 
 const emptyMeter = (): SkillMeter => ({ value: 0, correct: 0, total: 0, lastDay: null, passed: false });
 export function emptyProgress(): DecisionProgressState {
-  return { version: 1, meters: Object.fromEntries(SKILLS.map(s => [s, emptyMeter()])) as Record<Skill, SkillMeter>, streak: { current: 0, best: 0, lastDay: null }, daily: { day: null, completed: [], best: {} }, rulesSeen: [], unfinished: null, runs: 0 };
+  return { version: 1, meters: Object.fromEntries(SKILLS.map(s => [s, emptyMeter()])) as Record<Skill, SkillMeter>, streak: { current: 0, best: 0, lastDay: null }, daily: { day: null, completed: [], best: {} }, rulesSeen: [], course: emptyCourse(), unfinished: null, runs: 0 };
+}
+
+/** SCH-004: an empty course state. */
+export function emptyCourse(): CourseState { return { modulesDone: [], pages: {}, tryItStars: {} }; }
+const ID_RE = /^[A-Za-z0-9_.-]{1,40}$/;
+function sanitizeCourse(x: unknown): CourseState {
+  const c = emptyCourse(); if (!x || typeof x !== 'object') return c;
+  const o = x as Partial<CourseState>;
+  const rec = (v: unknown, hi: number): Record<string, number> => {
+    const out: Record<string, number> = {}; if (!v || typeof v !== 'object') return out;
+    for (const [k, n] of Object.entries(v as Record<string, unknown>)) if (ID_RE.test(k) && typeof n === 'number' && Number.isFinite(n)) out[k] = Math.round(Math.min(hi, Math.max(0, n)));
+    return out;
+  };
+  c.modulesDone = Array.isArray(o.modulesDone) ? [...new Set(o.modulesDone.filter((m): m is string => typeof m === 'string' && ID_RE.test(m)))] : [];
+  c.pages = rec(o.pages, 99); c.tryItStars = rec(o.tryItStars, 3);
+  return c;
+}
+/** The module index of an id: its place in `course`, else the number in "m3" / "module-3" / "3". */
+function moduleIndex(id: string, course?: readonly { id: string }[]): number {
+  const i = course?.findIndex(m => m.id === id) ?? -1; if (i >= 0) return i;
+  const m = /^(?:m|module-?)?0*(\d+)$/i.exec(id); return m ? Number(m[1]) : -1;
+}
+/** SCH-004: modules 0..6 are the core; finishing them ends the guided state. */
+export const CORE_MODULES = 7;
+/** SCH-004: the module whose completion unlocks the Desk cockpit. */
+export const DESK_MODULE = 12;
+const doneIndexes = (c: CourseState, course?: readonly { id: string }[]): Set<number> => new Set(c.modulesDone.map(id => moduleIndex(id, course)).filter(i => i >= 0));
+/** Modules 0-6 all done. */
+export function coreDone(c: CourseState, course?: readonly { id: string }[]): boolean { const d = doneIndexes(c, course); for (let i = 0; i < CORE_MODULES; i++) if (!d.has(i)) return false; return true; }
+/** Module 12 done: the Desk cockpit is unlocked. */
+export function deskUnlocked(c: CourseState, course?: readonly { id: string }[]): boolean { return doneIndexes(c, course).has(DESK_MODULE); }
+export interface GuidedControls { introduced: ControlId[]; newest: ControlId | null; guided: boolean }
+/**
+ * SCH-004: the controls the run UI shows. Guided (until modules 0-6 are done): the controls of every finished module plus those of the
+ * module being read once its first page is done; `newest` is the last of them (the one-line pointer). Unguided: every control
+ * (the Desk only once module 12 is done) and no pointer.
+ */
+export function guidedControls(c: CourseState, course: readonly { id: string; controls: readonly ControlId[] }[]): GuidedControls {
+  if (coreDone(c, course)) { const all = CONTROL_IDS.filter(id => id !== 'desk' || deskUnlocked(c, course)); return { introduced: [...all], newest: null, guided: false }; }
+  const done = new Set(c.modulesDone); const introduced: ControlId[] = []; let newest: ControlId | null = null;
+  let current: string | null = null;
+  for (const m of course) { if (!done.has(m.id)) { current = m.id; break; } }
+  for (const m of course) {
+    if (!(done.has(m.id) || (m.id === current && (c.pages[m.id] ?? 0) > 0))) continue;
+    for (const ctl of m.controls) { if (!introduced.includes(ctl)) introduced.push(ctl); newest = ctl; }
+  }
+  return { introduced, newest, guided: true };
 }
 
 /** "2026-10-23" for a Date in local time (the caller supplies the date: the core never reads the clock). */
@@ -58,6 +106,7 @@ function sanitize(x: unknown): DecisionProgressState {
   }
   base.rulesSeen = Array.isArray(o.rulesSeen) ? o.rulesSeen.filter((x): x is string => typeof x === 'string' && x.length <= 40).slice(-200) : [];
   if (o.unfinished && typeof o.unfinished === 'object' && o.unfinished.plan && Array.isArray(o.unfinished.plan.items) && Array.isArray(o.unfinished.responses)) base.unfinished = { plan: o.unfinished.plan, responses: o.unfinished.responses.slice(0, 60) as (DecisionResponse | null)[] };
+  base.course = sanitizeCourse(o.course);
   base.runs = Math.round(num(o.runs, 0, 1e9, 0));
   if (typeof o.bossRuns === 'number') base.bossRuns = Math.round(num(o.bossRuns, 0, 1e9, 0));
   return base;
@@ -150,6 +199,24 @@ export class Progress {
     this.save();
     return this.state();
   }
+  /** SCH-004: course progress (a copy). */
+  courseState(): CourseState { return sanitizeCourse(this.data.course); }
+  /** The page the learner reached in a module (count of pages completed; only ever moves forward). */
+  markPage(moduleId: string, page: number): void {
+    if (!ID_RE.test(moduleId) || !Number.isFinite(page)) return;
+    const c = this.data.course = sanitizeCourse(this.data.course); c.pages[moduleId] = Math.max(c.pages[moduleId] ?? 0, Math.round(Math.min(99, Math.max(0, page)))); this.save();
+  }
+  /** SCH-007: record a try-it run (best stars kept); the module counts as done once its try-it has been played. */
+  markTryIt(moduleId: string, stars: number): void {
+    if (!ID_RE.test(moduleId) || !Number.isFinite(stars)) return;
+    const c = this.data.course = sanitizeCourse(this.data.course); c.tryItStars[moduleId] = Math.max(c.tryItStars[moduleId] ?? 0, Math.round(Math.min(3, Math.max(0, stars))));
+    if (!c.modulesDone.includes(moduleId)) c.modulesDone.push(moduleId); this.save();
+  }
+  /** Modules 0-6 done (pass the course to resolve ids by position). */
+  coreDone(course?: readonly { id: string }[]): boolean { return coreDone(this.courseState(), course); }
+  /** Module 12 done: Desk mode unlocked. */
+  deskUnlocked(course?: readonly { id: string }[]): boolean { return deskUnlocked(this.courseState(), course); }
+  guidedControls(course: readonly { id: string; controls: readonly ControlId[] }[]): GuidedControls { return guidedControls(this.courseState(), course); }
   markRuleSeen(id: string): void { if (!this.data.rulesSeen.includes(id)) { this.data.rulesSeen.push(id); this.save(); } }
   /** MOB-030 "Continue": the unfinished run (plan + answers so far); DecisionRun.restore(plan, responses) rebuilds it. */
   saveUnfinished(plan: RunPlan, responses: (DecisionResponse | null)[]): void { this.data.unfinished = { plan, responses: responses.slice() }; this.save(); }

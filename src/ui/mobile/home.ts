@@ -7,6 +7,7 @@ import { el } from '../state.js';
 import { loadProgress, dailyState, legalUnlocked, bossUnlocked } from './progress.js';
 import { a2hsHint, hintSeen, markHintSeen, isStandalone } from './pwa.js';
 import { speechOn, setSpeech } from './prefs.js';
+import { loadCourse, continueTarget, continueLabel, coreComplete, courseStarted, deskUnlocked } from '../school2/progress.js';
 
 export function renderMobileHome(root: HTMLElement): void {
   const p = loadProgress();
@@ -29,7 +30,10 @@ export function renderMobileHome(root: HTMLElement): void {
     const n = p.unfinished.responses.length;
     page.append(el('a', { class: 'mob-btn primary big', href: '#/m/continue', 'data-testid': 'continue' }, `Continue run (${n} of ${p.unfinished.plan.decisionCount} done)`));
   }
-  const dailyBtn = el('a', { class: `mob-btn${p.unfinished ? '' : ' primary'} big`, href: daily.next === null ? '#/m/play/practice' : `#/m/play/daily/${daily.next}`, 'data-testid': 'play-daily' }, daily.next === null ? 'Daily set done: practise' : `Play daily run ${daily.next + 1} of 3`);
+  // SCH-004: "Continue course: Module n, page m" is the primary button for a visitor who has not finished the core modules (after a run in progress)
+  const cv = loadCourse(); const target = coreComplete(cv.state) ? null : continueTarget(cv);
+  if (target) page.append(el('a', { class: `mob-btn${p.unfinished ? '' : ' primary'} big`, href: `#/school/${target.module.id}/${target.page + 1}`, 'data-testid': 'continue-course' }, continueLabel(target)));
+  const dailyBtn = el('a', { class: `mob-btn${p.unfinished || target ? '' : ' primary'} big`, href: daily.next === null ? '#/m/play/practice' : `#/m/play/daily/${daily.next}`, 'data-testid': 'play-daily' }, daily.next === null ? 'Daily set done: practise' : `Play daily run ${daily.next + 1} of 3`);
   page.append(el('section', { class: 'mob-sec mob-daily' }, el('h2', {}, 'Daily set'), pills, dailyBtn));
   // Skill meters
   const meters = el('section', { class: 'mob-sec mob-meters' }, el('h2', {}, 'Skills'));
@@ -53,6 +57,7 @@ export function renderMobileHome(root: HTMLElement): void {
     el('a', { class: 'mob-btn', href: '#/school/dad', 'data-testid': 'dads-card' }, "Dad's card"),
     el('a', { class: 'mob-btn', href: '#/reference' }, 'Reference'),
     voice,
-    el('a', { class: 'mob-btn', href: '?mode=desk#/', 'data-testid': 'desk-mode' }, 'Desk mode')));
+    // SCH-004: a visitor taking the course gets Desk mode once module 12 is done; players who never opened the course keep it
+    ...(courseStarted(cv.state) && !deskUnlocked(cv.state) ? [] : [el('a', { class: 'mob-btn', href: '?mode=desk#/', 'data-testid': 'desk-mode' }, 'Desk mode')])));
   root.replaceChildren(page);
 }

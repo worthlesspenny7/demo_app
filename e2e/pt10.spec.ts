@@ -1,4 +1,5 @@
 // Fix sprint PT-10 (2026-10-04): the playability items of docs/playtest/PT-10-playability-v3-2.md as the player meets them, at 1366x768.
+// SCH-008 (Phase IX): the long lessons moved from #/school/<id> (now the course module) to #/lesson/<id>.
 import { test, expect, type Page } from '@playwright/test';
 import { PROGRESS_KEY } from '../src/ui/viewmodels/progress.js';
 import { LESSONS } from '../content/lessons.js';
@@ -49,7 +50,7 @@ test('PLAY-034 the D06 pre-read has one launch statement: Bronze copies (no "mea
 test('PLAY-036 a lesson check shuffles its options each time it is drawn, and clicking the right option passes the lesson', async ({ page }) => {
   const right = LESSONS.find(l => l.id === 'ghost-car')!; const rightText = right.check.options[right.check.answer]!;
   const seen = new Set<number>();
-  for (let i = 0; i < 14; i++) { await page.goto('/#/school/ghost-car'); await page.reload(); const opts = await page.locator('.quiz .opt').allInnerTexts(); expect([...opts].sort()).toEqual([...right.check.options].sort()); seen.add(opts.indexOf(rightText)); }
+  for (let i = 0; i < 14; i++) { await page.goto('/#/lesson/ghost-car'); await page.reload(); const opts = await page.locator('.quiz .opt').allInnerTexts(); expect([...opts].sort()).toEqual([...right.check.options].sort()); seen.add(opts.indexOf(rightText)); }
   expect(seen.size).toBeGreaterThanOrEqual(3);
   await page.locator('.quiz .opt', { hasText: rightText }).click(); await expect(page.locator('.quiz .opt.right')).toHaveText(rightText); await expect(page.locator('.quiz .ok')).toContainText('Right.');
   await page.goto('/#/'); await expect(page.locator('#starthere-panel li[data-step="ghost-car"]')).toHaveClass(/done/);
@@ -93,14 +94,14 @@ test('PLAY-039 at Silver the perf card prints no dwell and no call times (it nam
 });
 
 test('PLAY-040 a long lesson is two pages (page 1, Next page, then the source, the check and the path button); D16 starts at 8x', async ({ page }) => {
-  await page.goto('/#/school/transits'); await expect(page.locator('#lesson-next-page')).toHaveCount(0); await expect(page.locator('.lesson-ref a').first()).toHaveAttribute('href', /^#\/reference\/[a-z-]+$/);   // PT-11 (PLAY-048): one page, its lists on the Reference page
-  await page.goto('/#/school/recovery');
+  await page.goto('/#/lesson/transits'); await expect(page.locator('#lesson-next-page')).toHaveCount(0); await expect(page.locator('.lesson-ref a').first()).toHaveAttribute('href', /^#\/reference\/[a-z-]+$/);   // PT-11 (PLAY-048): one page, its lists on the Reference page
+  await page.goto('/#/lesson/recovery');
   await expect(page.locator('#lesson-pageno')).toHaveText('Page 1 of 2'); await expect(page.locator('#lesson-page-2')).toBeHidden(); await expect(page.locator('.quiz')).toBeHidden();
   await page.locator('#lesson-next-page').click(); await expect(page.locator('#lesson-pageno')).toHaveText('Page 2 of 2'); await expect(page.locator('#lesson-page-1')).toBeHidden(); await expect(page.locator('.quiz')).toBeVisible();
   await page.locator('#lesson-prev-page').click(); await expect(page.locator('#lesson-page-1')).toBeVisible();
-  await page.goto('/#/school/four-s'); await expect(page.locator('#lesson-next-page')).toHaveCount(0); await expect(page.locator('.quiz')).toBeVisible();
+  await page.goto('/#/lesson/four-s'); await expect(page.locator('#lesson-next-page')).toHaveCount(0); await expect(page.locator('.quiz')).toBeVisible();
   await expect(page.locator('.lesson')).not.toContainText('What qualifies');
-  await page.goto('/#/school/recovery'); await page.locator('#lesson-next-page').click(); await expect(page.locator('.lesson')).toContainText('What qualifies');
+  await page.goto('/#/lesson/recovery'); await page.locator('#lesson-next-page').click(); await expect(page.locator('.lesson')).toContainText('What qualifies');
   await openDrill(page, 'D16', 0); await hold(page); await page.locator('#pause').click();
   await expect(page.locator('#scale')).toHaveText(/^8x/); await hold(page);
   await openDrill(page, 'D08', 0); await expect(page.locator('#scale')).toHaveText(/^[124]x/);
@@ -122,7 +123,7 @@ test('PLAY-041 status line says Dad, the D03 keys say "digital watch: lap L", th
 
 test('PLAY-041 Dad\'s card prints on one page with 0.6 in margins at 13 pt', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => undefined; });
-  await page.goto('/#/school/protocol');   // PT-11 (PLAY-048): one page, the card on it
+  await page.goto('/#/lesson/protocol');   // PT-11 (PLAY-048): one page, the card on it
   const margin = await page.evaluate(() => { for (const sh of Array.from(document.styleSheets)) for (const r of Array.from(sh.cssRules)) if (r instanceof CSSPageRule) return r.style.margin; return null; });
   expect(margin).toBe('0.6in');
   await page.locator('#print-card').click(); await expect(page.locator('html')).toHaveClass(/print-card-only/);

@@ -21,7 +21,8 @@ test('PLAY-023 Home prints the Four S headings in the handbook order, says why s
   // every lesson read except the ghost car, D16 not played: Next opens the ghost-car lesson, not D16
   await setProgress(page, {}, Object.fromEntries(ALL_LESSONS.filter(l => l !== 'ghost-car').map(l => [l, true])));
   await page.goto('/#/');
-  await expect(page.locator('#starthere')).toHaveText(/Next: School: the ghost car/); await page.locator('#starthere').click(); await expect(page).toHaveURL(/#\/school\/ghost-car$/);
+  await expect(page.locator('#starthere')).toHaveText(/Next: School: the ghost car/); await page.locator('#starthere').click(); await expect(page).toHaveURL(/#\/school\/m0$/);   // SCH-008: the old lesson route opens the module that covers it
+  await page.goto('/#/lesson/ghost-car');   // the long form keeps its check
   // the lesson's own "Next on your path" then opens D16
   await page.locator('.quiz .opt', { hasText: LESSONS.find(l => l.id === 'ghost-car')!.check.options[LESSONS.find(l => l.id === 'ghost-car')!.check.answer]! }).click();   // PT-10: the options are shuffled each time
   await expect(page.locator('#next-path')).toHaveText(/Next on your path: D16 Start on the second/);
@@ -65,7 +66,7 @@ test('PLAY-027 PLAY-043 D06 chart notes from the last run of the seed are kept o
 
 test('PLAY-031 Dad\'s card prints on one page', async ({ page }) => {
   await page.addInitScript(() => { window.print = () => { (window as unknown as { __printed: number }).__printed = ((window as unknown as { __printed?: number }).__printed ?? 0) + 1; }; });
-  await page.goto('/#/school/protocol');   // PT-11 (PLAY-048): one page again, the card on it
+  await page.goto('/#/lesson/protocol');   // PT-11 (PLAY-048): one page again, the card on it
   const pagesOf = (b: Buffer): number => (b.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? []).length;
   expect(pagesOf(await page.pdf({ format: 'Letter' }))).toBeGreaterThan(1);   // control: the whole lesson is several pages
   await page.locator('#print-card').click();

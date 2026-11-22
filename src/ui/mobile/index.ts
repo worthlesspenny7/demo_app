@@ -25,7 +25,7 @@ export { registerServiceWorker } from './pwa.js';
 
 function begin(req: RunRequest, dailyIndex: number | null): void {
   const p = loadProgress();
-  session.req = req; session.dailyIndex = dailyIndex;
+  session.req = req; session.dailyIndex = dailyIndex; session.courseTry = null;
   session.handle = startRun(req, p);
   saveProgress(clearUnfinished(p));
   location.replace('#/m/run');
@@ -67,7 +67,7 @@ function resume(): void {
   if (!p.unfinished) { location.replace('#/m'); return; }
   const h = resumeRun(p.unfinished.plan, p.unfinished.responses);
   if (!h) { saveProgress(clearUnfinished(p)); location.replace('#/m'); return; }
-  session.handle = h; session.req = { skills: h.plan.skills, seed: h.plan.seed, mode: h.plan.mode, rung: h.plan.rung, decisions: h.plan.decisionCount, ...(h.plan.day ? { day: h.plan.day } : {}), ...(h.plan.dailyIndex !== undefined ? { dailyIndex: h.plan.dailyIndex } : {}) };
+  session.handle = h; session.courseTry = null; session.req = { skills: h.plan.skills, seed: h.plan.seed, mode: h.plan.mode, rung: h.plan.rung, decisions: h.plan.decisionCount, ...(h.plan.day ? { day: h.plan.day } : {}), ...(h.plan.dailyIndex !== undefined ? { dailyIndex: h.plan.dailyIndex } : {}) };
   session.dailyIndex = h.plan.mode === 'daily' ? (h.plan.dailyIndex ?? Math.max(0, dailyState(p).seeds.indexOf(h.plan.seed))) : null;
   location.replace('#/m/run');
 }

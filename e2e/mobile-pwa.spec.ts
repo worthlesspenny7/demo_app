@@ -36,6 +36,7 @@ test('MOB-040 MOB-042 a new player on a 390x844 phone: first decision within 20 
   const errors = collectErrors(page);
   const t0 = Date.now();
   await page.goto('/');                                 // fresh: no storage, no ?mode (the width opens the phone shell)
+  await page.locator('[data-testid=s2-home]').click();  // SCH-010: the first visit opens the School's Module 0; one tap to Home
   await expect(page.locator('[data-screen=home]')).toBeVisible();
   await page.locator('[data-testid=play-daily]').click();
   const shown: number[] = []; const tiny: string[] = [];

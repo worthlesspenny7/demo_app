@@ -128,7 +128,7 @@ for (const where of ['reference', 'school'] as const) {
   test(`MOB-071 the ${where} on a 390 px phone: one column, no text under 16 px, collapsible sections, no horizontal scroll`, async ({ page }) => {
     test.setTimeout(120_000);
     const errors = collectErrors(page);
-    await page.goto(`/?mode=mobile#/${where}`);
+    await page.goto(`/?mode=mobile#/${where === 'school' ? 'reference/rules' : where}`);   // SCH-008: the School's rule cards are Reference > Rules
     await expect(page.locator('.page h1')).toBeVisible();
     const secSel = where === 'reference' ? 'details.ref-sec' : 'details.school-sec';
     const secs = page.locator(secSel); expect(await secs.count()).toBeGreaterThanOrEqual(where === 'reference' ? 8 : 5);
@@ -151,7 +151,7 @@ for (const where of ['reference', 'school'] as const) {
     expect(g.columns).toBe(1);
     if (where === 'school') {
       // the first group starts open, its Try it buttons one tap away
-      await page.goto(`/?mode=mobile#/school`); await page.reload();
+      await page.goto(`/?mode=mobile#/reference/rules`); await page.reload();
       await expect(page.locator('details.school-sec').first()).toHaveAttribute('open', '');
       await expect(page.locator('details.school-sec').nth(1)).not.toHaveAttribute('open', '');
       await expect(page.locator('.try-it').first()).toBeVisible();
