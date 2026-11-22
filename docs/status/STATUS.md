@@ -14,9 +14,11 @@
 - Spec: docs/spec/SPECS.md (ids before "## BACKLOG" must each appear in a test name; V2 and V3 sections hold
   the document- and video-derived rules). Open questions: docs/spec/OPEN-QUESTIONS.md (bottom tables).
 - Playtest/validation reports: docs/playtest/*.md (latest: REVALIDATION-v2-realism.md 54/70).
-- In flight: nothing. Phase VIII wrapped 2026-10-23. Head = verified build (790 unit, 115 e2e, 410/410 specs,
-  ENGINE 3.4.0). Phone mode: PT-15 engagement 34/40, pace targets met, rule-card follower never marked wrong
-  (5,905 answers). README has the phone play guide.
+- In flight (2026-11-22): PHASE IX Rally School 2.0 (Josh: walls of text, sim overwhelming cold; wants examples,
+  mini-sims, reference links not text, controls introduced slowly, newcomer-friendly Module 0 to share with friends).
+  Design docs/spec/SCHOOL.md, spec V6 SCH-001..010. Agents: course content + excerpts (A), page player + widgets +
+  guided controls (B), engine mini-sim/guided hooks (C); then a newcomer playtest (PT-16). Hosted copy for Josh:
+  https://claude.ai/artifact/JQkqWo6HtCuNLpuYjfTAvD (republish the build after each landing).
 - Next session, in order: (1) whatever Josh reports from his phone (card kind, run seed from the recap); (2) PT-15 lows
   P5-P11 (pre-read pause slot asks 'Which way', clock card mix, 'What speed' reads Column C, details/Chart placement,
   'Line 2' on micro cards, Reference polish, meters saturate in one evening); (3) PT-12 Desk top-10 (posted limits

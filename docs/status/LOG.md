@@ -389,3 +389,8 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Phase VIII wrapped. Phone mode across the day: PT-13 25/40 -> PT-14 31/40 -> PT-15 34/40; first decision 4.5 s,
   median gap 4.8 s, every run >= 4 decisions/min, rule-card follower 100 % (5,905 answers), offline PWA. Final head
   verified: 790 unit, 115 e2e, 410/410 specs. Next session starts from the HANDOFF block.
+
+## 2026-11-22 Phase IX: Rally School 2.0
+- Josh played the hosted build: lessons are a wall of text; the sim is overwhelming when entered cold; wants
+  examples + mini-sims in the lessons, links to video/handbook instead of inline text, controls introduced slowly,
+  a newcomer Module 0 he can send to friends. Wrote docs/spec/SCHOOL.md and SPECS V6 (SCH-001..010).
