@@ -128,7 +128,7 @@ export function renderPage(body: HTMLElement, m: Module, p: PlayerPage, complete
     case 'concept': return concept(body, p), null;
     case 'example': return example(body, p), null;
     case 'check': return check(body, p, complete), null;
-    case 'minisim': return mountMiniSim(body, p as MinisimPage, { done: complete });
+    case 'minisim': return mountMiniSim(body, p as MinisimPage, { done: complete, moduleIndex: moduleIndex(m.id) });
     case 'widget': return mountWidget(body, p as WidgetPage, { done: complete });
     case 'tryit': return tryitPage(body, m), null;
     default: body.append(el('p', {}, 'This page kind is not in the player yet.')); return null;

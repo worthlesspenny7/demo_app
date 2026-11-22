@@ -15,7 +15,7 @@ import { allDrills } from '../../core/drills/index.js';
 import { shuffleCheck } from '../viewmodels/lessoncheck.js';
 import { renderCourse } from '../school2/player.js';
 import { renderTryItRecap, startTryIt } from '../school2/tryit.js';
-import { moduleById, moduleForLesson } from '../school2/sources.js';
+import { moduleById, schoolRedirect } from '../school2/sources.js';
 import { startPathFromProgress, pathNext, beyondPathNext, unlockBest, pathStars, type PathNext } from '../viewmodels/curriculum.js';
 
 /** One lesson block as DOM: plain paragraph, list, preformatted lines, table or the printable card. */
@@ -172,7 +172,7 @@ export function renderSchool(root: HTMLElement, parts: string[] = []): (() => vo
   if (lessonId === 'driver-card') { const page = el('div', { class: 'page' }); renderDad(page); root.replaceChildren(page); return null; }
   if (id && !moduleById(id) && id !== 'modules') {
     // an old lesson id: the module that covers it (the long form stays at #/lesson/<id>)
-    const m = moduleForLesson(id); location.replace(m ? `#/school/${m.id}` : '#/school'); return null;
+    location.replace(schoolRedirect(id)); return null;   // PT-17 (B23): a lesson section or rule id finds its module; anything else the module list
   }
   if (id && sub === 'try') { startTryIt(id); return null; }
   if (id && sub === 'recap') { renderTryItRecap(root, id); return null; }

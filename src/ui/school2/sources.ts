@@ -15,6 +15,8 @@ export { CONTROL_IDS };
 import { COURSE, FIRST_VISIT, moduleForLesson as contentModuleForLesson } from '../../../content/course.js';
 import { excerptFor as contentExcerpt, EXCERPTS } from '../../../content/excerpts.js';
 import { videoLink as contentVideoLink } from '../../../content/videos.js';
+import { LESSON_REFERENCE } from '../../../content/lessons.js';
+import { RULES } from '../../../content/rules.js';
 
 export interface CourseData { course: Module[]; firstVisit: string; startLabel: string; source: 'content' }
 export const COURSE_DATA: CourseData = { course: COURSE, firstVisit: FIRST_VISIT.line, startLabel: FIRST_VISIT.start, source: 'content' };
@@ -83,4 +85,15 @@ export const CONTROL_LABEL: Record<ControlId, string> = {
 export function pointerFor(c: ControlId): string {
   const p = engine().POINTER_OF_CONTROL?.[c];
   return typeof p === 'string' && p ? p : CONTROL_LABEL[c];
+}
+
+/** PT-17 item 10 (PT-16 B23): where #/school/<id> goes when <id> is not a module: an old lesson id or one of its reference sections
+ *  ('ice-calls' -> its lesson's module), a rule-card id or its lesson -> that module, anything else -> the module list (never a silent
+ *  bounce to the last-open module). */
+export function schoolRedirect(id: string): string {
+  const direct = moduleForLesson(id); if (direct) return `#/school/${direct.id}`;
+  const ref = LESSON_REFERENCE.find(r => r.id === id); const viaRef = ref ? moduleForLesson(ref.lesson) : null; if (viaRef) return `#/school/${viaRef.id}`;
+  const rule = RULES.find(r => r.id.toLowerCase() === id.toLowerCase()); const viaRule = rule?.lesson ? moduleForLesson(rule.lesson) : null;
+  if (viaRule) return `#/school/${viaRule.id}`; if (rule) return '#/reference/rules';
+  return '#/school/modules';
 }

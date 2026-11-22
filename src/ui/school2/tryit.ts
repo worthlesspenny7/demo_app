@@ -32,7 +32,7 @@ export function startTryIt(id: string): void {
 
 /** Called by the run screen when a try-it run finishes (instead of the phone recap). */
 export function finishTryIt(id: string, r: RunResult): void {
-  recordTryIt(id, r.stars);
+  recordTryIt(id, core.tryItStars(r));   // PT-17 N4: stars from correct answers
   const m = moduleById(id);
   try { for (const l of m?.covers ?? []) app.progress.markLesson(l); } catch { /* desk store unavailable */ }
 }
@@ -40,16 +40,18 @@ export function finishTryIt(id: string, r: RunResult): void {
 export function renderTryItRecap(root: HTMLElement, id: string): void {
   const m = moduleById(id); const r = session.last?.result;
   if (!m) { location.replace('#/school'); return; }
-  const stars = r?.stars ?? 0; const i = moduleIndex(m.id); const nextM = course()[i + 1];
+  const stars = r ? core.tryItStars(r) : 0; const i = moduleIndex(m.id); const nextM = course()[i + 1];
+  const passed = !r || core.tryItPassed(r);   // PT-17 N4: below 3 of 5 the first button is "Try again" 
   const body = el('div', { class: 's2-recap', 'data-testid': 'tryit-recap' },
     el('h1', {}, `Module ${moduleNumber(m, i)} done`),
-    el('div', { class: 'mob-stars', 'data-stars': stars, 'aria-label': `${stars} of 3 stars` }, ...[0, 1, 2].map(k => el('span', { class: k < stars ? 'on' : '' }, '★'))),
-    r ? el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, `${r.correct} of ${r.total} right · ${r.secondsTotal.toFixed(1)} s off`) : el('span', {}),
+    el('div', { class: 'mob-stars', 'data-stars': stars, 'aria-label': `${stars} of 3 stars` }, ...[0, 1, 2].map(k => el('span', { class: k < stars ? 'on' : '' }, k < stars ? '★' : '☆'))),
+    r ? el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, `${r.correct} of ${r.total} correct · ${r.secondsTotal.toFixed(1)} s off`) : el('span', {}),
     el('p', { class: 's2-youcan', 'data-testid': 'you-can-now' }, m.youCanNow));
-  const again = el('a', { class: 'mob-btn big', href: `#/school/${m.id}/try`, 'data-action': 'again' }, 'Again');
-  const next = nextM ? el('a', { class: 'mob-btn primary big', href: `#/school/${nextM.id}/1`, 'data-action': 'next-module' }, `Module ${moduleNumber(nextM, i + 1)}`)
-    : el('a', { class: 'mob-btn primary big', href: '#/m', 'data-action': 'next-module' }, 'Home');
+  const again = el('a', { class: `mob-btn big${passed ? '' : ' primary'}`, href: `#/school/${m.id}/try`, 'data-action': 'again' }, passed ? 'Again' : 'Try again');
+  const nextCls = `mob-btn big${passed ? ' primary' : ''}`;
+  const next = nextM ? el('a', { class: nextCls, href: `#/school/${nextM.id}/1`, 'data-action': 'next-module' }, `Module ${moduleNumber(nextM, i + 1)}`)
+    : el('a', { class: nextCls, href: '#/m', 'data-action': 'next-module' }, 'Home');
   root.replaceChildren(el('div', { class: 's2 s2-recapscreen', 'data-screen': 'school-recap' },
     el('header', { class: 's2-strip' }, el('a', { class: 'mob-quit', href: '#/m', 'aria-label': 'Home' }, '×'), el('span', { class: 's2-title' }, m.title), el('a', { class: 's2-modlink', href: '#/school/modules' }, 'Modules')),
-    el('div', { class: 's2-main' }, body), el('footer', { class: 's2-foot' }, el('div', { class: 's2-navbtns' }, again, next))));
+    el('div', { class: 's2-main' }, body), el('footer', { class: 's2-foot' }, el('div', { class: 's2-navbtns' }, ...(passed ? [again, next] : [next, again])))));
 }

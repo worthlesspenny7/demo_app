@@ -127,6 +127,7 @@ test.describe('school phone 390x844', () => {
     test.setTimeout(60_000);
     await page.goto('/?mode=mobile#/school/m0/2');
     const drift = page.locator('[data-testid=drift]');
+    await page.locator('[data-action=start-widget]').click();   // PT-17 SCH-032: the widget waits under Start
     await page.waitForTimeout(1500);
     await expect(drift).toHaveText(/s late$/);   // starting at 25 against an assigned 35: falling behind the ghost
     await page.locator('[data-testid=speed-slider]').fill('35');
@@ -137,6 +138,7 @@ test.describe('school phone 390x844', () => {
 
   test('SCH-003 whereCheckpoint: tap when the leg ended; the checkpoint and the score appear', async ({ page }) => {
     await page.goto('/?mode=mobile#/school/m0/4');
+    await page.locator('[data-action=start-widget]').click();   // PT-17 SCH-032
     await page.waitForTimeout(2500);
     await page.locator('[data-action=leg-ended]').click();
     await expect(page.locator('[data-testid=checkpoint]')).toBeVisible();
@@ -146,6 +148,7 @@ test.describe('school phone 390x844', () => {
 
   test('SCH-003 tapLap: LAP at three markers on the digital stopwatch, then read the split', async ({ page }) => {
     await page.goto('/?mode=mobile#/school/m3/4');
+    await page.locator('[data-action=start-widget]').click();   // PT-17 SCH-032
     for (let i = 0; i < 3; i++) { await page.waitForTimeout(800); await page.locator('[data-action=lap]').click(); }
     await expect(page.locator('[data-testid=laps] li')).toHaveCount(3);
     await page.locator('.s2-q [data-right=false]').first().click();

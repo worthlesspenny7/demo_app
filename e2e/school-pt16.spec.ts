@@ -81,6 +81,7 @@ test.describe('PT-16 phone 390x844 (touch)', () => {
     await page.goto('/?mode=mobile#/school/m0/4');
     await expect(page.locator('[data-testid=checkpoint]')).toBeVisible();
     await expect(page.locator('[data-widget=whereCheckpoint] .s2-ghost')).toBeVisible();
+    await page.locator('[data-action=start-widget]').click();   // PT-17 SCH-032
     await page.waitForFunction(() => parseFloat(document.querySelector('[data-testid=leg-clock]')?.textContent ?? '0') >= 20.4, null, { timeout: 30_000, polling: 'raf' });
     const car = (await page.locator('[data-widget=whereCheckpoint] .s2-car:not(.s2-ghost)').boundingBox())!; const sign = (await page.locator('[data-testid=checkpoint]').boundingBox())!;
     expect(Math.abs(car.x + car.width - (sign.x + sign.width))).toBeLessThan(24);   // the car's nose is at the sign when the ghost's time is up
@@ -90,6 +91,7 @@ test.describe('PT-16 phone 390x844 (touch)', () => {
 
   test('SCH-019 tapLap: LAP stays put while laps are listed below it, and the lap numbers are not clipped', async ({ page }) => {
     await page.goto('/?mode=mobile#/school/m3/4');
+    await page.locator('[data-action=start-widget]').click();   // PT-17 SCH-032
     const lap = page.locator('[data-action=lap]');
     const y0 = (await lap.boundingBox())!.y;
     for (let i = 0; i < 2; i++) { await page.waitForTimeout(700); await lap.click(); expect(Math.abs((await lap.boundingBox())!.y - y0)).toBeLessThan(1); }

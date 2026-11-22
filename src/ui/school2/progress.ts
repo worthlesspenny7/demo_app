@@ -99,3 +99,16 @@ export function guidedState(c: CourseState = loadCourse().state, mods: Module[] 
   for (const m of mods) { if (!(done.has(m.id) || (m.id === current && (c.pages[m.id] ?? 0) > 0))) continue; for (const x of m.controls) { if (!introduced.includes(x)) introduced.push(x); newest = x; } }
   return { active: started && !coreComplete(c, mods), introduced, newest, deskUnlocked: desk };
 }
+
+/** PT-17 N6 (B13): where a visit to the bare page lands. A newcomer (no Desk drill played, no phone run finished, Module 0 not done) lands on
+ *  the School every visit until Module 0 is finished, not only the first; opening the page consumes nothing. `first` = no course page
+ *  reached yet (show the first-visit line and Start on Module 0 page 1); otherwise the School continues where they were. Pure (raw strings). */
+export function newcomerLanding(deskRaw: string | null, decisionRaw: string | null): { school: boolean; first: boolean } {
+  const parse = (raw: string | null): Record<string, unknown> | null => { if (!raw) return null; try { const o = JSON.parse(raw) as unknown; return o && typeof o === 'object' ? o as Record<string, unknown> : {}; } catch { return {}; } };
+  const desk = parse(deskRaw); const dec = parse(decisionRaw);
+  const drills = desk?.['drills']; if (drills && typeof drills === 'object' && Object.keys(drills).length) return { school: false, first: false };
+  if (dec && typeof dec['runs'] === 'number' && dec['runs'] > 0) return { school: false, first: false };
+  const c = normalizeCourseState(dec?.['course']);
+  if (c.modulesDone.includes(course()[0]?.id ?? 'm0')) return { school: false, first: false };
+  return { school: true, first: !courseStarted(c) };
+}

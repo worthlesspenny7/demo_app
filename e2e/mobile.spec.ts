@@ -133,7 +133,7 @@ test.describe('phone 390x844', () => {
     expect(back.id).toBe(at.id); expect(back.n).toBe(at.n); expect(back.answered).toBe(2);
     for (let i = 0; i < 80; i++) { if ((await step(page)) === 'recap') break; }
     await expect(page.locator('[data-screen=recap]')).toBeVisible();
-    await expect(page.locator('[data-testid=recap-sum]')).toHaveText(/\d+ of \d+ right/);
+    await expect(page.locator('[data-testid=recap-sum]')).toHaveText(/\d+ of \d+ correct/);
     await expect(page.locator('.mob-stars')).toBeVisible();
     // MOB-032: the run is also in the Desk progress store (its recent-runs list), stars included
     const desk = await page.evaluate(() => JSON.parse(localStorage.getItem('rally-trainer.progress.v1') ?? '{}') as { runs?: { id: string; stars: number }[] });

@@ -10,10 +10,10 @@ export function renderRecap(root: HTMLElement): void {
   if (!last) { location.replace('#/m'); return; }
   const r = last.result;
   const page = el('div', { class: 'mob mob-recap', 'data-screen': 'recap' });
-  const stars = el('div', { class: 'mob-stars', 'data-stars': r.stars, 'aria-label': `${r.stars} of 3 stars` }, ...[0, 1, 2].map(i => el('span', { class: i < r.stars ? 'on' : '' }, '★')));
+  const stars = el('div', { class: 'mob-stars', 'data-stars': r.stars, 'aria-label': `${r.stars} of 3 stars` }, ...[0, 1, 2].map(i => el('span', { class: i < r.stars ? 'on' : '' }, i < r.stars ? '★' : '☆')));
   const body = el('div', { class: 'mob-recap-body' },
     el('h1', {}, 'Run complete'), stars,
-    el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, `${r.correct} of ${r.total} right · ${r.secondsTotal.toFixed(1)} s off`));
+    el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, `${r.correct} of ${r.total} correct · ${r.secondsTotal.toFixed(1)} s off`));
   const tbl = el('table', { class: 'mob-tally' });
   for (const s of SKILLS) { const t = r.tallies[s]; if (!t || !t.total) continue; tbl.append(el('tr', { 'data-skill': s }, el('th', {}, SKILL_TITLE[s]), el('td', {}, `${t.correct}/${t.total}`), el('td', {}, `${t.seconds.toFixed(1)} s`))); }
   body.append(tbl);

@@ -68,7 +68,7 @@ describe('SCH-006 the page player', () => {
     expect(pageFromPart('3', 9, 0)).toBe(2); expect(pageFromPart('99', 9, 0)).toBe(8); expect(pageFromPart(undefined, 9, 4)).toBe(4); expect(pageFromPart('x', 9, 40)).toBe(8);
   });
   it('SCH-006 the figure set: ghost vs real car, the five columns, the stop sign with its chart cell, the clock face, the distance bar; content figure ids map onto it', () => {
-    expect(FIGURE_IDS).toEqual(['ghost', 'columns', 'stop', 'clock', 'distance']);
+    expect(FIGURE_IDS).toEqual(['ghost', 'columns', 'stop', 'clock', 'distance', 'seats', 'checkpoint']);   // PT-17: the two seats and the green checkpoint sign
     for (const f of FIGURE_IDS) expect(figureSvg(f)).toMatch(new RegExp(`^<figure class="s2-fig" data-figure="${f}"><svg [^>]*role="img"`));
     for (const [k, v] of Object.entries(FIGURE_ALIAS)) expect(figureId(k)).toBe(v);
     expect(figureId('ghost-car')).toBe('ghost'); expect(figureSvg('route-66')).toBe(''); expect(figureSvg(undefined)).toBe('');
@@ -141,11 +141,11 @@ describe('SCH-008 SCH-010 routes', () => {
   it('SCH-008 an old lesson id redirects to the module that covers it', () => {
     expect(moduleForLesson('ghost-car')?.id).toBe('m0'); expect(moduleForLesson('protocol')?.id).toBe('m2');
     for (const id of ['four-s', 'which-timer', 'pause-arithmetic', 'timed-leads', 'recovery', 'calibration', 'griid-cameo', 'markup', 'transits', 'rally-school', 'lost', 'measure-car']) expect(moduleForLesson(id), id).not.toBeNull();
-    const school = readFileSync('src/ui/screens/school.ts', 'utf8'); expect(school).toMatch(/moduleForLesson\(id\)/); expect(school).toMatch(/export function renderRules/);
+    const school = readFileSync('src/ui/screens/school.ts', 'utf8'); expect(school).toMatch(/schoolRedirect\(id\)/); expect(school).toMatch(/export function renderRules/);
     const main = readFileSync('src/ui/main.ts', 'utf8'); expect(main).toMatch(/parts\[1\] === 'rules'\) renderRules/); expect(main).toMatch(/case 'lesson': renderLongLesson/);
   });
   it('SCH-010 a brand-new visitor on the bare page is sent to the School with the first-visit line', () => {
     expect(COURSE_DATA.firstVisit).toMatch(/^What is this\?/);
-    const main = readFileSync('src/ui/main.ts', 'utf8'); expect(main).toMatch(/if \(!location\.hash && brandNew\(\)\) \{ firstVisit = true; markFirstVisit\(\)/);
+    const main = readFileSync('src/ui/main.ts', 'utf8'); expect(main).toMatch(/if \(l\.school\) \{ firstVisit = true; if \(l\.first\) markFirstVisit\(\)/);
   });
 });

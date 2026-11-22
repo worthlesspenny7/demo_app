@@ -91,7 +91,9 @@ export function mountTapWatch(host: HTMLElement, o: TapWatchOptions): TapWatch {
   }
   root.append(laps);
   // SCH-022: the Start button over the frozen face; the card's clock, the watch and the bar start on its tap
-  const begin = (): void => { if (started) return; started = true; t0 = now(); root.classList.remove('mw-gated'); gateBtn?.remove(); render(); o.onStart?.(); };
+  // PT-17 N1: onStart first: it moves the card's time origin (the `now` this face reads) to the Start tap, so t0 taken after it is that
+  // tap too; taking t0 before onStart left the reading time on the watch and on every graded tap
+  const begin = (): void => { if (started) return; o.onStart?.(); started = true; t0 = now(); root.classList.remove('mw-gated'); gateBtn?.remove(); render(); };
   let gateBtn: HTMLButtonElement | null = null;
   if (!started) {
     root.classList.add('mw-gated');

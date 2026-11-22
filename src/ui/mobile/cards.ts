@@ -146,8 +146,10 @@ export function ruleWithoutSource(rule: string, source: string): string {
   if (source && rule.endsWith(tail)) return `${rule.slice(0, -tail.length)}.`;
   const m = /^(.*?)\s*\((?:[^()]|\([^()]*\))*\)\.$/s.exec(rule); return m && /\b(HB|REG|video|Session|Rally School|p\.\d)/.test(rule.slice(m[1]!.length)) ? `${m[1]}.` : rule;
 }
-export function verdictParts(v: Verdict): { head: string; seconds: string; rule: string; detail: string; source: string } {
-  const s = Math.abs(v.secondsDelta) < 0.05 ? '0.0 s' : `${v.secondsDelta > 0 ? '+' : '−'}${Math.abs(v.secondsDelta).toFixed(1)} s`;
+/** PT-17 N7: `noSeconds` (an option card in the School: which way, what speed, a checkpoint choice) drops the seconds figure; the verdict
+ *  is Correct / Not quite and the why or rule line. Timed cards keep their seconds. */
+export function verdictParts(v: Verdict, o: { noSeconds?: boolean } = {}): { head: string; seconds: string; rule: string; detail: string; source: string } {
+  const s = o.noSeconds ? '' : Math.abs(v.secondsDelta) < 0.05 ? '0.0 s' : `${v.secondsDelta > 0 ? '+' : '−'}${Math.abs(v.secondsDelta).toFixed(1)} s`;
   return { head: v.correct ? 'Correct' : v.missed ? `Not quite: ${v.missed}` : 'Not quite', seconds: s, rule: ruleWithoutSource(v.rule, v.source), detail: v.correct ? v.chosen : `You: ${v.chosen}. Correct: ${v.expected}.`, source: v.source };
 }
 

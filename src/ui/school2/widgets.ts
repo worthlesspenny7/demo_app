@@ -13,6 +13,16 @@ const wall = (): number => (typeof performance !== 'undefined' ? performance.now
 const raf = (f: () => void): number => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(f) : window.setTimeout(f, 50));
 const caf = (h: number): void => { if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(h); clearTimeout(h); };
 
+/** PT-17 N5 (SCH-022): a timed widget shows its instructions and a Start button in place of its control; nothing moves or counts until
+ *  Start is tapped. `control` is hidden until then; `onStart` runs on the tap. */
+export function startGate(control: HTMLElement, onStart: () => void): HTMLButtonElement {
+  const b = el('button', { class: 'mob-btn primary big s2-wstart', type: 'button', 'data-action': 'start-widget', 'aria-label': 'Start: the clock starts when you tap' }, 'Start') as HTMLButtonElement;
+  control.hidden = true; control.style.display = 'none';   // a .mob-btn's display rule would beat the hidden attribute
+  b.onclick = (ev) => { ev.preventDefault(); b.remove(); control.hidden = false; control.style.display = ''; onStart(); };
+  control.before(b);
+  return b;
+}
+
 /** A road strip with the car (and optionally the ghost and markers) as positioned spans. */
 function road(): { root: HTMLElement; car: HTMLElement; ghost: HTMLElement; place(node: HTMLElement, frac: number): void } {
   const car = el('span', { class: 's2-car', 'aria-hidden': 'true' }); const ghost = el('span', { class: 's2-car s2-ghost', 'aria-hidden': 'true' });
@@ -33,9 +43,10 @@ export function mountHoldSpeed(host: HTMLElement, page: WidgetPage, env: WidgetE
   slider.oninput = () => m.setTarget(Number(slider.value));
   host.append(el('div', { class: 's2-widget', 'data-widget': 'holdSpeed' },
     el('div', { class: 's2-wrow' }, el('span', {}, `Assigned ${assigned} mph`), speedLbl), r.root, el('div', { class: 's2-wrow' }, readout, hold), slider));
-  const now = env.now ?? wall; let last = now(); let h = 0; let fired = false;
+  const now = env.now ?? wall; let last = now(); let h = 0; let fired = false; let started = false;
+  startGate(slider, () => { started = true; last = now(); });
   const frame = (): void => {
-    const t = now(); m.step(Math.min(0.25, t - last)); last = t;
+    const t = now(); if (started) m.step(Math.min(0.25, t - last)); last = t;
     // the view window follows the ghost: the gap between the cars is the drift
     r.place(r.ghost, 0.6); r.place(r.car, 0.6 - m.drift() / 10);
     readout.textContent = driftText(m.drift()); readout.dataset['seconds'] = m.drift().toFixed(2);
@@ -60,7 +71,7 @@ export function mountWhereCheckpoint(host: HTMLElement, page: WidgetPage, env: W
   const btn = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'leg-ended' }, 'At the sign!');
   host.append(el('div', { class: 's2-widget', 'data-widget': 'whereCheckpoint' },
     el('div', { class: 's2-wrow' }, el('span', {}, `Leg: ${m.miles} mi at ${m.assigned} mph`), clock), r.root, result, btn));
-  const now = env.now ?? wall; const t0 = now(); let h = 0; let over = false;
+  const now = env.now ?? wall; let t0 = now(); let h = 0; let over = false; let started = false;
   const frac = (s: number): number => s / m.legFt;
   const finish = (t: number | null): void => {
     if (over) return; over = true; caf(h);
@@ -72,12 +83,13 @@ export function mountWhereCheckpoint(host: HTMLElement, page: WidgetPage, env: W
     btn.textContent = 'Done'; (btn as HTMLButtonElement).disabled = true;
     env.done();
   };
-  btn.onclick = () => finish(now() - t0);
+  btn.onclick = () => { if (started) finish(now() - t0); };
   const frame = (): void => {
-    const t = now() - t0; const f = frac(m.carS(t)); r.place(r.car, f); r.place(r.ghost, frac(ghostS(m, t))); clock.textContent = `${t.toFixed(1)} s`;
+    const t = started ? now() - t0 : 0; const f = frac(m.carS(t)); r.place(r.car, f); r.place(r.ghost, frac(ghostS(m, t))); clock.textContent = `${t.toFixed(1)} s`;
     if (t >= m.maxSeconds()) { finish(null); return; }
     h = raf(frame);
   };
+  startGate(btn, () => { started = true; t0 = now(); });
   frame();
   return () => caf(h);
 }
@@ -94,7 +106,7 @@ export function mountTapLap(host: HTMLElement, page: WidgetPage, env: WidgetEnv)
   const lapBtn = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'lap' }, 'LAP');
   // PT-16 B9: LAP sits right under the road and never moves; the lap list grows below it
   host.append(el('div', { class: 's2-widget', 'data-widget': 'tapLap' }, el('div', { class: 's2-wrow' }, el('span', {}, `LAP at each of ${m.markers} markers`), digits), r.root, lapBtn, q, laps));
-  const now = env.now ?? wall; const t0 = now(); let h = 0;
+  const now = env.now ?? wall; let t0 = now(); let h = 0; let started = false;
   const ask = (): void => {
     lapBtn.hidden = true;
     q.append(el('p', { class: 's2-ask' }, `Your split at marker ${m.ask + 1}?`));
@@ -113,16 +125,18 @@ export function mountTapLap(host: HTMLElement, page: WidgetPage, env: WidgetEnv)
     q.append(opts, fb);
   };
   lapBtn.onclick = () => {
+    if (!started) return;
     const t = now() - t0; if (m.lap(t) === null) return;
     const row = m.table()[m.table().length - 1]!; const err = m.errors()[m.errors().length - 1]!;
     laps.append(el('li', {}, `${formatInterval(row.interval, true)} · split ${formatInterval(row.cumulative, true)} (${Math.abs(err) < 0.05 ? 'on the marker' : `${Math.abs(err).toFixed(1)} s ${err > 0 ? 'late' : 'early'}`})`));
     if (m.done) { caf(h); digits.textContent = formatInterval(m.watch.reading(t), true); ask(); }
   };
   const frame = (): void => {
-    const t = now() - t0; r.place(r.car, Math.min(1, t / span)); digits.textContent = formatInterval(m.watch.reading(t), true);
+    const t = started ? now() - t0 : 0; r.place(r.car, Math.min(1, t / span)); digits.textContent = formatInterval(m.watch.reading(t), true);
     if (t > span * 1.4 && !m.done) { while (!m.done) m.lap(t); laps.append(el('li', {}, 'The car went by: the missing laps were taken late.')); digits.textContent = formatInterval(m.watch.reading(t), true); ask(); return; }
     if (!m.done) h = raf(frame);
   };
+  startGate(lapBtn, () => { started = true; t0 = now(); });
   frame();
   return () => caf(h);
 }

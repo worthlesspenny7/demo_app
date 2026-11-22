@@ -34,7 +34,7 @@ export function follow(d: Decision, o: FollowOpts = {}): DecisionResponse {
     case 'clock':
       if (/read the minute/.test(p)) return { optionId: byLabel(/TOD/) };           // RULE-038
       if (/count the second in/.test(p)) return { optionId: byLabel(/second hand/) };   // RULE-038
-      return { optionId: byLabel(/chrono/) };                                           // RULE-039
+      return { optionId: byLabel(/stopwatch mode/) };                                           // RULE-039
     case 'checkpoint': return { optionId: /red GREAT RACE STOP/.test(p) ? byLabel(/^Stop/) : byLabel(/Hold speed/) };   // RULE-003 / RULE-004
     case 'lost': {
       const ago = Number(/left the route (\d+) s ago/.exec(p)?.[1]); const det = /detour about (\d+) s longer/.exec(p);

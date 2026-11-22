@@ -85,7 +85,7 @@ function hazardScene(h: Hazard, d: number, size: 'short' | 'long'): { scene: str
     case 'accident': return { scene: `An accident scene ${ft} ahead; people need help.`, label: 'Accident scene' };
   }
 }
-const CLOCK_OPTS = [{ id: 'tod', label: 'Watch, TOD mode' }, { id: 'chrono', label: 'Watch, chrono' }, { id: 'min', label: 'Clock minute hand' }, { id: 'sec', label: 'Clock second hand' }];
+const CLOCK_OPTS = [{ id: 'tod', label: 'Watch, TOD mode' }, { id: 'chrono', label: 'Watch, stopwatch mode' }, { id: 'min', label: 'Clock minute hand' }, { id: 'sec', label: 'Clock second hand' }];
 const CLOCK_LABEL: Record<string, string> = Object.fromEntries(CLOCK_OPTS.map(o => [o.id, o.label]));
 const ordinal = (n: number): string => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
 const signed = (x: number): string => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)} s`;
@@ -321,7 +321,7 @@ export class DecisionRunner {
       const v = speedCh!; ctx.speeds = { current: p.vIn, assigned: p.vIn };   // MOB-055: never the answer in a chip; Column C is the book
       const cands = [...new Set([v, p.vIn, v + 5 <= 55 ? v + 5 : v - 10, v - 5 >= 10 ? v - 5 : v + 10])].filter(x => x > 0).slice(0, 4);
       const opts = this.shuffle(key, cands).map(x => ({ id: `v${x}`, label: `${x} mph` }));
-      return this.make('preread', key, `Pre-read, line ${ins.n}. What speed do you call at this sign?`, ctx, { options: opts }, { optionId: `v${v}` }, { what: 'speed', truth: v, ins, plan: p });
+      return this.make('preread', key, `Pre-read, line ${ins.n}. What speed do you call at this sign?`, ctx, { options: opts }, { optionId: `v${v}` }, { what: 'speed', truth: v, ins, plan: p, colC: ctx.row?.columnC.join(' ') ?? '' });
     }
     return null;
   }
@@ -350,7 +350,7 @@ export class DecisionRunner {
     }
     const seen = new Set<string>(); opts = opts.filter(o => !seen.has(o.id) && seen.add(o.id));
     for (const x of [nv + 10, nv - 10, v + 10]) if (opts.length < 3 && x >= 10 && !seen.has(`v${x}`)) { seen.add(`v${x}`); opts.push(mph(x)); }
-    return this.make('preread', key, prompt, ctx, { options: this.shuffle(key, opts) }, { optionId: `v${truth}` }, { what: 'speed', truth, ins, plan: p, sign: form });
+    return this.make('preread', key, prompt, ctx, { options: this.shuffle(key, opts) }, { optionId: `v${truth}` }, { what: 'speed', truth, ins, plan: p, sign: form, signText: sign, colC: ctx.row?.columnC.join(' ') ?? '', held: v });
   }
 
   /** Options for a turn: the book's direction plus the other roads at that node (and Straight). */
@@ -390,6 +390,7 @@ export class DecisionRunner {
   }
   private launchCard(key: string, ins: Instruction, own: number, launch: number, netLoss: number, base: number | undefined, what: 'start' | 'restart' | 'transitOut' | 'lunch'): Pending {
     const sim = this.sim; const truth = Math.max(0, r1(launch - sim.tod));
+    if (this.hint.queue && what !== 'lunch' && what !== 'start') return this.queueCard(key, ins, own, launch, this.hint.queue);
     // MOB-058: a restart may print the base time and the starting position instead of your own time (RULE-010)
     const asp = this.scenario.asp ?? 0;
     const byBase = what === 'restart' && !!this.hint.base && base !== undefined && asp > 0;
@@ -406,6 +407,18 @@ export class DecisionRunner {
         : `${name}, line ${ins.n}: ${yours}. Lead by the standing-start loss; tap LAUNCH on the launch second.`;
     const timing: TimingSpec = { kind: 'tapAt', truthSeconds: truth, toleranceSeconds: TIMING_TOLERANCE.restart, maxSeconds: truth + 20, tapLabel: what === 'lunch' ? 'LEAVE' : 'LAUNCH', todPrimary: true };
     return this.make('restart', key, prompt, ctx, { timing }, { tapSeconds: truth }, { ins, own, launch, what, netLoss, byBase, variant: what === 'lunch' ? 'lunch' : byBase ? 'base' : 'default' });
+  }
+  /** PT-17 N8 (RULE-013): the start queue as an option card: wait back for the car ahead to leave on its minute, or go around one that sits
+   *  past its minute and leave on yours. No clock on the card (the times are in the prompt). */
+  private queueCard(key: string, ins: Instruction, own: number, launch: number, q: 'wait' | 'stuck'): Pending {
+    const ahead = own - 60;
+    const ctx = this.ctx({ line: ins.n, row: this.row(ins), times: { own }, speeds: { current: 0, assigned: 0 } });
+    const prompt = q === 'wait'
+      ? `Restart, line ${ins.n}: your minute is ${this.clk(own)}. The car ahead leaves at ${this.clk(ahead)}; it is ${this.clk(ahead - 10)} and it waits at the sign. What now?`
+      : `Restart, line ${ins.n}: your minute is ${this.clk(own)}. The car ahead was due at ${this.clk(ahead)}; it is ${this.clk(ahead + 15)} and it still sits at the sign. What now?`;
+    const opts: DecisionOption[] = [{ id: 'wait', label: 'Wait back; pull up after it leaves' }, { id: 'beside', label: 'Pull up beside it now' }, { id: 'around', label: 'Go around it; leave on your minute' }, { id: 'early', label: 'Leave with it, a minute early' }];
+    const truth = q === 'wait' ? 'wait' : 'around';
+    return this.make('restart', key, prompt, ctx, { options: this.shuffle(key, opts) }, { optionId: truth }, { ins, own, launch, what: 'restart', netLoss: 0, byBase: false, variant: 'queue', queue: q, truth, labels: Object.fromEntries(opts.map(o => [o.id, o.label])) });
   }
   private clockView(): DecisionContext['clock'] {
     const h = this.sim.clock.hands(this.sim.tod);
@@ -502,6 +515,14 @@ export class DecisionRunner {
       const all = Math.floor(M / 10) * 10; const up = Math.ceil(Math.max(0, M - R) / 10) * 10;
       const cands = this.ranked(key, truth, [Math.max(0, truth - 10), Math.max(0, truth - 20), Math.floor(Math.max(0, M - 2 * R) / 10) * 10, Math.max(0, truth - 30), 0], [truth + 10, all, up, truth + 20, all + 10, truth + 30], 4).sort((a, b) => a - b);
       this.ov.ta.set(leg, 'wait');
+      if (this.hint.taLeg) {   // PT-17 N8: Module 9 "Where to claim": which leg goes on the web form
+        const ctxL = this.ctx({ ta: { measured: M, claim: truth, cause: adv.cause, legIndex: leg, madeUp: R } });
+        const passed = leg - 1;
+        const legs = [...new Set([leg, passed > 0 ? passed : leg + 2, leg + 1, leg + 3])].slice(0, 4);
+        const optsL = this.shuffle(key, legs.map(l => ({ id: `l${l}`, label: `Leg ${l}` })));
+        const promptL = `TA web form. You passed ${passed} checkpoint${passed === 1 ? '' : 's'} before the ${adv.cause ?? 'delay'} held you. Which leg do you enter?`;
+        return this.make('ta', key, promptL, ctxL, { options: optsL }, { optionId: `l${leg}` }, { leg, oracle: truth, M, R, legQ: true });
+      }
       const opts = cands.map(c => ({ id: `c${c}`, label: c === 0 ? 'No claim' : `Claim ${formatInterval(c)}` }));
       const ctx = this.ctx({ ta: { measured: M, claim: truth, cause: adv.cause, legIndex: leg, madeUp: R } });
       const prompt = `TA point. Leg ${leg} was delayed ${formatInterval(M)} by a ${adv.cause ?? 'qualifying delay'}${R > 0 ? `; about ${R} s of it could be made up` : '; none of it could be made up'}. What do you claim?`;
@@ -806,6 +827,12 @@ export class DecisionRunner {
         return base(Math.abs(delta) <= TIMING_TOLERANCE.pause, delta, `GO at ${dwell.toFixed(1)} s`, none ? 'no GO' : `GO at ${t.toFixed(1)} s`, none ? 'nogo' : delta < 0 ? 'early' : 'default', none ? 'no GO' : `GO ${early(delta)}`);
       }
       case 'restart': {
+        if (p.x.queue) {   // PT-17 N8: the start-queue option card
+          const ins = p.x.ins as Instruction; const truthQ = p.x.truth as string; const labels = p.x.labels as Record<string, string>; const opt = res?.optionId ?? '';
+          this.ov.go.set(ins.n, p.x.launch as number);
+          const okQ = opt === truthQ;
+          return base(okQ, okQ ? 0 : opt === 'early' || opt === 'beside' ? 60 : 30, labels[truthQ]!, opt ? labels[opt] ?? opt : 'no answer', p.x.queue === 'wait' ? 'queue' : 'queueStuck', p.x.queue === 'wait' ? 'pull up only after the car ahead leaves' : 'go around a car that sits past its minute');
+        }
         const ins = p.x.ins as Instruction; const t = tap(p.d.timing!.maxSeconds); const truth = p.d.timing!.truthSeconds;
         if (ins.n === 1 && sim.phase === 'preread') this.ov.depart = p.tod0 + t; else this.ov.go.set(ins.n, p.tod0 + t);
         const delta = t - truth; const none = res?.tapSeconds === undefined;
@@ -868,7 +895,10 @@ export class DecisionRunner {
         const plan = p.x.plan as NavPlan; const nx = this.nav.plans.find(q => q.s > plan.s && (q.ins.speed !== undefined || q.ins.timed));
         const dist = (nx ? nx.s : this.scenario.course.lengthFt) - plan.s;
         const cost = ok || !(v > 0) ? (ok ? 0 : 60) : dist / mphToFps(v) - dist / mphToFps(truth);
-        return base(ok, cost, `${truth} mph`, opt ? `${v} mph` : 'no answer', 'speed', 'the speed in Column C');
+        // PT-17 N2: the wrong-answer line is about this row: the trap it set (School sign cases) and this row's own Column C
+        const miss = signCaseMiss(p.x.sign as SignForm | undefined, { colC: (p.x.colC as string | undefined) ?? '', truth, held: (p.x.held as number | undefined) ?? truth, sign: (p.x.signText as string | undefined) ?? '', remark: ins.remark ?? '' });
+        const out = base(ok, cost, `${truth} mph`, opt ? `${v} mph` : 'no answer', 'speed', miss.missed);
+        return { ...out, rule: `${miss.rule} (${out.source}).` };
       }
       case 'transitOut': {
         const out = p.x.out as number; const endIns = p.x.endIns as Instruction | undefined; const chosen = Number((res?.optionId ?? '').slice(1));
@@ -912,6 +942,13 @@ export class DecisionRunner {
         return base(ok, chosen - truth, `CALL at ${formatInterval(truth, true)}`, res?.optionId ? `CALL at ${formatInterval(chosen, true)}` : 'no answer', 'default', `CALL ${early(chosen - truth)}`);
       }
       case 'ta': {
+        if (p.x.legQ) {   // PT-17 N8: the leg question; the claim itself is filed as the rule says
+          const leg = p.x.leg as number; const oracle = p.x.oracle as number; const picked = Number((res?.optionId ?? '').slice(1));
+          this.ov.ta.set(leg, oracle); this.nav.fileTa(leg, oracle);
+          const okL = picked === leg; const passed = leg - 1;
+          const out = base(okL, okL ? 0 : oracle, `Leg ${leg}`, Number.isFinite(picked) && picked > 0 ? `Leg ${picked}` : 'no answer', 'default', 'the leg is checkpoints passed plus one');
+          return { ...out, rule: `The leg number is checkpoints passed plus one: ${passed} passed, so leg ${leg} goes on the form (REG V.H.3).`, source: 'REG V.H.3' };
+        }
         const leg = p.x.leg as number; const oracle = p.x.oracle as number; const c = Number((res?.optionId ?? '').slice(1));
         const claim = Number.isFinite(c) && c >= 0 ? c : 0;
         this.ov.ta.set(leg, claim); this.nav.fileTa(leg, claim);
@@ -1029,3 +1066,18 @@ function sanitize(r: DecisionResponse | null | undefined): DecisionResponse | nu
   return out.optionId === undefined && out.tapSeconds === undefined && out.taps === undefined ? null : out;
 }
 export { words as promptWords };
+
+/** PT-17 N2: a pre-read speed card's wrong-answer headline and rule, naming the sign case's trap and quoting the row's own Column C. */
+export function signCaseMiss(form: SignForm | undefined, r: { colC: string; truth: number; held: number; sign: string; remark: string }): { missed: string; rule: string } {
+  const c = r.colC.trim() ? `"${r.colC.trim()}"` : 'nothing';
+  switch (form) {
+    case 'sign:limit': return { missed: 'the posted limit is not your speed', rule: `Trap: the posted limit. This row's Column C says ${c}: call ${r.truth}` };
+    case 'sign:blank': return { missed: 'a blank Column C means no change', rule: `Trap: the blank Column C. This row's Column C says ${c}: keep ${r.held}` };
+    case 'sign:partial': return { missed: 'the book quotes only the start of the sign', rule: `Trap: the partly quoted sign. It is still ${r.sign}; this row's Column C says ${c}` };
+    case 'sign:twin': return { missed: 'the first SPEED LIMIT sign is not in the book', rule: `Trap: the twin signs. Only the quoted one counts; this row's Column C says ${c}` };
+    case 'sign:overhead': return { missed: 'an overhead sign is still the sign', rule: `Trap: the overhead sign. It still counts; this row's Column C says ${c}` };
+    case 'sign:bracket': return { missed: 'bracketed text is only a note', rule: `Trap: the bracketed note. Ignore it; this row's Column C says ${c}` };
+    case 'sign:normal': return { missed: 'the speed in Column C', rule: `Sign and book agree: this row's Column C says ${c}, call ${r.truth}` };
+    default: return { missed: 'the speed in Column C', rule: `This row's Column C says ${c}: call ${r.truth} at the sign` };
+  }
+}

@@ -73,3 +73,11 @@ taker's daily and skill runs draw only the kinds of Modules 0-6 and of completed
 - Module 1 calling: one normal case, then odd cases that make you think.
 - Module 2 must not ask for the go time before the arithmetic is taught; give the number on the card, teach the sum in Module 4.
 - The driver is "the driver", never "Dad".
+
+PT-17 changes (fix sprint, SCH-028..037): Start starts the clock (the card's time origin moves to the Start tap before the watch takes
+its own); the holdSpeed, whereCheckpoint and tapLap widgets and a run's deadline calls wait under Start too; Module 1's sign cases each
+have their own wrong-answer line quoting the row's Column C; the School's pause cards go straight through (form 'straight') and Module 4's
+worked example is computed from the same engine chart; try-it stars come from correct answers ("Try again" below 3 of 5); a newcomer lands
+on the School every visit until Module 0 is done and Home's runs use Module 0-6 kinds; option verdicts in the School show no seconds;
+m5 and m10 teach before they ask, m6 p8 is a start-queue card and m9 p7 asks the leg; content TERM_MODULE / EARLY_RULE keep later words
+(half a ramp, Dec/Acc, chrono) out of earlier modules and "pre-read" is explained in Module 1 page 1.

@@ -42,7 +42,7 @@ const PREFERRED: Record<DecisionKind, Record<string, string[]>> = {
   speedChange: { default: ['RULE-020'], late: ['RULE-020'], early: ['RULE-020', 'RULE-019'] },
   timedStart: { default: ['RULE-021~half a ramp early', 'RULE-020'], start: ['RULE-022~starts the stopwatch', 'RULE-021'] },
   pause: { default: ['RULE-016', 'RULE-018'], early: ['RULE-016', 'RULE-018'], nogo: ['RULE-018~always end the count', 'RULE-016'] },
-  restart: { default: ['RULE-011', 'RULE-010'], minute: ['RULE-038', 'RULE-037'], base: ['RULE-010', 'RULE-011'], lunch: ['RULE-015', 'RULE-011'] },
+  restart: { queue: ['RULE-013~Pull up', 'RULE-013'], queueStuck: ['RULE-013~just sits there', 'RULE-013'], default: ['RULE-011', 'RULE-010'], minute: ['RULE-038', 'RULE-037'], base: ['RULE-010', 'RULE-011'], lunch: ['RULE-015', 'RULE-011'] },
   transitOut: { default: ['RULE-014'] },
   makeup: { default: ['RULE-025'], big: ['RULE-026', 'RULE-025'], limit: ['RULE-026~posted limit', 'RULE-005'], room: ['RULE-027~before or after the interval', 'RULE-026'], stop: ['RULE-029', 'RULE-025'] },
   // PT-14 C-1: a cause miss cites RULE-031's cause sentence (what qualifies), a light or a truck its "are not" sentence

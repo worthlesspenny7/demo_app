@@ -62,6 +62,7 @@ export function pointAt(root: HTMLElement, control: ControlId, label: string, wh
   return target;
 }
 
+let newSaidFor: unknown = undefined;
 /** SCH-004: apply the guided state to a run screen showing decision `d`. Returns what it did (tests / helpers). */
 export function applyGuided(page: HTMLElement, d: Decision, g: GuidedState = guidedState()): { hidden: ControlId[]; greyed: ControlId[]; pointer: ControlId | null } {
   page.classList.toggle('guided', g.active);
@@ -81,7 +82,9 @@ export function applyGuided(page: HTMLElement, d: Decision, g: GuidedState = gui
   }
   if (g.newest && controlsOf(d).includes(g.newest)) {
     const card = page.querySelector<HTMLElement>('.mob-cardarea') ?? page;
-    pointAt(page, g.newest, `New: ${pointerFor(g.newest)}`, card);
+    // PT-17 N12: "New:" only on the first card of a run that points at the control; later cards keep the plain pointer
+    const first = newSaidFor !== session.handle; newSaidFor = session.handle;
+    pointAt(page, g.newest, first ? `New: ${pointerFor(g.newest)}` : pointerFor(g.newest), card);
     res.pointer = g.newest;
   }
   return res;

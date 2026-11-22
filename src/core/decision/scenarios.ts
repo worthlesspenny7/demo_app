@@ -21,6 +21,10 @@ export interface MicroHint {
   checkpoint?: 'green' | 'red' | 'carAhead';
   /** restart: the card prints the base time and the starting position instead of your own time (RULE-010, MOB-058). */
   base?: boolean;
+  /** PT-17 N8: restart as a start-queue question: the car ahead waits for its minute ('wait') or sits past it ('stuck') (RULE-013). */
+  queue?: 'wait' | 'stuck';
+  /** PT-17 N8: ta as the web form's leg question (checkpoints passed plus one), Module 9 "Where to claim". */
+  taLeg?: boolean;
   /** hazard / ta: a short or a long delay (the scene says which). */
   size?: 'short' | 'long';
   /** lost: seconds after leaving the route that the driver notices (the card's "N s ago", MOB-056). */
@@ -122,7 +126,9 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
     case 'pause': {
       const v = r.pick([25, 30, 35, 40, 45]); const b = builder(kind, seed, rung).start(v);
       // PT-14 N7: 15-20 s rows (a 30 s row sat 25 s on one card)
-      b.advanceMiles(0.35 + r.next() * 0.2).stop(r.pick(['S', 'L', 'R'] as const), r.pick([25, 30, 35, 40, 45]), { pause: r.pick([15, 15, 20, 20]) });
+      // PT-17 N3: the School's pause cards go straight through ('straight'), so a card's sit is the plain chart cell its worked example uses
+      const dir = r.pick(['S', 'L', 'R'] as const);
+      b.advanceMiles(0.35 + r.next() * 0.2).stop(form === 'straight' ? 'S' : dir, r.pick([25, 30, 35, 40, 45]), { pause: r.pick([15, 15, 20, 20]) });
       return one(close(b, 0.4 + r.next() * 0.2));
     }
     case 'speedChange': {
@@ -205,6 +211,9 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
       const shape = kind === 'ta' ? (variant % 2 === 0 ? 1 : 2) : variant % 4;
       const size: 'short' | 'long' = kind === 'ta' || (shape !== 1 && shape !== 2) ? 'long' : r.chance(0.4) ? 'short' : 'long';
       const b = builder(kind, seed, rung).start(35);
+      // PT-17 N8: the School's leg question passes one to three checkpoints before the delay (the leg is checkpoints passed plus one)
+      const cpsBefore = kind === 'ta' && form === 'taLeg' ? 1 + (seed % 3) : 0;
+      for (let i = 0; i < cpsBefore; i++) b.advanceMiles(0.25).checkpoint();
       b.advanceMiles(0.3 + r.next() * 0.1);
       if (shape === 0) { const len = r.int(700, 1000); b.hazard({ kind: 'slow', speedMph: r.int(21, 25), lengthFt: len }); b.advanceFt(len); }
       else if (shape === 1) {
@@ -220,18 +229,18 @@ export function microScenario(kind: DecisionKind, seed: number, variant = 0, run
       b.advanceMiles(shape === 2 && size === 'long' ? 0.9 + r.next() * 0.1 : 1.1 + r.next() * 0.2).checkpoint().advanceFt(300);
       if (shape === 1 || shape === 2) b.endTimedPortion();
       const sc = b.advanceMiles(0.15).finish().build();
-      return one(sc, { hint: { size } });
+      return one(sc, { hint: { size, ...(cpsBefore ? { taLeg: true } : {}) } });
     }
     case 'restart': {
       // 0 / 3 a time-of-day restart with your own time printed (speeds vary), 1 an exact-transit OUT, 2 base time + starting position (RULE-010)
-      const shape = variant % 4; const vOut = r.pick(SPEEDS);
+      const shape = form === 'queue' ? 0 : variant % 4; const vOut = r.pick(SPEEDS);
       const asp = shape === 2 ? r.int(1, 30) : 0;
       const b = builder(kind, seed, rung, asp ? { asp } : {}).start(35);
       if (shape === 1) {
         b.advanceMiles(0.2 + r.next() * 0.2); const secs = r.pick([90, 120, 150]);
         b.transit({ exact: true, seconds: secs, miles: 0.3 }); b.advanceMiles(0.3); b.endTransit({ speed: vOut });
       } else restartHere(b, r, vOut, asp);
-      return one(closeAfterHold(b, r, vOut), { hint: shape === 2 ? { base: true } : {} });
+      return one(closeAfterHold(b, r, vOut), { hint: form === 'queue' ? { queue: variant % 2 === 1 ? 'stuck' : 'wait' } : shape === 2 ? { base: true } : {} });
     }
     case 'clock': {
       // MOB-057: 0 the minute at a minute change (watch TOD), 1 the minute at an exact-transit OUT (any second: the clock may be fine),

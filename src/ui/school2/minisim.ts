@@ -14,6 +14,7 @@ import { pointAt } from '../mobile/guided.js';
 import { pointerFor } from './sources.js';
 import { sourceChips, zoneChip } from './sheet.js';
 import { el } from '../state.js';
+import { moduleRule } from '../../../content/course.js';
 
 interface MiniRun { plan: RunPlan; next(): unknown; ack(): void; answer(r: DecisionResponse | null): Verdict; done(): boolean; result(): unknown; retry?(): MiniRun; guided?: { pointer?: string } }
 
@@ -30,7 +31,7 @@ export function miniRunFor(page: Pick<MinisimPage, 'decisionKind' | 'seed' | 'co
 
 /** PT-16 B1: "Try again" ignores taps for this long after the verdict. */
 export const TRY_AGAIN_ARM_MS = 400;
-export interface MiniSimEnv { done(): void; now?: () => number }
+export interface MiniSimEnv { done(): void; now?: () => number; /** PT-17 N9: the module the page is in (module-aware rule text) */ moduleIndex?: number }
 const wall = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
 
 /** window.__rally.school.mini: the card on screen (tests answer it through the oracle). */
@@ -104,12 +105,12 @@ export function mountMiniSim(host: HTMLElement, page0: MinisimPage, env: MiniSim
   }
 
   function verdict(v: Verdict): void {
-    const vp = verdictParts(v);
+    const vp = verdictParts(v, { noSeconds: !miniView.decision?.timing });   // PT-17 N7: no seconds on an option card's verdict
     const ov = el('div', { class: `s2-verdict ${v.correct ? 'v-ok' : 'v-bad'}`, 'data-testid': 'mini-verdict', 'data-correct': String(v.correct), role: 'status' },
       el('div', { class: 'mv-head' }, el('span', {}, vp.head), el('b', { class: 'mv-sec' }, vp.seconds)));
     if (page.form === 'lap' || (v.kind === 'watch' && /lap reads/.test(v.chosen))) ov.append(el('p', { class: 's2-lapread', 'data-testid': 'lap-read' }, vp.detail));   // PT-16 SCH-015: the lap read-off
     if (v.correct) ov.append(el('p', { class: 's2-why', 'data-testid': 'why' }, page.why));
-    else ov.append(el('p', { class: 's2-rule', 'data-testid': 'mini-rule' }, vp.rule));
+    else ov.append(el('p', { class: 's2-rule', 'data-testid': 'mini-rule' }, moduleRule(vp.rule, v.kind, env.moduleIndex ?? 99)));
     // PT-16 B10: the source is a chip that opens the excerpt sheet, never text in the verdict
     const chips = sourceChips(v.source, v.kind); if (chips.length) ov.append(el('div', { class: 's2-vchips', 'data-testid': 'verdict-chips' }, ...chips));
     cardArea.append(ov);

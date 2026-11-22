@@ -173,7 +173,10 @@ export interface MicroSpec {
 /** PT-16 / SCH-025: the School's sign cases of a pre-read "what speed" card: the normal case, then the traps. */
 export const SIGN_FORMS = ['sign:normal', 'sign:limit', 'sign:blank', 'sign:partial', 'sign:twin', 'sign:overhead', 'sign:bracket'] as const;
 export type SignForm = (typeof SIGN_FORMS)[number];
-export type MicroForm = 'lap' | SignForm;
+/** PT-17 N3: 'straight' = a School pause card whose stop goes straight through (no turn cap), so its chart cell is the plain IN / OUT cell. */
+/** PT-17 N8: 'queue' = a School restart card about the start queue (wait for the car ahead, or go around one that sits past its minute). */
+/** 'taLeg' = a School TA card asking which leg goes on the web form (checkpoints passed plus one). */
+export type MicroForm = 'lap' | 'straight' | 'queue' | 'taLeg' | SignForm;
 
 export type RunItem =
   | { type: 'rule'; card: RuleCard }

@@ -137,7 +137,7 @@ export const RULES: RuleCard[] = [
   // ---------------------------------------------------------------- Stay on time (Four S's 4)
   {
     id: 'RULE-016', skill: 'stayOnTime', title: 'Pause = chart cell, not 15', lesson: 'pause-arithmetic', kinds: ['pause', 'preread'], sim: true,
-    text: "Wait the chart time, not the printed pause: dwell = pause minus Dec(in) minus Acc(out), the stop-and-go loss for your two speeds. The handbook's Packard chart gives 8.6 s for 30 in, 40 out. Dec and Acc are the simulator's performance card; measure your car.",
+    text: "Sit the printed pause minus your car's stop-and-go loss, not the printed pause. Formula: dwell = pause minus Dec(in) minus Acc(out). The handbook's Packard chart gives 8.6 s for 30 in, 40 out. Dec and Acc are the simulator's performance card; measure your car.",
     source: "HB p.8; Rally School Part 2 [22:02]",
   },
   {
@@ -253,7 +253,7 @@ export const RULES: RuleCard[] = [
   },
   {
     id: 'RULE-038', skill: 'instruments', title: 'Read the minute off the watch', lesson: 'which-timer', kinds: ['clock', 'restart'],
-    text: "Take the hour and minute from the stopwatch in time-of-day mode. Use the clock only for its second hand, counting the second in: 56, 57, 58, 59, mark. Then switch the watch back to chrono.",
+    text: "Take the hour and minute from the stopwatch in time-of-day mode. Use the clock only for its second hand, counting the second in: 56, 57, 58, 59, mark. Then switch the watch back to stopwatch mode.",
     source: "REG II.H.1.d(3); Clock and Stopwatch [01:08]; 2026 Training Session [101:15] (video)",
   },
   {
@@ -269,7 +269,7 @@ export const RULES: RuleCard[] = [
   // ---------------------------------------------------------------- added by the PT-13 fix sprint (MOB-054, MOB-056)
   {
     id: 'RULE-041', skill: 'safetyCourse', title: 'Follow the bold CAMEO arrow', lesson: 'markup', kinds: ['preread', 'turn'],
-    text: "The CAMEO in Column A is the junction seen from above: the dot at the bottom is you, the bold arrow is the route and thin lines are the other roads. Call the turn the bold arrow takes.",
+    text: "Column A's little map (the CAMEO) is the junction seen from above: the dot at the bottom is you, the bold arrow is the route and thin lines are the other roads. Call the turn the bold arrow takes.",
     source: "HB Appendix D (Column A)",
   },
   {

@@ -5,7 +5,7 @@ import { renderSchool, renderRules, renderLongLesson } from './screens/school.js
 import { markFirstVisit } from './school2/player.js';
 import { PROGRESS_KEY } from './viewmodels/progress.js';
 import { DECISION_PROGRESS_KEY } from './mobile/progress.js';
-import { COURSE_POS_KEY } from './school2/progress.js';
+import { newcomerLanding } from './school2/progress.js';
 import { renderCockpit } from './screens/cockpit.js';
 import { renderDebrief } from './screens/debrief.js';
 import { renderReference } from './screens/reference.js';
@@ -34,12 +34,14 @@ const view = el('main', { id: 'view', tabindex: '-1' });
 const mobBack = el('a', { class: 'mob-back', href: '#/m' }, '‹ Home');
 root.replaceChildren(nav, mobBack, view);
 
-/** SCH-010: a brand-new visitor (no saved progress of any kind) landing on the bare page opens the School's Module 0, page 1. */
-function brandNew(): boolean {
-  try { return [PROGRESS_KEY, DECISION_PROGRESS_KEY, COURSE_POS_KEY].every(k => localStorage.getItem(k) === null); } catch { return false; }
+/** SCH-010: a brand-new visitor landing on the bare page opens the School's Module 0, page 1 (first-visit line + Start). PT-17 N6 (B13):
+ *  opening the page consumes nothing: until Module 0 is finished (and no run was played) the bare page lands on the School again, where
+ *  the course continues. */
+function landing(): { school: boolean; first: boolean } {
+  try { return newcomerLanding(localStorage.getItem(PROGRESS_KEY), localStorage.getItem(DECISION_PROGRESS_KEY)); } catch { return { school: false, first: false }; }
 }
 let firstVisit = false;
-if (!location.hash && brandNew()) { firstVisit = true; markFirstVisit(); history.replaceState(null, '', `${location.pathname}${location.search}#/school`); }
+if (!location.hash) { const l = landing(); if (l.school) { firstVisit = true; if (l.first) markFirstVisit(); history.replaceState(null, '', `${location.pathname}${location.search}#/school`); } }
 
 /** SCH-008: the Reference page gains a "Rules" entry (the rule-card grid that used to be the School). */
 function addRulesLink(): void {

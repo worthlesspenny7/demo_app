@@ -68,7 +68,7 @@ describe('SCH-012 pointers say what is graded', () => {
       expect(d.kind, at).toBe(p.decisionKind);
       expect(words(ptr), at).toBeLessThanOrEqual(14);
       const lapForm = d.kind === 'watch' && d.timing?.kind === 'startStop';
-      const verb = lapForm ? VERBS.watchLap : VERBS[d.kind];
+      const verb = lapForm ? VERBS.watchLap : d.options?.length ? undefined : VERBS[d.kind];   // PT-17 SCH-035: the start-queue restart is an option card
       if (verb) { expect(d.timing, at).toBeTruthy(); expect(ptr, `${at}: "${ptr}"`).toMatch(verb); }
       else { expect(d.options?.length, at).toBeGreaterThan(0); expect(ptr, `${at}: "${ptr}"`).toMatch(/\b(tap|pick)\b/i); expect(ptr, `${at}: "${ptr}" names a button the card lacks`).not.toMatch(BUTTONS); }
       if (/book row/i.test(ptr)) expect(d.context.row, `${at} has no book row`).toBeTruthy();
@@ -85,8 +85,8 @@ describe('SCH-012 pointers say what is graded', () => {
 
 describe('SCH-013 runs use only what the course taught', () => {
   const FORBIDDEN: DecisionKind[] = ['ta', 'lost', 'transitOut', 'makeup', 'hazard'];
-  it('SCH-013 runKinds: null for a visitor who never started the course and after modules 7-10; else the core kinds plus completed modules', () => {
-    expect(runKinds(done())).toBeNull();
+  it('SCH-013 runKinds: the core kinds for a visitor who never started the course (PT-17), null after modules 7-10; else the core kinds plus completed modules', () => {
+    expect(runKinds(done())).toEqual(runKinds(done('m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6')));
     const core = runKinds(done('m0', 'm1', 'm2', 'm3', 'm4', 'm5', 'm6'))!;
     for (const k of FORBIDDEN) expect(core).not.toContain(k);
     for (const k of ['checkpoint', 'preread', 'turn', 'pause', 'watch', 'speedChange', 'timedStart', 'restart', 'clock'] as DecisionKind[]) expect(core).toContain(k);

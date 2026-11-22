@@ -7,13 +7,13 @@ import { STOP_EXAMPLE } from '../../../content/course.js';
 import { videoByKey } from '../../../content/videos.js';
 /** PT-16 B8: the stop figure quotes the same car and cell as Module 4's worked example (this app's car, not the handbook's Packard). */
 const STOP_FIG = STOP_EXAMPLE[0]!;
-export type FigureId = 'ghost' | 'columns' | 'stop' | 'clock' | 'distance';
-export const FIGURE_IDS: FigureId[] = ['ghost', 'columns', 'stop', 'clock', 'distance'];
+export type FigureId = 'ghost' | 'columns' | 'stop' | 'clock' | 'distance' | 'seats' | 'checkpoint';
+export const FIGURE_IDS: FigureId[] = ['ghost', 'columns', 'stop', 'clock', 'distance', 'seats', 'checkpoint'];
 
 /** content/course.ts FIGURES ids drawn by this set (the others have no drawing yet and the page shows the words alone). */
 export const FIGURE_ALIAS: Record<string, FigureId> = {
   'ghost-car': 'ghost', 'griid-row': 'columns', cameo: 'columns', 'column-c': 'columns', 'chart-cell': 'stop', 'magic-stop': 'stop',
-  'minute-hand': 'clock', launch: 'clock', 'split-sign': 'distance', mark: 'distance',
+  'minute-hand': 'clock', launch: 'clock', 'split-sign': 'distance', mark: 'distance', 'two-seats': 'seats', 'green-sign': 'checkpoint',
 };
 export function figureId(name: string | undefined): FigureId | null {
   if (!name) return null;
@@ -43,7 +43,7 @@ const SVG: Record<FigureId, () => string> = {
     s += `<text x="17" y="66" font-size="15" font-weight="700" text-anchor="middle" fill="currentColor">12</text>`;
     s += `<line x1="72" y1="34" x2="72" y2="86" stroke="currentColor" stroke-width="0.8"/><circle cx="72" cy="80" r="4" fill="currentColor"/><path d="M72 80 L72 56 L50 56" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M52 51 L44 56 L52 61 Z" fill="currentColor"/>`;
     s += `<text x="194" y="58" font-size="16" font-weight="800" text-anchor="middle" fill="currentColor">40</text><text x="194" y="76" font-size="11" font-weight="700" text-anchor="middle" fill="currentColor">MPH</text>`;
-    s += `<text x="261" y="64" font-size="11" text-anchor="middle" fill="currentColor">Comes</text><text x="261" y="77" font-size="11" text-anchor="middle" fill="currentColor">quick</text></svg>`;
+    s += `<text x="261" y="64" font-size="9.5" text-anchor="middle" fill="currentColor">Comes</text><text x="261" y="76" font-size="9.5" text-anchor="middle" fill="currentColor">quick</text></svg>`;
     return s;
   },
   stop: () => {
@@ -56,6 +56,19 @@ const SVG: Record<FigureId, () => string> = {
     const hand = (deg: number, len: number, w: number, col: string): string => { const a = (deg - 90) * Math.PI / 180; return `<line x1="150" y1="60" x2="${(150 + Math.cos(a) * len).toFixed(1)}" y2="${(60 + Math.sin(a) * len).toFixed(1)}" stroke="${col}" stroke-width="${w}" stroke-linecap="round"/>`; };
     return `<svg viewBox="0 0 300 120" role="img" aria-label="the dash clock: hands only, no digits"><circle cx="150" cy="60" r="52" fill="#f7f5ee" stroke="#333" stroke-width="2"/>${t}${hand(285, 26, 4, '#111')}${hand(186, 40, 3, '#111')}${hand(90, 46, 1.2, '#c0392b')}<circle cx="150" cy="60" r="3" fill="#111"/></svg>`;
   },
+  // PT-17 item 10: the two seats (Module 0 "Three parties") and the green checkpoint sign with its crew (Module 0 "Checkpoints you cannot see")
+  seats: () => `<svg viewBox="0 0 300 120" role="img" aria-label="the two front seats: the driver with the wheel, the navigator with the book, clock and stopwatch">`
+    + `<rect x="30" y="20" width="110" height="84" rx="14" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/><rect x="160" y="20" width="110" height="84" rx="14" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/>`
+    + `<circle cx="85" cy="44" r="17" fill="none" stroke="currentColor" stroke-width="3"/><line x1="68" y1="44" x2="102" y2="44" stroke="currentColor" stroke-width="2"/>`
+    + `<rect x="178" y="32" width="38" height="28" rx="2" fill="#fff" stroke="#111"/><line x1="183" y1="40" x2="211" y2="40" stroke="#111"/><line x1="183" y1="47" x2="211" y2="47" stroke="#111"/><line x1="183" y1="54" x2="205" y2="54" stroke="#111"/>`
+    + `<circle cx="244" cy="46" r="13" fill="#222" stroke="currentColor"/><text x="244" y="50" font-size="9" font-weight="700" text-anchor="middle" fill="#9fe">0:08</text>`
+    + `<text x="85" y="84" font-size="14" font-weight="700" text-anchor="middle" fill="currentColor">driver</text><text x="85" y="99" font-size="11" text-anchor="middle" fill="var(--muted)">road, speed</text>`
+    + `<text x="215" y="84" font-size="14" font-weight="700" text-anchor="middle" fill="currentColor">navigator</text><text x="215" y="99" font-size="11" text-anchor="middle" fill="var(--muted)">book, clock, watch</text></svg>`,
+  checkpoint: () => `<svg viewBox="0 0 300 120" role="img" aria-label="a green checkpoint sign at the roadside with the crew's car behind it">`
+    + `<line x1="10" y1="96" x2="290" y2="96" stroke="var(--line)" stroke-width="2"/>`
+    + `${car(30, 70, 'var(--accent)')}<text x="59" y="64" font-size="12" text-anchor="middle" fill="currentColor">you</text>`
+    + `<rect x="206" y="40" width="5" height="56" fill="currentColor"/><rect x="186" y="16" width="46" height="30" rx="3" fill="#1e8e3e" stroke="#fff" stroke-width="2"/>`
+    + `${car(226, 60, 'var(--panel-2)')}<text x="256" y="56" font-size="12" text-anchor="middle" fill="var(--muted)">crew</text></svg>`,
   distance: () => `<svg viewBox="0 0 300 120" role="img" aria-label="the distance bar shrinks to the sign">`
     + `<rect x="14" y="48" width="240" height="20" rx="10" fill="var(--panel-2)" stroke="var(--line)"/><rect x="14" y="48" width="96" height="20" rx="10" fill="var(--accent2)"/>`
     + `<rect x="262" y="26" width="6" height="64" fill="currentColor"/><rect x="246" y="14" width="38" height="22" rx="3" fill="#fff" stroke="#111"/><text x="265" y="30" font-size="12" font-weight="800" text-anchor="middle" fill="#111">45</text>`

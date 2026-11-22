@@ -99,6 +99,17 @@ export function tryItPlan(module: TryItModule, seed: number, _progress?: Progres
   const variants = module.tryIt.variants ? Object.fromEntries(Object.entries(module.tryIt.variants).map(([k, v]) => [k, [...(v ?? [])]])) as RunPlan['variants'] : undefined;
   return { seed, mode: 'practice', skills: skills.length ? skills : [...SKILLS], rung: 2, items: ordered.map(micro => ({ type: 'decision', micro })), decisionCount: TRY_IT_CARDS, maxPerKind: 99, kinds, ...(variants ? { variants } : {}) };
 }
+/** PT-17 N4 (B15): try-it stars come from correct answers: 0 correct is 0 stars; 3 stars needs every card correct, or all but one with the
+ *  seconds off within TRY_IT_SECONDS_FOR_3; 3 of 5 (60 %) is 2 stars; any correct answer is 1. Below TRY_IT_PASS of the cards the
+ *  recap's first button is "Try again". */
+export const TRY_IT_SECONDS_FOR_3 = 10;
+export const TRY_IT_PASS = 0.6;
+export function tryItStars(r: { correct: number; total: number; secondsTotal: number }): 0 | 1 | 2 | 3 {
+  const { correct, total } = r; if (!total || correct <= 0) return 0;
+  if (correct >= total || (total - correct === 1 && correct >= 4 && r.secondsTotal <= TRY_IT_SECONDS_FOR_3)) return 3;
+  return correct / total >= TRY_IT_PASS ? 2 : 1;
+}
+export const tryItPassed = (r: { correct: number; total: number }): boolean => r.total > 0 && r.correct / r.total >= TRY_IT_PASS;
 export function tryItRun(module: TryItModule, seed: number, progress?: Progress | DecisionProgressState | null): DecisionRun { return new DecisionRun(tryItPlan(module, seed, progress)); }
 
 /** The course the agent protocol resolves module ids against (the app or the CLI registers content/course.ts's COURSE once). */
@@ -106,16 +117,16 @@ let registered: readonly (TryItModule & { controls?: readonly ControlId[] })[] =
 export function registerCourse(modules: readonly (TryItModule & { controls?: readonly ControlId[] })[]): void { registered = modules; }
 export function courseModule(id: string): (TryItModule & { controls?: readonly ControlId[] }) | undefined { return registered.find(m => m.id === id); }
 
-/** PT-16 SCH-013: modules 0..6 are the core; until modules 7..10 are also done, a course taker's daily and skill runs draw only the
- *  kinds of the core modules plus those of every module completed so far (the try-it and mini-sim kinds). null = no limit: the visitor
- *  never started the course, or modules 7..10 are done. */
+/** PT-16 SCH-013 / PT-17 SCH-033: modules 0..6 are the core; until modules 7..10 are also done, daily and skill runs draw only the
+ *  kinds of the core modules plus those of every module completed so far (the try-it and mini-sim kinds), also for a visitor who never
+ *  started the course. null = no limit: modules 7..10 are done (or no course is registered). */
 export const RUN_LIMIT_CORE = 7;
 export const RUN_LIMIT_UNTIL = [7, 8, 9, 10];
 export function runKinds(c: { modulesDone: readonly string[]; pages?: Record<string, number> } | null | undefined, modules: readonly TryItModule[] = registered): DecisionKind[] | null {
-  if (!c || !modules.length) return null;
-  const started = c.modulesDone.length > 0 || Object.values(c.pages ?? {}).some(n => n > 0);
-  if (!started) return null;
-  const done = new Set(c.modulesDone);
+  if (!modules.length) return null;
+  // PT-17 N6 (B13): a visitor with no course progress is limited to the core kinds too (Home's daily and skill runs never serve a newcomer
+  // a TA claim or an exact transit before the course has taught them)
+  const done = new Set(c?.modulesDone ?? []);
   if (RUN_LIMIT_UNTIL.every(i => modules[i] && done.has(modules[i]!.id))) return null;
   const out = new Set<DecisionKind>();
   modules.forEach((m, i) => {

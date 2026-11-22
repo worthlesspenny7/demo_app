@@ -17,6 +17,8 @@ import { session, wallSeconds } from './session.js';
 import { applyGuided } from './guided.js';
 import { sourceChips } from '../school2/sheet.js';
 import { finishTryIt } from '../school2/tryit.js';
+import { moduleRule } from '../../../content/course.js';
+import { moduleIndex } from '../school2/sources.js';
 
 export interface RunView { screen: 'run'; phase: 'rule' | 'decision' | 'verdict' | 'done'; decision: Decision | null; shownAt: number; verdict: Verdict | null;
   /** PT-15 P2: wall seconds (since the card) at which a compressed hold jumps; null until it is due (a START card jumps only after the START tap). */
@@ -101,10 +103,10 @@ export function renderRun(root: HTMLElement): () => void {
   }
 
   function showVerdict(v: Verdict): void {
-    const vp = verdictParts(v);
+    const vp = verdictParts(v, { noSeconds: !!session.courseTry && !view.decision?.timing });   // PT-17 N7: a School try-it's option card shows no seconds
     const ov = el('div', { class: `mob-verdict ${v.correct ? 'v-ok' : 'v-bad'}`, role: 'status', 'data-testid': 'verdict', 'data-correct': String(v.correct) },
       el('div', { class: 'mv-head' }, el('span', {}, vp.head), el('b', { class: 'mv-sec' }, vp.seconds)),
-      el('p', { class: 'mv-rule' }, vp.rule), el('p', { class: 'mv-detail' }, vp.detail));
+      el('p', { class: 'mv-rule' }, session.courseTry ? moduleRule(vp.rule, v.kind, moduleIndex(session.courseTry)) : vp.rule), el('p', { class: 'mv-detail' }, vp.detail));   // PT-17 N9
     const chips = sourceChips(vp.source, v.kind); if (chips.length) ov.append(el('div', { class: 's2-vchips', 'data-testid': 'verdict-chips' }, ...chips));   // PT-16 B10: the source as a chip
     card.append(ov);
     const next = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'next' }, h!.done() ? 'See the run' : 'Next card');
@@ -196,9 +198,16 @@ export function renderRun(root: HTMLElement): () => void {
       }
       actions.append(grid);
       if (d.deadlineSeconds && d.deadlineSeconds > 0) {
-        const bar = el('div', { class: 'mob-deadline', 'aria-hidden': 'true' }, el('span', { style: `animation-duration:${d.deadlineSeconds}s` }));
-        actions.prepend(bar);
-        timers.push(window.setTimeout(() => submit(null), d.deadlineSeconds * 1000));
+        // PT-17 (SCH-022): a call with a deadline waits under Start too; the options and the deadline bar start on the tap
+        const secs = d.deadlineSeconds; view.started = false;
+        const btns = [...grid.querySelectorAll<HTMLButtonElement>('button')]; btns.forEach(b => { b.disabled = true; });
+        const go = el('button', { class: 'mw-ready', type: 'button', 'data-action': 'start-card', 'aria-label': 'Start: the clock starts when you tap' }, el('b', {}, 'Start')) as HTMLButtonElement;
+        go.onclick = (ev) => {
+          ev.preventDefault(); go.remove(); view.started = true; view.shownAt = wallSeconds(); btns.forEach(b => { b.disabled = false; });
+          actions.prepend(el('div', { class: 'mob-deadline', 'aria-hidden': 'true' }, el('span', { style: `animation-duration:${secs}s` })));
+          timers.push(window.setTimeout(() => submit(null), secs * 1000));
+        };
+        grid.style.position = 'relative'; grid.append(go);   // the Start covers the options until tapped
       }
     }
     try { applyGuided(page, d); } catch { /* guided state unavailable: the full run screen */ }   // SCH-004

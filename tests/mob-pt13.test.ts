@@ -136,6 +136,8 @@ describe('MOB-054 the verdict names what decided it', () => {
         const f = fresh(); const x = f.run.answer(f.d, wrong); if (!x.correct) { v = x; break; }
       }
       expect(v, `${kind} ${seed} ${variant}: some answer is wrong`).toBeTruthy(); if (!v) continue;
+      // PT-17 SCH-029: a pre-read speed miss quotes the row's own Column C instead of a card sentence
+      if (v.kind === 'preread' && /Column C says "/.test(v.rule)) { expect(v.missed).toBeTruthy(); continue; }
       const card = ruleCardById(v.ruleId)!;
       const sent = v.rule.slice(0, v.rule.length - ` (${v.source}).`.length);
       expect(sentences(card.text).map(x => x.replace(/[.!?]$/, '')), `${kind} ${variant}: ${v.rule}`).toContain(sent);
