@@ -83,7 +83,7 @@ test.describe('school phone 390x844', () => {
     await page.goto('/?mode=mobile#/school/m0/8');
     await page.locator('.s2-checkopts [data-right=false]').first().click();
     await expect(page.locator('.s2-checkopts .s2-wrong')).toHaveCount(1);
-    await expect(page.locator('[data-testid=check-result]')).toHaveText(/^Not quite: /);
+    await expect(page.locator('[data-testid=check-result]')).toHaveText(/^Not quite\./);
     await page.locator('.s2-checkopts [data-right=true]').click();
     await expect(page.locator('[data-testid=check-result]')).toHaveText(/^Correct\./);
     expect((await sch(page)).complete).toBe(true);

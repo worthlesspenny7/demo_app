@@ -1,5 +1,5 @@
 /** MOB-006 recap: stars, per-skill tallies, the three worst cards with their rule, then "Again" and "Next run". */
-import { SKILLS, SKILL_TITLE } from '../../core/decision/index.js';
+import { SKILLS, SKILL_TITLE, recapSum } from '../../core/decision/index.js';
 import { el } from '../state.js';
 import { KIND_TITLE, ruleWithoutSource } from './cards.js';
 import { session } from './session.js';
@@ -13,7 +13,7 @@ export function renderRecap(root: HTMLElement): void {
   const stars = el('div', { class: 'mob-stars', 'data-stars': r.stars, 'aria-label': `${r.stars} of 3 stars` }, ...[0, 1, 2].map(i => el('span', { class: i < r.stars ? 'on' : '' }, i < r.stars ? '★' : '☆')));
   const body = el('div', { class: 'mob-recap-body' },
     el('h1', {}, 'Run complete'), stars,
-    el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, `${r.correct} of ${r.total} correct · ${r.secondsTotal.toFixed(1)} s off`));
+    el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, recapSum(r)));
   const tbl = el('table', { class: 'mob-tally' });
   for (const s of SKILLS) { const t = r.tallies[s]; if (!t || !t.total) continue; tbl.append(el('tr', { 'data-skill': s }, el('th', {}, SKILL_TITLE[s]), el('td', {}, `${t.correct}/${t.total}`), el('td', {}, `${t.seconds.toFixed(1)} s`))); }
   body.append(tbl);

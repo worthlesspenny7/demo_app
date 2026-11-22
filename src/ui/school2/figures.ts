@@ -49,7 +49,7 @@ const SVG: Record<FigureId, () => string> = {
   stop: () => {
     const pts = Array.from({ length: 8 }, (_, i) => { const a = (Math.PI / 8) + i * Math.PI / 4; return `${(70 + Math.cos(a) * 46).toFixed(1)},${(60 + Math.sin(a) * 46).toFixed(1)}`; }).join(' ');
     return `<svg viewBox="0 0 300 120" role="img" aria-label="a stop sign and its chart cell"><polygon points="${pts}" fill="#c0392b" stroke="#fff" stroke-width="3"/><text x="70" y="67" font-size="22" font-weight="800" text-anchor="middle" fill="#fff">STOP</text>`
-      + `<rect x="150" y="26" width="140" height="68" rx="8" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="2"/><text x="220" y="48" font-size="13" text-anchor="middle" fill="var(--muted)">This app's car: ${STOP_FIG.vIn} → ${STOP_FIG.vOut}</text><text x="220" y="80" font-size="24" font-weight="800" text-anchor="middle" fill="var(--accent)">sit ${STOP_FIG.sit.toFixed(1)} s</text></svg>`;
+      + `<rect x="150" y="26" width="140" height="68" rx="8" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="2"/><text x="220" y="42" font-size="11" text-anchor="middle" fill="var(--muted)">This app's car:</text><text x="220" y="57" font-size="11" text-anchor="middle" fill="var(--muted)">${STOP_FIG.vIn} → ${STOP_FIG.vOut}</text><text x="220" y="88" font-size="24" font-weight="800" text-anchor="middle" fill="var(--accent)">sit ${STOP_FIG.sit.toFixed(1)} s</text></svg>`;
   },
   clock: () => {
     let t = ''; for (let i = 0; i < 60; i++) { const a = i * 6 * Math.PI / 180; const r0 = i % 5 ? 44 : 39; t += `<line x1="${(150 + Math.sin(a) * r0).toFixed(1)}" y1="${(60 - Math.cos(a) * r0).toFixed(1)}" x2="${(150 + Math.sin(a) * 48).toFixed(1)}" y2="${(60 - Math.cos(a) * 48).toFixed(1)}" stroke="#111" stroke-width="${i % 5 ? 0.7 : 1.8}"/>`; }
@@ -58,12 +58,12 @@ const SVG: Record<FigureId, () => string> = {
   },
   // PT-17 item 10: the two seats (Module 0 "Three parties") and the green checkpoint sign with its crew (Module 0 "Checkpoints you cannot see")
   seats: () => `<svg viewBox="0 0 300 120" role="img" aria-label="the two front seats: the driver with the wheel, the navigator with the book, clock and stopwatch">`
-    + `<rect x="30" y="20" width="110" height="84" rx="14" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/><rect x="160" y="20" width="110" height="84" rx="14" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/>`
+    + `<rect x="30" y="20" width="110" height="92" rx="14" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/><rect x="160" y="20" width="110" height="92" rx="14" fill="var(--panel-2)" stroke="currentColor" stroke-width="1.6"/>`
     + `<circle cx="85" cy="44" r="17" fill="none" stroke="currentColor" stroke-width="3"/><line x1="68" y1="44" x2="102" y2="44" stroke="currentColor" stroke-width="2"/>`
     + `<rect x="178" y="32" width="38" height="28" rx="2" fill="#fff" stroke="#111"/><line x1="183" y1="40" x2="211" y2="40" stroke="#111"/><line x1="183" y1="47" x2="211" y2="47" stroke="#111"/><line x1="183" y1="54" x2="205" y2="54" stroke="#111"/>`
-    + `<circle cx="244" cy="46" r="13" fill="#222" stroke="currentColor"/><text x="244" y="50" font-size="9" font-weight="700" text-anchor="middle" fill="#9fe">0:08</text>`
-    + `<text x="85" y="84" font-size="14" font-weight="700" text-anchor="middle" fill="currentColor">driver</text><text x="85" y="99" font-size="11" text-anchor="middle" fill="var(--muted)">road, speed</text>`
-    + `<text x="215" y="84" font-size="14" font-weight="700" text-anchor="middle" fill="currentColor">navigator</text><text x="215" y="99" font-size="11" text-anchor="middle" fill="var(--muted)">book, clock, watch</text></svg>`,
+    + `<circle cx="244" cy="44" r="17" fill="#222" stroke="currentColor"/><text x="244" y="47" font-size="9" font-weight="700" text-anchor="middle" fill="#9fe">0:08</text>`
+    + `<text x="85" y="74" font-size="14" font-weight="700" text-anchor="middle" fill="currentColor">driver</text><text x="85" y="90" font-size="11" text-anchor="middle" fill="var(--muted)">road</text><text x="85" y="104" font-size="11" text-anchor="middle" fill="var(--muted)">speed</text>`
+    + `<text x="215" y="74" font-size="14" font-weight="700" text-anchor="middle" fill="currentColor">navigator</text><text x="215" y="90" font-size="11" text-anchor="middle" fill="var(--muted)">book, clock,</text><text x="215" y="104" font-size="11" text-anchor="middle" fill="var(--muted)">watch</text></svg>`,
   checkpoint: () => `<svg viewBox="0 0 300 120" role="img" aria-label="a green checkpoint sign at the roadside with the crew's car behind it">`
     + `<line x1="10" y1="96" x2="290" y2="96" stroke="var(--line)" stroke-width="2"/>`
     + `${car(30, 70, 'var(--accent)')}<text x="59" y="64" font-size="12" text-anchor="middle" fill="currentColor">you</text>`

@@ -127,7 +127,7 @@ export function renderPage(body: HTMLElement, m: Module, p: PlayerPage, complete
   switch (p.kind) {
     case 'concept': return concept(body, p), null;
     case 'example': return example(body, p), null;
-    case 'check': return check(body, p, complete), null;
+    case 'check': return check(body, p, m, complete), null;
     case 'minisim': return mountMiniSim(body, p as MinisimPage, { done: complete, moduleIndex: moduleIndex(m.id) });
     case 'widget': return mountWidget(body, p as WidgetPage, { done: complete });
     case 'tryit': return tryitPage(body, m), null;
@@ -146,18 +146,21 @@ function example(body: HTMLElement, p: ExamplePage): void {
   const ol = el('ol', { class: 's2-lines' }); for (const l of p.lines) ol.append(el('li', {}, l));
   body.append(el('div', { class: 's2-example' }, el('h1', { class: 's2-h' }, p.title), ol));
 }
-function check(body: HTMLElement, p: CheckPage, complete: () => void): void {
+function check(body: HTMLElement, p: CheckPage, m: Module, complete: () => void): void {
   const fb = el('p', { class: 's2-result', 'data-testid': 'check-result' });
   const opts = el('div', { class: 's2-checkopts' });
-  const rule = (p as CheckPage & { rule?: string; explain?: string; why?: string }).rule ?? (p as { explain?: string }).explain ?? (p as { why?: string }).why;
+  // R5 / R8 (PT-18): a wrong answer shows one line of reason under the right option: the page's own why, else the module's rule
+  const rule = p.why ?? m.teaches;
+  const reason = el('p', { class: 's2-whyline', 'data-testid': 'check-why', hidden: '' });
   p.options.forEach((o, k) => {
     const b = el('button', { class: 'mob-btn opt', type: 'button', 'data-option': k, 'data-right': String(k === p.answer) }, o);
     b.onclick = () => {
       opts.querySelectorAll('button').forEach(x => x.classList.remove('s2-right', 's2-wrong'));
       const ok = k === p.answer; b.classList.add(ok ? 's2-right' : 's2-wrong');
       fb.className = `s2-result ${ok ? 'ok' : 'danger'}`;
-      fb.textContent = `${ok ? 'Correct.' : `Not quite: ${p.options[p.answer]}.`}${rule ? ` ${rule}` : ''}`;
-      if (ok) complete();
+      reason.hidden = ok; reason.remove();
+      if (ok) { fb.textContent = ['Correct.', rule].join(' '); complete(); }
+      else { fb.textContent = 'Not quite.'; reason.textContent = rule; reason.hidden = false; const right = opts.children[p.answer] as HTMLElement; right.classList.add('s2-right'); right.after(reason); }
     };
     opts.append(b);
   });

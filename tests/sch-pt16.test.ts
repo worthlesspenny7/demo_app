@@ -5,7 +5,7 @@ import { COURSE, FIRST_VISIT, STOP_EXAMPLE, pageText, pageWords, controlsThrough
 import type { MinisimPage } from '../content/course-types.js';
 import { EXCERPTS } from '../content/excerpts.js';
 import { RULES, words } from '../content/rules.js';
-import { miniSim, tryItPlan, runKinds, registerCourse, POINTER_OF_CONTROL, Scheduler, DecisionRun, playRun, randomAnswerer, oracleAnswerer, SKILLS, verdictRule, type Decision, type DecisionKind } from '../src/core/decision/index.js';
+import { miniSim, tryItPlan, runKinds, registerCourse, POINTER_OF_CONTROL, cardPointer, Scheduler, DecisionRun, playRun, randomAnswerer, oracleAnswerer, SKILLS, verdictRule, type Decision, type DecisionKind } from '../src/core/decision/index.js';
 import { microSubcase } from '../src/core/decision/scenarios.js';
 import { stopLoss } from '../src/core/perf-table.js';
 import { FORD_1939 } from '../src/core/course.js';
@@ -64,7 +64,9 @@ describe('SCH-012 pointers say what is graded', () => {
   const BUTTONS = /\b(START|STOP|LAP|CALL|GO|LAUNCH)\b/;
   it('SCH-012 every mini-sim page: the card comes up, its pointer names a verb the card accepts and only what the card shows (book row, chart, clock, bar)', () => {
     for (const { p, at } of sims) {
-      const { d } = cardOf(p); const ptr = pointerOf(p);
+      const { d } = cardOf(p); const ptr = cardPointer(pointerOf(p), d);
+      // R4 (PT-18): any number a pointer quotes is on the card it points at (prompt or chart)
+      for (const n of ptr.match(/\d+(?:\.\d+)?/g) ?? []) expect(`${d.prompt} ${d.context.chart?.seconds.toFixed(1) ?? ''}`, `${at}: pointer "${ptr}" quotes ${n}`).toContain(n);
       expect(d.kind, at).toBe(p.decisionKind);
       expect(words(ptr), at).toBeLessThanOrEqual(14);
       const lapForm = d.kind === 'watch' && d.timing?.kind === 'startStop';

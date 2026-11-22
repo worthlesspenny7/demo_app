@@ -139,7 +139,8 @@ describe('MOB-054 the verdict names what decided it', () => {
       // PT-17 SCH-029: a pre-read speed miss quotes the row's own Column C instead of a card sentence
       if (v.kind === 'preread' && /Column C says "/.test(v.rule)) { expect(v.missed).toBeTruthy(); continue; }
       const card = ruleCardById(v.ruleId)!;
-      const sent = v.rule.slice(0, v.rule.length - ` (${v.source}).`.length);
+      // PT-18 R3: a restart rule quotes the card's own sum in place of the rule card's worked example
+      const sent = v.rule.slice(0, v.rule.length - ` (${v.source}).`.length).replace(/\d+:\d\d:\d\d minus [\d.]+ s is \d+:\d\d:\d\d/, '9:32:00 minus 3 s is 9:31:57');
       expect(sentences(card.text).map(x => x.replace(/[.!?]$/, '')), `${kind} ${variant}: ${v.rule}`).toContain(sent);
       expect(v.correct).toBe(false); expect(v.missed, `${kind} ${variant}`).toBeTruthy();
     }

@@ -839,8 +839,12 @@ export class DecisionRunner {
         const minuteOff = Math.abs(delta) >= 45;
         const onOwn = !minuteOff && Math.abs(delta - (p.x.netLoss as number)) < 1 && (p.x.netLoss as number) >= 1;
         const variant = p.x.variant === 'lunch' ? 'lunch' : minuteOff ? (p.x.byBase ? 'base' : 'minute') : onOwn ? 'default' : (p.x.byBase ? 'base' : 'default');
-        return base(Math.abs(delta) <= TIMING_TOLERANCE.restart, delta, `${p.x.what === 'lunch' ? 'Leave' : 'Launch'} at ${clockStr(p.x.launch as number)}`, none ? 'no tap' : `${clockStr(p.tod0 + t)}${Math.abs(delta) >= 0.05 ? ` (${signed(delta)})` : ''}`, variant,
+        const out = base(Math.abs(delta) <= TIMING_TOLERANCE.restart, delta, `${p.x.what === 'lunch' ? 'Leave' : 'Launch'} at ${clockStr(p.x.launch as number)}`, none ? 'no tap' : `${clockStr(p.tod0 + t)}${Math.abs(delta) >= 0.05 ? ` (${signed(delta)})` : ''}`, variant,
           none ? 'no LAUNCH' : minuteOff ? `a minute ${delta > 0 ? 'late' : 'early'}` : onOwn ? 'launched on your own time, not early by the loss' : `LAUNCH ${early(delta)}`);
+        // R3 (PT-18): the rule's worked example is this card's own sum (its time, its loss, its launch), never a fixed example
+        const loss = p.x.netLoss as number; const lossTxt = Number.isInteger(loss) ? String(loss) : loss.toFixed(1);
+        if (p.x.what !== 'lunch' && !p.x.byBase && loss >= 1) return { ...out, rule: out.rule.replace(/\d+:\d\d:\d\d minus [\d.]+ s is \d+:\d\d:\d\d/, `${clockStr(p.x.own as number)} minus ${lossTxt} s is ${clockStr(p.x.launch as number)}`) };
+        return out;
       }
       case 'timedStart': {
         const ins = p.x.ins as Instruction; const t1 = p.x.t1 as number; const t2 = p.x.t2 as number;

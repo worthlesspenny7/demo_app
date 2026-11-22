@@ -457,3 +457,11 @@ One agent (no Agent tool in this session, so no sub-agents). Baseline on 5a9ef85
 - Fix sprint PT-17 landed: 873 unit, 174 e2e, 447/447. PT-18 newcomer replay launched (Opus).
 - PT-18 (3e4ff33): no High, 12/17 fixed, 0 regressed, rubric 3.8/5, "send the link today". Final sprint PT-18
   launched (Sonnet) on the checkpoint widget and failed-try-it recap plus three small items.
+## Final sprint PT-18
+- R1 (SCH-038): whereCheckpoint strip ends in the 12 px sign (road(12)): the car's nose meets the sign's near edge at the ghost's time, so a tap as it reaches the sign scores 0; the button becomes "Try again" (data-action leg-retry), which resets the strip and shows Start again (nothing timed before it). src/ui/school2/widgets.ts.
+- R2 (SCH-039): a try-it below 3 of 5 is headed "Not yet: n of 5 correct" (no "Module n done", no "You can now"), Try again first; recapSum() (src/core/decision/school.ts) drops " · x s off" when the run had no timed card; used by the try-it and the phone recap.
+- R3 (SCH-040): a restart verdict's rule swaps the rule card's worked example for the card's own "<time> minus <loss> s is <launch>" (runner.ts grade, restart); not for base-time or lunch cards. Test over 10 seeds.
+- R4 (SCH-041): cardPointer() (school.ts) builds the pointer from the card: "about 2 s before" becomes the card's lead (or "half a ramp"), a START/LAP watch card points at START before LAP; used by the mini-sim and the run screen. The pointer-vs-card test now checks every number in a pointer against the card.
+- R5/R8 (SCH-042): every check page has a one-line `why`; a wrong answer says "Not quite." and shows the why under the right option (module `teaches` as the fallback). Two-seats captions one item per line, "0:08" clear of its clock, Module 4 stop label on two lines; e2e geometry at 360x780.
+- Final sprint PT-18 landed: 881 unit, 178 e2e, 452/452. Phase IX wrapped: School 2.0 shareable to newcomers
+  (PT-16 3.2 -> PT-17 3.4 -> PT-18 3.8 /5; 0 High). Hosted copy republished. Next session starts from HANDOFF.

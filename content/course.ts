@@ -44,7 +44,7 @@ const example = (title: string, lines: string[], refs: Ref[] = []): Page => ({ k
 type SimOpts = { variant?: number; form?: import('../src/core/decision/types.js').MicroForm; pointer?: string; rounds?: { seed: number; form?: import('../src/core/decision/types.js').MicroForm; variant?: number; why: string; pointer?: string }[] };
 const sim = (decisionKind: DecisionKind, seed: number, control: ControlId, why: string, refs: Ref[] = [], o: SimOpts = {}): Page => ({ kind: 'minisim', decisionKind, seed, control, why, refs, ...o });
 const widget = (w: WidgetId, params: WidgetParams, refs: Ref[] = []): Page => ({ kind: 'widget', widget: w, params, refs });
-const check = (question: string, options: string[], answer: number, refs: Ref[] = []): Page => ({ kind: 'check', question, options, answer, refs });
+const check = (question: string, options: string[], answer: number, why: string, refs: Ref[] = []): Page => ({ kind: 'check', question, options, answer, why, refs });
 
 /** Concept figures the page player draws (id -> what it shows). */
 export const FIGURES: Record<string, { alt: string }> = {
@@ -86,7 +86,7 @@ export const COURSE: Module[] = [
       concept('The Great Race', 'The Great Race is the big one: nine days of rallying in old cars, about 150 teams, a third of them new. In 2026 it ran Route 66, from Springfield, Illinois to Pasadena, California.', [reg('I.A.3'), vid('2026', '04:44')], 'photos'),
       concept('Three parties', 'The organizers never ride along: they speak to you only through the Course Instructions, the morning\'s book. The navigator, also called the co-driver, reads it and tells the driver what to do. The driver drives, holds the speed and says each call back. You are the navigator.', [hb('p15'), vid('2026', '07:47')], 'two-seats'),
       widget('holdSpeed', { speed: 40, miles: 0.5, goal: 'The book says 40 here. Hold it the way the driver must.' }),
-      check('You pass the green sign 4 seconds after the ghost. What do you score?', ['4 points', '0 points', '8 points', '40 points'], 0),
+      check('You pass the green sign 4 seconds after the ghost. What do you score?', ['4 points', '0 points', '8 points', '40 points'], 0, 'One point per second off, early or late: 4 seconds is 4 points.'),
     ],
     tryIt: { skills: ['safetyCourse'], kinds: ['checkpoint'], cards: 5, variants: { checkpoint: [0, 3, 6, 9] } },   // PT-16 B16: green signs only (red boards are Module 11)
     youCanNow: 'You can now explain a TSD rally: stay with the ghost and score zero.',
@@ -110,7 +110,7 @@ export const COURSE: Module[] = [
         { seed: 115, form: 'sign:overhead', why: 'Trap: an overhead sign is still the sign.' },
         { seed: 116, form: 'sign:bracket', why: 'Trap: bracketed text is only a note.' },
       ] }),
-      check('Column C is empty on this line. What speed do you drive?', ['The posted limit', 'The speed you had', 'Any safe speed', 'The next line\'s speed'], 1),
+      check('Column C is empty on this line. What speed do you drive?', ['The posted limit', 'The speed you had', 'Any safe speed', 'The next line\'s speed'], 1, 'An empty Column C means no change: keep the speed you already have.'),
     ],
     tryIt: { skills: ['safetyCourse'], kinds: ['preread'], cards: 5, variants: { preread: [0, 2] } },   // PT-17 N9: which way and what speed (no pause arithmetic before Module 4)
     youCanNow: 'You can now read a line of the book: which way and what speed.',
@@ -126,7 +126,7 @@ export const COURSE: Module[] = [
       sim('speedChange', 202, 'callSpeed', 'Call at the tick, a moment before the driver\'s Mark, then listen for the read-back.', [], { pointer: 'Tap CALL when the bar reaches the CALL tick, just before the driver\'s Mark.' }),
       concept('Always end on GO', 'At a stop, the driver watches traffic, not you. Count the wait out loud and always finish with the word GO. He may forget the number. GO is the only signal to move.', [vid('croker2', '19:57')]),
       sim('pause', 203, 'go', 'The driver may forget the number. He never misses GO.', [], { form: 'straight' }),
-      check('When do you call a turn?', ['Before the car reaches it', 'As the car reaches it', 'After the car passes it', 'When the driver asks for it'], 0),
+      check('When do you call a turn?', ['Before the car reaches it', 'As the car reaches it', 'After the car passes it', 'When the driver asks for it'], 0, 'Call the turn early, so the driver can slow and turn at it.'),
     ],
     tryIt: { skills: ['safetyCourse', 'stayOnTime'], kinds: ['preread', 'turn', 'pause'], cards: 5, forms: { pause: 'straight' }, variants: { preread: [0, 2] } },   // PT-16 B3: no speed changes before Module 5
     youCanNow: 'You can now call a turn, call a speed and send the car on GO.',
@@ -142,7 +142,7 @@ export const COURSE: Module[] = [
       widget('tapLap', { markers: 3, goal: 'Tap LAP as the car passes each marker.' }),
       example('Interval or cumulative?', ['Laps read 1:50, 7:23 and 16:05.', 'Cumulative at the third sign: 16:05.', 'Interval from sign two to three: 16:05 minus 7:23 is 8:42.']),
       sim('watch', 302, 'watchLap', 'A lap is a snapshot. The watch keeps running for the next one.', [], { form: 'lap', pointer: 'Tap START at the first sign, then LAP as the car reaches the second.' }),
-      check('Laps read 2:10 and 5:00. How long between the two signs?', ['5:00', '2:50', '7:10', '2:10'], 1),
+      check('Laps read 2:10 and 5:00. How long between the two signs?', ['5:00', '2:50', '7:10', '2:10'], 1, 'The gap between two laps is the later total minus the earlier: 5:00 minus 2:10 is 2:50.'),
     ],
     tryIt: { skills: ['instruments'], kinds: ['watch'], cards: 5, forms: { watch: 'lap' } },   // PT-16 B6: START / LAP at two signs, no lead arithmetic
     youCanNow: 'You can now time a gap, take a split and tell interval from cumulative.',
@@ -158,7 +158,7 @@ export const COURSE: Module[] = [
       concept('Count from the rock-back', 'Start the watch when the car rocks back to a stop, not before. Count out loud and end on GO. If traffic holds you longer, note how late you left. That is time to make up.', [vid('2026', '121:20'), vid('croker2', '23:32')]),
       sim('pause', 402, 'go', 'Start the count at the rock-back, sit the chart time, then GO.', [], { form: 'straight' }),
       sim('pause', 403, 'chartCell', 'Every stop has its own cell: the speeds in and out change the wait.', [], { form: 'straight' }),
-      check('The book says pause 15. What do you sit?', ['The full 15 seconds', 'Half the 15 seconds', 'The chart\'s own seconds', 'No seconds at all'], 2),
+      check('The book says pause 15. What do you sit?', ['The full 15 seconds', 'Half the 15 seconds', 'The chart\'s own seconds', 'No seconds at all'], 2, 'The chart gives its own seconds for a stop; sit those, not the book\'s number.'),
     ],
     tryIt: { skills: ['stayOnTime'], kinds: ['pause'], cards: 5, forms: { pause: 'straight' } },
     youCanNow: 'You can now sit the chart\'s wait at any stop and send the car on GO.',
@@ -175,7 +175,7 @@ export const COURSE: Module[] = [
       concept('Timed holds', 'Sometimes Column C says: 30 MPH for 0m36s, then 45. Start the watch where the ghost leaves the sign. When the time is nearly up, call the next speed about two seconds early.', [reg('VII.E.2'), vid('2026', '119:47')]),
       sim('watch', 504, 'chartCell', 'The lap at the sign, plus the hold, minus the lead: that is when to call.', [], { pointer: 'Read the lap and the lead, then tap when to call.' }),
       sim('timedStart', 503, 'callAtMark', 'START on Mark at the sign, then CALL a little before the hold runs out.', [], { pointer: 'Tap START on the Mark, then CALL about 2 s before the hold ends.' }),
-      check('The speed goes from 40 to 30 at a sign. How fast do you pass the sign?', ['30 mph', '40 mph', '25 mph', '35 mph'], 3),
+      check('The speed goes from 40 to 30 at a sign. How fast do you pass the sign?', ['30 mph', '40 mph', '25 mph', '35 mph'], 3, 'Halfway through the change you pass the sign: 40 to 30 is 35 mph at the sign.'),
     ],
     tryIt: { skills: ['stayOnTime', 'instruments'], kinds: ['speedChange', 'timedStart', 'watch'], cards: 5 },
     youCanNow: 'You can now split a speed change at the sign and run a timed hold.',
@@ -210,7 +210,7 @@ export const COURSE: Module[] = [
       sim('lost', 702, 'callTurn', 'If the car one minute behind never comes, you are the one off course.', [], { pointer: 'Tap what you tell the driver now.' }),
       concept('Getting back', 'Turn around where it is safe and start the watch. The trip back to the turn is half what you lost: 47 seconds back means about 94 lost. Rejoin about 30 seconds behind a car that is on course. The next checkpoint resets you.', [vid('2026', '94:27'), vid('2024', '121:18')]),
       sim('lost', 703, 'callTurn', 'Time the trip back and double it. Then let the leg go: the next checkpoint starts you fresh.', [], { pointer: 'Tap what you tell the driver now.' }),
-      check('The trip back to the missed turn took 47 seconds. About how much did you lose?', ['24 seconds', '47 seconds', '141 seconds', '94 seconds'], 3),
+      check('The trip back to the missed turn took 47 seconds. About how much did you lose?', ['24 seconds', '47 seconds', '141 seconds', '94 seconds'], 3, 'Back to the turn and out again is the same trip twice: 47 s doubled is 94 s.'),
     ],
     tryIt: { skills: ['safetyCourse', 'recovery'], kinds: ['turn', 'lost'], cards: 5 },
     youCanNow: 'You can now spot a wrong road and get back without speeding.',
@@ -227,7 +227,7 @@ export const COURSE: Module[] = [
       sim('makeup', 802, 'makeup', 'Hold the timed speed exactly. Make the time up before or after the hold.'),
       concept('Do it soon', 'Make up a loss as soon as it is safe. You never know where the next checkpoint is. Once you cross one, you are back on time, and the old error stays with the old leg.', [hb('p15'), hb('p13')]),
       sim('makeup', 803, 'makeup', 'Fix it now. A checkpoint may be around the next bend.'),
-      check('You are 6 seconds late at 30 mph. What do you drive?', ['33 mph for 60 s', '36 mph for 60 s', '33 for only 6 s', 'Keep 30, do nothing'], 0),
+      check('You are 6 seconds late at 30 mph. What do you drive?', ['33 mph for 60 s', '36 mph for 60 s', '33 for only 6 s', 'Keep 30, do nothing'], 0, '10 percent faster for 60 s earns back about 6 s: 30 mph plus 10 percent is 33.'),
     ],
     tryIt: { skills: ['recovery'], kinds: ['makeup'], cards: 5 },
     youCanNow: 'You can now win back seconds safely, and know when to leave them.',
@@ -244,7 +244,7 @@ export const COURSE: Module[] = [
       sim('ta', 902, 'taCard', 'Claim whole 10 s steps of what you could not make up. Odd amounts get rounded, maybe against you.'),
       concept('Where to claim', 'The book prints a place to claim, usually at lunch and at the finish. Within 15 minutes, fill in the web form: car, leg, the line numbers, the time, what happened. The leg number is checkpoints passed plus one.', [vid('2026', '110:28'), reg('V.H.3')]),
       sim('ta', 903, 'taCard', 'Leg is checkpoints passed plus one. The line numbers are what the committee checks.', [], { form: 'taLeg', pointer: 'Count the checkpoints passed, then tap the leg.' }),
-      check('A slow truck held you 30 seconds, then you passed it. What now?', ['Claim the 30 seconds', 'Claim 20 of the seconds', 'Forget the 30 seconds', 'Make the 30 seconds up'], 3),
+      check('A slow truck held you 30 seconds, then you passed it. What now?', ['Claim the 30 seconds', 'Claim 20 of the seconds', 'Forget the 30 seconds', 'Make the 30 seconds up'], 3, 'Only a delay beyond your control counts, and the claim is the seconds it cost: all 30.'),
     ],
     tryIt: { skills: ['recovery'], kinds: ['hazard', 'ta'], cards: 5 },
     youCanNow: 'You can now tell a real delay from your own and claim it properly.',
@@ -261,7 +261,7 @@ export const COURSE: Module[] = [
       concept('Lunch', 'Lunch sits inside a transit. The book says: leave 45 minutes before your end-of-transit time. Restart 2:55:00, position 12: your restart is 3:07:00. So you leave lunch at 2:22:00.', [hb('appD'), vid('classen1', '25:21')]),
       example('The queue', ['After an exact transit, cars are no longer a minute apart.', 'Two or three may share one minute.', 'Wait back, watch the car ahead go, then pull up.'], [vid('croker2', '32:58')]),
       sim('restart', 1003, 'launch', 'Pull up only after the car ahead has gone, then launch early by your start loss.'),
-      check('You pass the IN sign at 10:14:30. Take exactly 25 minutes. When do you leave?', ['10:40:30', '10:39:00', '10:39:30', '10:14:55'], 2),
+      check('You pass the IN sign at 10:14:30. Take exactly 25 minutes. When do you leave?', ['10:40:30', '10:39:00', '10:39:30', '10:14:55'], 2, 'Add the time you must take to the IN time: 10:14:30 plus 25 minutes is 10:39:30.'),
     ],
     tryIt: { skills: ['startOnTime'], kinds: ['transitOut', 'restart'], cards: 5 },
     youCanNow: 'You can now get through a transit and lunch and restart on time.',
@@ -278,7 +278,7 @@ export const COURSE: Module[] = [
       concept('Caps and misses', 'Each second off is a point, but a late leg stops counting at 2 minutes and an early one at 5. Missing a checkpoint costs 3 minutes. More than 30 minutes late counts as missing it.', [reg('V.E.1'), reg('V.E.2')]),
       concept('Old cars get a discount', 'At the end of the day your points are added up and multiplied by your car\'s age factor. A 1954 or newer car keeps them all. A 1939 car multiplies by 0.845. Older cars get more help.', [reg('V.D')]),
       widget('readScorecard', { ask: 'total', goal: 'Find the day\'s score after the age factor.' }),
-      check('You reach a checkpoint 3 minutes late. How many points?', ['3 points', '120 points', '180 points', '300 points'], 1),
+      check('You reach a checkpoint 3 minutes late. How many points?', ['3 points', '120 points', '180 points', '300 points'], 1, '3 minutes is 180 seconds, but a late checkpoint costs at most 120 points.'),
     ],
     tryIt: { skills: ['safetyCourse', 'stayOnTime'], kinds: ['checkpoint'], cards: 5 },
     youCanNow: 'You can now pass any checkpoint safely and read your scorecard.',
@@ -294,7 +294,7 @@ export const COURSE: Module[] = [
       sim('pause', 1202, 'chartCell', 'Mixed runs jump between skills. Each card still has one correct move.', [], { form: 'straight' }),
       concept('The Boss and Desk mode', 'The Boss is a long run with every kind of card. Desk mode opens when you finish this module: the full cockpit on a big screen, a whole day with the book, road, clock and watch at once.'),
       sim('timedStart', 1203, 'callAtMark', 'The Boss mixes everything. Same rules, faster pace.', [], { pointer: 'Tap START on the Mark, then CALL about 2 s before the hold ends.' }),
-      check('Which meter do you practise next?', ['The lowest one', 'The highest one', 'The newest one', 'The oldest one'], 0),
+      check('Which meter do you practise next?', ['The lowest one', 'The highest one', 'The newest one', 'The oldest one'], 0, 'Practise the lowest meter: that is where the next gain is.'),
     ],
     tryIt: { skills: ['safetyCourse', 'startOnTime', 'stayOnTime', 'recovery', 'instruments'], kinds: ['preread', 'turn', 'pause', 'speedChange', 'restart'], cards: 5, forms: { pause: 'straight' } },
     youCanNow: 'You can now run a full day. Desk mode is open.',

@@ -6,6 +6,7 @@
  * The same control -> element map places the mini-sim pointer (src/ui/school2/minisim.ts).
  */
 import type { Decision, DecisionKind } from '../../core/decision/index.js';
+import { cardPointer } from '../../core/decision/index.js';
 import type { ControlId } from '../../../content/course-types.js';
 import { guidedState, loadCourse, type GuidedState } from '../school2/progress.js';
 import { pointerFor, course } from '../school2/sources.js';
@@ -84,7 +85,8 @@ export function applyGuided(page: HTMLElement, d: Decision, g: GuidedState = gui
     const card = page.querySelector<HTMLElement>('.mob-cardarea') ?? page;
     // PT-17 N12: "New:" only on the first card of a run that points at the control; later cards keep the plain pointer
     const first = newSaidFor !== session.handle; newSaidFor = session.handle;
-    pointAt(page, g.newest, first ? `New: ${pointerFor(g.newest)}` : pointerFor(g.newest), card);
+    const ptr = cardPointer(pointerFor(g.newest), d);
+    pointAt(page, g.newest, first ? `New: ${ptr}` : ptr, card);
     res.pointer = g.newest;
   }
   return res;

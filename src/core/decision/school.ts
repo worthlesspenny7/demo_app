@@ -40,6 +40,19 @@ export const POINTER_OF_CONTROL: Record<ControlId, string> = {
   desk: 'The Desk has every control.',
 };
 
+/** R4 (PT-18): a pointer is built from the card in front of the player. A number in a pointer ("about 2 s before the hold ends") is the
+ *  card's own lead (the chart's seconds, as the prompt prints it) or, on a card that prints none, "half a ramp"; a watch card with START and
+ *  LAP points at both, in that order. */
+export function cardPointer(pointer: string, d: { kind: DecisionKind; prompt: string; timing?: { kind: string } | undefined; context?: { chart?: { seconds: number } | null | undefined } | undefined }): string {
+  let out = pointer;
+  if (/\babout [\d.]+ s before\b/.test(out)) {
+    const n = d.prompt.match(/\b(\d+(?:\.\d+)?) s before\b/)?.[1] ?? (d.context?.chart ? d.context.chart.seconds.toFixed(1) : null);
+    out = out.replace(/\babout [\d.]+ s before\b/, n ? `${n} s before` : 'half a ramp before');
+  }
+  if (d.kind === 'watch' && d.timing?.kind === 'startStop' && /^Tap LAP as the car reaches the sign\.$/.test(out)) out = POINTER_OF_CONTROL.watchStartStop;
+  return out;
+}
+
 export interface MiniSimOptions { rung?: 0 | 1 | 2 | 3; control?: ControlId; variant?: number; /** PT-16 SCH-015 / SCH-025: the School form of the kind */ form?: MicroForm; /** PT-16 SCH-012: the page's own pointer line */ pointer?: string }
 export interface GuidedInfo { control: ControlId; pointer: string }
 
@@ -108,6 +121,11 @@ export function tryItStars(r: { correct: number; total: number; secondsTotal: nu
   const { correct, total } = r; if (!total || correct <= 0) return 0;
   if (correct >= total || (total - correct === 1 && correct >= 4 && r.secondsTotal <= TRY_IT_SECONDS_FOR_3)) return 3;
   return correct / total >= TRY_IT_PASS ? 2 : 1;
+}
+/** R2 (PT-18): the recap's sum line. "n of m correct", plus " · x s off" only when the run had a timed card (an option run has no seconds). */
+export function recapSum(r: { correct: number; total: number; secondsTotal: number; verdicts?: readonly { kind: DecisionKind }[] }): string {
+  const timed = (r.verdicts ?? []).some(v => TIMED_KINDS.includes(v.kind));
+  return `${r.correct} of ${r.total} correct${timed ? ` · ${r.secondsTotal.toFixed(1)} s off` : ''}`;
 }
 export const tryItPassed = (r: { correct: number; total: number }): boolean => r.total > 0 && r.correct / r.total >= TRY_IT_PASS;
 export function tryItRun(module: TryItModule, seed: number, progress?: Progress | DecisionProgressState | null): DecisionRun { return new DecisionRun(tryItPlan(module, seed, progress)); }

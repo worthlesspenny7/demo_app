@@ -43,10 +43,10 @@ export function renderTryItRecap(root: HTMLElement, id: string): void {
   const stars = r ? core.tryItStars(r) : 0; const i = moduleIndex(m.id); const nextM = course()[i + 1];
   const passed = !r || core.tryItPassed(r);   // PT-17 N4: below 3 of 5 the first button is "Try again" 
   const body = el('div', { class: 's2-recap', 'data-testid': 'tryit-recap' },
-    el('h1', {}, `Module ${moduleNumber(m, i)} done`),
+    el('h1', {}, passed ? `Module ${moduleNumber(m, i)} done` : `Not yet: ${r ? r.correct : 0} of ${r ? r.total : 5} correct`),
     el('div', { class: 'mob-stars', 'data-stars': stars, 'aria-label': `${stars} of 3 stars` }, ...[0, 1, 2].map(k => el('span', { class: k < stars ? 'on' : '' }, k < stars ? '★' : '☆'))),
-    r ? el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, `${r.correct} of ${r.total} correct · ${r.secondsTotal.toFixed(1)} s off`) : el('span', {}),
-    el('p', { class: 's2-youcan', 'data-testid': 'you-can-now' }, m.youCanNow));
+    r ? el('p', { class: 'mob-sum', 'data-testid': 'recap-sum' }, core.recapSum(r)) : el('span', {}),
+    passed ? el('p', { class: 's2-youcan', 'data-testid': 'you-can-now' }, m.youCanNow) : el('p', { class: 's2-youcan', 'data-testid': 'not-yet' }, `Module ${moduleNumber(m, i)} is not done yet. Read the rule under a miss, then try again.`));
   const again = el('a', { class: `mob-btn big${passed ? '' : ' primary'}`, href: `#/school/${m.id}/try`, 'data-action': 'again' }, passed ? 'Again' : 'Try again');
   const nextCls = `mob-btn big${passed ? ' primary' : ''}`;
   const next = nextM ? el('a', { class: nextCls, href: `#/school/${nextM.id}/1`, 'data-action': 'next-module' }, `Module ${moduleNumber(nextM, i + 1)}`)

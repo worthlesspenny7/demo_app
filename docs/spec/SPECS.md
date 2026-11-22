@@ -561,6 +561,12 @@ SCH-035 (PT-17 N8, N11) Teach before ask: m5's lap + hold - lead card comes afte
 SCH-036 (PT-17 N9, N12, N15) Module-aware words: content TERM_MODULE maps a term to the module that teaches it (half a ramp: 5; Dec(, Acc(, chrono: never; pre-read: 1) and no page, pointer, card prompt or verdict of an earlier module uses it (EARLY_RULE / moduleRule give pause and speed-change verdicts their early wording); "pre-read" is explained once, where it first appears (Module 1 page 1); "New:" only on a run's first pointer. [P1]
 SCH-037 (PT-17 N10, N14, B23) Newcomer polish: m5 p3 sentence case; every concept figure is drawn (two seats, the green checkpoint sign) or the page has none; #/school/<lesson section or rule id> goes to its module and anything else to the module list; m4 p1 under 70 words; Modules 0 + 1 under 10 minutes in the PT-17 time model at 200 wpm with all six traps; video URL plumbing unchanged. [P2]
 
+SCH-038 (PT-18 R1) The Module 0 checkpoint widget is fair: the drawn sign sits where the car is at the ghost's time (a tap as the car's nose reaches it scores 0) and the page offers Try again (a fresh Start) instead of a disabled Done. [P1]
+SCH-039 (PT-18 R2) A try-it below 3 of 5 says "Not yet: n of 5 correct" with Try again first and never "Module n done" or "You can now ..."; a recap prints "s off" only when the run had a timed card. [P1]
+SCH-040 (PT-18 R3) A restart verdict quotes the card's own time, loss and launch ("10:57:00 minus 3 s is 10:56:57"), never a fixed example. [P2]
+SCH-041 (PT-18 R4) A pointer is built from the card: a lead number is the card's own (or "half a ramp" on a card that prints none) and a START/LAP watch card points at START before LAP. [P2]
+SCH-042 (PT-18 R5, R8) A wrong check answer shows one line of reason (the page's why, else the module's rule) under the right option; the two-seats captions and the Module 4 stop label fit at 360 px. [P2]
+
 ## BACKLOG
 # [P3] future specs from the design reviews; not required for v1 and ignored by spec-check.
 GHOST-011 (superseded by GRIID-007; rules.turnSpeedDatum is not implemented) rules.turnSpeedDatum: 'afterTurn' applies a turn-line speed at s + intersectionWidth, 'leadingEdge' at s; a 35->25 turn over 80 ft differs by 0.62 s between the two (Q3). [P3]

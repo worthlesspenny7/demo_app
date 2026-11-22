@@ -125,7 +125,7 @@ describe('SCH-031 try-it stars', () => {
     expect(t).toMatch(/recordTryIt\(id, core\.tryItStars\(r\)\)/); expect(t).toMatch(/passed \? 'Again' : 'Try again'/); expect(t).toMatch(/\.\.\.\(passed \? \[again, next\] : \[next, again\]\)/);
   });
   it('SCH-021 SCH-031 recap and "you can now" strings never use "right" (try-it and run recaps say "N of M correct")', () => {
-    for (const f of ['src/ui/school2/tryit.ts', 'src/ui/mobile/recap.ts']) { const s = read(f); expect(s, f).not.toMatch(/\bright\b/); expect(s, f).toMatch(/of \$\{r\.total\} correct/); }
+    for (const f of ['src/ui/school2/tryit.ts', 'src/ui/mobile/recap.ts']) { const s = read(f); expect(s, f).not.toMatch(/\bright\b/); expect(s, f).toMatch(/of \$\{r\.total\} correct|recapSum\(r\)/); }
     for (const m of COURSE) expect(m.youCanNow, m.id).not.toMatch(/\bright\b/i);
     for (const p of walk('src/ui')) { const s = read(p); expect(s.match(/of \$\{[^}]*total\} right/g), p).toBeNull(); }
   });
@@ -136,7 +136,7 @@ describe('SCH-032 widgets behind Start', () => {
     const w = read('src/ui/school2/widgets.ts');
     expect(w).toMatch(/export function startGate\(/);
     expect(w).toMatch(/startGate\(slider, \(\) => \{ started = true;/); expect(w).toMatch(/if \(started\) m\.step\(/);
-    expect(w).toMatch(/startGate\(btn, \(\) => \{ started = true; t0 = now\(\); \}\)/); expect(w).toMatch(/btn\.onclick = \(\) => \{ if \(started\) finish/);
+    expect(w).toMatch(/const begin = \(\): void => \{ started = true; t0 = now\(\); \};/); expect(w).toMatch(/startGate\(btn, begin\)/); expect(w).toMatch(/if \(started\) finish\(now\(\) - t0\)/);
     expect(w).toMatch(/startGate\(lapBtn, \(\) => \{ started = true; t0 = now\(\); \}\)/); expect(w).toMatch(/if \(!started\) return;\n\s+const t = now\(\) - t0; if \(m\.lap\(t\)/);
     expect(w.match(/const t = started \? now\(\) - t0 : 0;/g)?.length).toBe(2);
     expect(w).toMatch(/if \(page\.params\.goal\) host\.append/);   // the instructions come first

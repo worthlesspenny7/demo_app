@@ -49,7 +49,7 @@ export interface MinisimPage extends PageBase {
   rounds?: { seed: number; form?: import('../src/core/decision/types.js').MicroForm; variant?: number; why: string; pointer?: string }[];
 }
 export interface WidgetPage extends PageBase { kind: 'widget'; widget: WidgetId; params: WidgetParams }
-export interface CheckPage extends PageBase { kind: 'check'; question: string; options: string[]; answer: number }
+export interface CheckPage extends PageBase { kind: 'check'; question: string; options: string[]; answer: number; /** R5/R8 (PT-18): one line of reason shown under the right option after a wrong answer */ why?: string }
 export type Page = ConceptPage | ExamplePage | MinisimPage | WidgetPage | CheckPage;
 export type PageKind = Page['kind'];
 

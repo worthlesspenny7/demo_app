@@ -24,11 +24,13 @@ export function startGate(control: HTMLElement, onStart: () => void): HTMLButton
 }
 
 /** A road strip with the car (and optionally the ghost and markers) as positioned spans. */
-function road(): { root: HTMLElement; car: HTMLElement; ghost: HTMLElement; place(node: HTMLElement, frac: number): void } {
+function road(endPx = 0): { root: HTMLElement; car: HTMLElement; ghost: HTMLElement; place(node: HTMLElement, frac: number): void } {
   const car = el('span', { class: 's2-car', 'aria-hidden': 'true' }); const ghost = el('span', { class: 's2-car s2-ghost', 'aria-hidden': 'true' });
   const root = el('div', { class: 's2-road', 'data-testid': 'road' }, ghost, car);
   // PT-16 B9: a car is placed by its nose (its left edge sits one car length, 8 %, behind), a mark by its line: the nose meets a mark at
   // the same fraction
+  // R1 (PT-18): with endPx the strip ends in a sign endPx wide: the nose meets the sign's near edge at f = 1, so a tap as the car reaches the drawn sign is the ghost's time
+  if (endPx > 0) return { root, car, ghost, place: (n, f) => { const c = Math.max(0, Math.min(1, f)); n.style.left = n.classList.contains('s2-car') ? `calc(${(c * 92).toFixed(2)}% - ${(c * endPx).toFixed(2)}px)` : `calc(${(c * 92 + 8).toFixed(2)}% - ${(c * endPx).toFixed(2)}px)`; } };
   return { root, car, ghost, place: (n, f) => { const x = Math.max(0, Math.min(1, f)) * 92; n.style.left = `${(n.classList.contains('s2-car') ? x : x + 8).toFixed(2)}%`; } };
 }
 
@@ -62,7 +64,7 @@ export function mountHoldSpeed(host: HTMLElement, page: WidgetPage, env: WidgetE
 export function mountWhereCheckpoint(host: HTMLElement, page: WidgetPage, env: WidgetEnv): () => void {
   const m = new WhereCheckpointModel(page.params.speed ?? 30, page.params.miles ?? 0.1, page.params.seed ?? 1);
   // PT-16 B7: the strip is the leg: the green sign stands at its end, the ghost drives beside your car, both reach the sign together
-  const r = road();
+  const r = road(12);
   const cp = el('span', { class: 's2-cp s2-greensign', 'data-testid': 'checkpoint', 'aria-label': 'green checkpoint sign' }, '');
   const tapMark = el('span', { class: 's2-tapmark', hidden: '' });
   r.root.append(cp, tapMark); cp.style.left = 'calc(100% - 12px)';
@@ -71,7 +73,7 @@ export function mountWhereCheckpoint(host: HTMLElement, page: WidgetPage, env: W
   const btn = el('button', { class: 'mob-btn primary big', type: 'button', 'data-action': 'leg-ended' }, 'At the sign!');
   host.append(el('div', { class: 's2-widget', 'data-widget': 'whereCheckpoint' },
     el('div', { class: 's2-wrow' }, el('span', {}, `Leg: ${m.miles} mi at ${m.assigned} mph`), clock), r.root, result, btn));
-  const now = env.now ?? wall; let t0 = now(); let h = 0; let over = false; let started = false;
+  const now = env.now ?? wall; let t0 = now(); let h = 0; let over = false; let started = false; let doneFired = false;
   const frac = (s: number): number => s / m.legFt;
   const finish = (t: number | null): void => {
     if (over) return; over = true; caf(h);
@@ -80,16 +82,24 @@ export function mountWhereCheckpoint(host: HTMLElement, page: WidgetPage, env: W
     tapMark.hidden = false; r.place(tapMark, frac(m.carS(at)));
     result.textContent = m.explain();
     result.dataset['points'] = String(m.score()!.penalty);
-    btn.textContent = 'Done'; (btn as HTMLButtonElement).disabled = true;
-    env.done();
+    btn.textContent = 'Try again'; btn.dataset['action'] = 'leg-retry';   // R1: never a disabled Done
+    if (!doneFired) { doneFired = true; env.done(); }
   };
-  btn.onclick = () => { if (started) finish(now() - t0); };
+  const begin = (): void => { started = true; t0 = now(); };
+  btn.onclick = () => {
+    if (over) {   // Try again: the strip resets and waits for Start again (nothing is timed before it)
+      over = false; started = false; m.tap = null; tapMark.hidden = true; result.textContent = ''; delete result.dataset['points'];
+      btn.textContent = 'At the sign!'; btn.dataset['action'] = 'leg-ended'; clock.textContent = '0.0 s';
+      startGate(btn, begin); frame(); return;
+    }
+    if (started) finish(now() - t0);
+  };
   const frame = (): void => {
     const t = started ? now() - t0 : 0; const f = frac(m.carS(t)); r.place(r.car, f); r.place(r.ghost, frac(ghostS(m, t))); clock.textContent = `${t.toFixed(1)} s`;
     if (t >= m.maxSeconds()) { finish(null); return; }
     h = raf(frame);
   };
-  startGate(btn, () => { started = true; t0 = now(); });
+  startGate(btn, begin);
   frame();
   return () => caf(h);
 }

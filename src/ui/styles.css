@@ -725,6 +725,7 @@ body:not(.mob-route) .s2 { height: calc(100dvh - 52px); max-height: 940px; borde
 .s2-check { display: flex; flex-direction: column; gap: 10px; }
 .s2-checkopts { display: grid; gap: 10px; }
 .s2-result { margin: 0; font-weight: 600; }
+.s2-whyline { margin: 0; font-size: 0.9rem; color: var(--muted, inherit); }
 .s2 .mob-btn.opt.s2-right, .s2 .s2-right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 22%, var(--panel-2)); }
 .s2 .mob-btn.opt.s2-wrong, .s2 .s2-wrong { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 18%, var(--panel-2)); }
 .s2-chips { flex: none; display: flex; flex-wrap: wrap; gap: 8px; min-height: 0; }

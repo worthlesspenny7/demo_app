@@ -100,7 +100,7 @@ export function mountMiniSim(host: HTMLElement, page0: MinisimPage, env: MiniSim
       for (const o of opts.slice(0, 4)) { const b = el('button', { class: 'mob-btn opt', type: 'button', 'data-option': o.id }, o.label); b.onclick = () => submit({ optionId: o.id }); grid.append(b); }
       actions.append(grid);
     }
-    pointAt(box, page.control, page.pointer ?? ((run.guided?.pointer && typeof run.guided.pointer === 'string') ? run.guided.pointer : pointerFor(page.control)), cardArea);
+    pointAt(box, page.control, core.cardPointer(page.pointer ?? ((run.guided?.pointer && typeof run.guided.pointer === 'string') ? run.guided.pointer : pointerFor(page.control)), d), cardArea);
     const z = d.timing && d.context.zone ? zoneChip(d.context.zone) : null; if (z) actions.append(z);   // PT-16: "CDT" explained (time zone chip)
   }
 
